@@ -1,0 +1,53 @@
+export const DEFAULT_ROLES = [
+  {
+    name: "Owner",
+    description: "Full access to all venue features and settings",
+    isSystemRole: true,
+    level: 100,
+    permissions: "ALL",
+  },
+  {
+    name: "Manager",
+    description: "Manage events, clients, partners, and team members",
+    isSystemRole: true,
+    level: 75,
+    permissions: [
+      "events.create", "events.read.all", "events.update.all", "events.delete.all", "events.export",
+      "clients.create", "clients.read.all", "clients.update.all", "clients.delete.all",
+      "partners.create", "partners.read.all", "partners.update.all", "partners.delete.all",
+      "finance.read.all", "finance.export",
+      "payments.create", "payments.read.all", "payments.update.all",
+      "tasks.create", "tasks.read.all", "tasks.update.all", "tasks.delete.all",
+      "reminders.create", "reminders.read.all", "reminders.update.all", "reminders.delete.all",
+      "users.read.all",
+      "reports.read.all", "reports.export",
+    ],
+  },
+  {
+    name: "Staff",
+    description: "Handle day-to-day operations and assigned tasks",
+    isSystemRole: true,
+    level: 50,
+    permissions: [
+      "events.read.all", "events.update.own",
+      "clients.read.all", "clients.update.all",
+      "partners.read.all",
+      "payments.create", "payments.read.all",
+      "tasks.read.all", "tasks.update.own",
+      "reminders.read.all", "reminders.update.own",
+    ],
+  },
+  {
+    name: "Viewer",
+    description: "View-only access to events and reports",
+    isSystemRole: true,
+    level: 25,
+    permissions: [
+      "events.read.all",
+      "clients.read.all",
+      "partners.read.all",
+      "tasks.read.own",
+      "reminders.read.own",
+    ],
+  },
+];
