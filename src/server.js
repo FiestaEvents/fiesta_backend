@@ -9,6 +9,12 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
+//demo account
+//owner@demo.com
+//password123
+
+
+
 // Connect to database
 connectDB();
 

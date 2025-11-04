@@ -25,13 +25,15 @@ const config = {
   },
   
   frontend: {
-    url: process.env.FRONTEND_URL || "http://localhost:5173",
+    url: process.env.FRONTEND_URL || "http://localhost:3000",
   },
   
-  rateLimit: {
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
-  },
+rateLimit: {
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' 
+    ? (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100)
+    : 1000, // High limit for development
+},
 };
 
 export default config;
