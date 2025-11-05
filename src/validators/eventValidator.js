@@ -26,17 +26,29 @@ export const createEventValidator = [
     .isISO8601()
     .withMessage("Invalid start date format"),
 
-  body("endDate")
-    .notEmpty()
-    .withMessage("End date is required")
-    .isISO8601()
-    .withMessage("Invalid end date format")
-    .custom((value, { req }) => {
-      if (new Date(value) <= new Date(req.body.startDate)) {
-        throw new Error("End date must be after start date");
+body("endDate")
+  .notEmpty()
+  .withMessage("End date is required")
+  .isISO8601()
+  .withMessage("Invalid end date format")
+  .custom((value, { req }) => {
+    const startDate = new Date(req.body.startDate);
+    const endDate = new Date(value);
+    
+    // If same date, check times
+    if (req.body.startDate === value && req.body.startTime && req.body.endTime) {
+      if (req.body.startTime >= req.body.endTime) {
+        throw new Error("End time must be after start time when dates are the same");
       }
       return true;
-    }),
+    }
+    
+    // Check if end date is before or equal to start date
+    if (endDate <= startDate) {
+      throw new Error("End date must be after start date");
+    }
+    return true;
+  }),
 
   body("guestCount")
     .optional()
