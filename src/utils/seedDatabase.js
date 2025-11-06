@@ -744,98 +744,322 @@ const seedDatabase = async () => {
     ]);
     console.log(`✅ Created ${financeRecords.length} finance records\n`);
 
-    // 11. Seed Tasks
-    console.log("✅ Seeding tasks...");
+    // 11. Seed Tasks - ENHANCED VERSION
+    console.log("✅ Seeding enhanced tasks...");
     const tasks = await Task.create([
       {
         title: "Confirm catering menu for Smith-Johnson Wedding",
-        description: "Review and finalize the catering menu with the couple. Check for dietary restrictions.",
+        description: "Review and finalize the catering menu with the couple. Check for dietary restrictions and confirm final guest count.",
         priority: "high",
         status: "in_progress",
         category: "event_preparation",
         dueDate: new Date(today.getFullYear(), today.getMonth() + 1, 5),
-        estimatedHours: 2,
+        startDate: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 2),
+        reminderDate: new Date(today.getFullYear(), today.getMonth() + 1, 3),
+        estimatedHours: 3,
+        actualHours: 1.5,
+        progress: 60,
         assignedTo: demoManager._id,
+        assignedBy: demoOwner._id,
+        assignedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
+        watchers: [demoOwner._id, demoStaff._id],
         relatedEvent: events[0]._id,
         relatedClient: clients[1]._id,
+        relatedPartner: partners[0]._id,
         subtasks: [
-          { title: "Send menu options to client", completed: true, completedAt: new Date() },
-          { title: "Schedule tasting session", completed: true, completedAt: new Date() },
-          { title: "Finalize menu selection", completed: false },
+          { 
+            title: "Send menu options to client", 
+            description: "Email 3 menu options with pricing",
+            completed: true, 
+            completedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 5),
+            completedBy: demoManager._id,
+            order: 0,
+          },
+          { 
+            title: "Schedule tasting session", 
+            description: "Book tasting for next week",
+            completed: true, 
+            completedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 2),
+            completedBy: demoManager._id,
+            order: 1,
+          },
+          { 
+            title: "Finalize menu selection",
+            description: "Get final approval from couple", 
+            completed: false,
+            order: 2,
+          },
+          {
+            title: "Coordinate with caterer",
+            description: "Send final headcount to Elegant Catering",
+            completed: false,
+            order: 3,
+          },
         ],
+        comments: [
+          {
+            text: "Client requested vegetarian and gluten-free options",
+            author: demoManager._id,
+            createdAt: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 3),
+          },
+          {
+            text: "Tasting went great! They loved option 2",
+            author: demoManager._id,
+            createdAt: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1),
+          },
+        ],
+        tags: ["wedding", "catering", "urgent"],
         venueId: demoVenue._id,
         createdBy: demoOwner._id,
       },
       {
         title: "Setup AV equipment test for conference",
-        description: "Test all audio-visual equipment before the Tech Innovations Conference",
+        description: "Complete end-to-end testing of all audio-visual equipment before the Tech Innovations Conference. Test projectors, microphones, speakers, and live streaming setup.",
         priority: "urgent",
         status: "todo",
         category: "event_preparation",
         dueDate: new Date(today.getFullYear(), today.getMonth() + 2, 3),
+        startDate: new Date(today.getFullYear(), today.getMonth() + 2, 2),
         estimatedHours: 4,
+        progress: 0,
         assignedTo: demoStaff._id,
+        assignedBy: demoManager._id,
+        assignedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
+        watchers: [demoManager._id],
         relatedEvent: events[1]._id,
+        relatedClient: clients[0]._id,
+        relatedPartner: partners[3]._id,
+        subtasks: [
+          { title: "Test projectors and screens", completed: false, order: 0 },
+          { title: "Test wireless microphones", completed: false, order: 1 },
+          { title: "Verify live streaming setup", completed: false, order: 2 },
+          { title: "Check backup equipment", completed: false, order: 3 },
+        ],
+        dependencies: [],
+        tags: ["conference", "av-equipment", "critical"],
         venueId: demoVenue._id,
         createdBy: demoManager._id,
       },
       {
         title: "Follow up with David Park for birthday party deposit",
-        description: "Contact client to secure deposit payment for the birthday event",
+        description: "Contact client to secure deposit payment for the birthday event. Send payment link and confirm final details.",
         priority: "high",
         status: "pending",
         category: "client_followup",
         dueDate: new Date(today.getFullYear(), today.getMonth(), 20),
         estimatedHours: 1,
+        progress: 0,
         assignedTo: demoStaff._id,
+        assignedBy: demoManager._id,
+        assignedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
         relatedEvent: events[2]._id,
         relatedClient: clients[3]._id,
+        tags: ["payment", "followup"],
         venueId: demoVenue._id,
         createdBy: demoManager._id,
       },
       {
         title: "Coordinate with decorators for networking mixer",
-        description: "Meet with Perfect Decorations to plan setup for professional networking event",
+        description: "Meet with Perfect Decorations to plan setup for professional networking event. Review floor plan and signage placement.",
         priority: "medium",
         status: "todo",
         category: "partner_coordination",
         dueDate: new Date(today.getFullYear(), today.getMonth() + 1, 15),
-        estimatedHours: 3,
+        startDate: new Date(today.getFullYear(), today.getMonth() + 1, 13),
+        estimatedHours: 2,
+        progress: 0,
         assignedTo: demoManager._id,
+        assignedBy: demoOwner._id,
+        assignedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
+        watchers: [demoStaff._id],
         relatedEvent: events[3]._id,
+        relatedClient: clients[2]._id,
         relatedPartner: partners[1]._id,
+        subtasks: [
+          { title: "Share floor plan with decorator", completed: false, order: 0 },
+          { title: "Confirm delivery timeline", completed: false, order: 1 },
+        ],
+        tags: ["decorations", "networking"],
         venueId: demoVenue._id,
         createdBy: demoOwner._id,
       },
       {
         title: "Monthly venue inspection",
-        description: "Conduct routine inspection of venue facilities, equipment, and safety features",
+        description: "Conduct routine inspection of venue facilities, equipment, and safety features. Document any issues that need attention.",
         priority: "medium",
         status: "completed",
         category: "maintenance",
         dueDate: new Date(today.getFullYear(), today.getMonth(), 1),
+        startDate: new Date(today.getFullYear(), today.getMonth(), 1),
         estimatedHours: 3,
         actualHours: 2.5,
+        progress: 100,
         assignedTo: demoStaff._id,
+        assignedBy: demoOwner._id,
+        assignedAt: new Date(today.getFullYear(), today.getMonth() - 1, 25),
         completedAt: new Date(today.getFullYear(), today.getMonth(), 2),
         completedBy: demoStaff._id,
+        subtasks: [
+          { 
+            title: "Check fire safety equipment", 
+            completed: true,
+            completedAt: new Date(today.getFullYear(), today.getMonth(), 1),
+            completedBy: demoStaff._id,
+            order: 0,
+          },
+          { 
+            title: "Inspect HVAC systems", 
+            completed: true,
+            completedAt: new Date(today.getFullYear(), today.getMonth(), 2),
+            completedBy: demoStaff._id,
+            order: 1,
+          },
+          { 
+            title: "Test emergency lighting", 
+            completed: true,
+            completedAt: new Date(today.getFullYear(), today.getMonth(), 2),
+            completedBy: demoStaff._id,
+            order: 2,
+          },
+        ],
+        comments: [
+          {
+            text: "All systems passed inspection. Minor HVAC filter replacement scheduled.",
+            author: demoStaff._id,
+            createdAt: new Date(today.getFullYear(), today.getMonth(), 2),
+          },
+        ],
+        tags: ["maintenance", "inspection", "safety"],
         venueId: demoVenue._id,
         createdBy: demoOwner._id,
       },
       {
         title: "Update website with new event photos",
-        description: "Upload recent event photos to website gallery and social media",
+        description: "Upload recent event photos to website gallery and social media. Ensure proper optimization and tagging.",
         priority: "low",
         status: "todo",
         category: "marketing",
         dueDate: new Date(today.getFullYear(), today.getMonth(), 25),
         estimatedHours: 2,
+        progress: 0,
         assignedTo: demoManager._id,
+        assignedBy: demoOwner._id,
+        assignedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
+        subtasks: [
+          { title: "Select best photos from last 3 events", completed: false, order: 0 },
+          { title: "Optimize images for web", completed: false, order: 1 },
+          { title: "Upload to website gallery", completed: false, order: 2 },
+          { title: "Post highlights on social media", completed: false, order: 3 },
+        ],
+        tags: ["marketing", "social-media", "website"],
+        venueId: demoVenue._id,
+        createdBy: demoOwner._id,
+      },
+      {
+        title: "Prepare contract for End-of-Year Gala",
+        description: "Draft and send service contract to Jennifer White for Global Corp's gala event. Include all terms and conditions.",
+        priority: "high",
+        status: "in_progress",
+        category: "administrative",
+        dueDate: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 5),
+        startDate: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
+        estimatedHours: 3,
+        actualHours: 1,
+        progress: 35,
+        assignedTo: demoOwner._id,
+        watchers: [demoManager._id],
+        relatedEvent: events[4]._id,
+        relatedClient: clients[4]._id,
+        subtasks: [
+          { 
+            title: "Draft contract terms",
+            description: "Include pricing, cancellation policy, and service details", 
+            completed: true,
+            completedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
+            completedBy: demoOwner._id,
+            order: 0,
+          },
+          { 
+            title: "Review with manager", 
+            completed: false,
+            order: 1,
+          },
+          { 
+            title: "Send to client for review", 
+            completed: false,
+            order: 2,
+          },
+        ],
+        tags: ["contract", "gala", "corporate"],
+        venueId: demoVenue._id,
+        createdBy: demoOwner._id,
+      },
+      {
+        title: "Order supplies for upcoming events",
+        description: "Review inventory and order necessary supplies for next month's events including linens, disposables, and cleaning supplies.",
+        priority: "medium",
+        status: "blocked",
+        category: "administrative",
+        dueDate: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7),
+        estimatedHours: 2,
+        progress: 0,
+        assignedTo: demoStaff._id,
+        blockedReason: "Waiting for budget approval from owner",
+        subtasks: [
+          { title: "Check current inventory levels", completed: false, order: 0 },
+          { title: "Get quotes from suppliers", completed: false, order: 1 },
+          { title: "Submit budget request", completed: false, order: 2 },
+        ],
+        tags: ["supplies", "inventory"],
+        venueId: demoVenue._id,
+        createdBy: demoManager._id,
+      },
+      {
+        title: "Staff training session - Event Setup Best Practices",
+        description: "Conduct training session for all staff on proper event setup procedures and best practices.",
+        priority: "medium",
+        status: "pending",
+        category: "administrative",
+        dueDate: new Date(today.getFullYear(), today.getMonth() + 1, 1),
+        estimatedHours: 4,
+        progress: 0,
+        assignedTo: demoOwner._id,
+        watchers: [demoManager._id, demoStaff._id],
+        subtasks: [
+          { title: "Prepare training materials", completed: false, order: 0 },
+          { title: "Schedule training session", completed: false, order: 1 },
+          { title: "Send calendar invites to staff", completed: false, order: 2 },
+          { title: "Conduct training", completed: false, order: 3 },
+        ],
+        tags: ["training", "staff", "procedures"],
+        venueId: demoVenue._id,
+        createdBy: demoOwner._id,
+      },
+      {
+        title: "Update emergency contact list",
+        description: "Review and update emergency contact information for all partners, staff, and key vendors.",
+        priority: "low",
+        status: "todo",
+        category: "administrative",
+        dueDate: new Date(today.getFullYear(), today.getMonth(), 30),
+        estimatedHours: 1,
+        progress: 0,
+        assignedTo: demoManager._id,
+        tags: ["emergency", "contacts", "safety"],
         venueId: demoVenue._id,
         createdBy: demoOwner._id,
       },
     ]);
-    console.log(`✅ Created ${tasks.length} tasks\n`);
+    console.log(`✅ Created ${tasks.length} enhanced tasks\n`);
+
+    // Create task dependencies
+    console.log("🔗 Creating task dependencies...");
+    tasks[1].dependencies.push({
+      task: tasks[0]._id,
+      type: "relates_to",
+    });
+    await tasks[1].save();
+    console.log("✅ Created task dependencies\n");
 
     // 12. Seed Reminders
     console.log("🔔 Seeding reminders...");
@@ -853,6 +1077,7 @@ const seedDatabase = async () => {
         relatedEvent: events[0]._id,
         relatedClient: clients[1]._id,
         relatedPayment: payments[0]._id,
+        relatedTask: tasks[0]._id,
         assignedTo: [demoManager._id],
         venueId: demoVenue._id,
         createdBy: demoManager._id,
@@ -868,6 +1093,7 @@ const seedDatabase = async () => {
         status: "active",
         notificationMethods: ["email", "sms", "in_app"],
         relatedEvent: events[1]._id,
+        relatedTask: tasks[1]._id,
         assignedTo: [demoOwner._id, demoManager._id, demoStaff._id],
         venueId: demoVenue._id,
         createdBy: demoOwner._id,
@@ -919,6 +1145,7 @@ const seedDatabase = async () => {
         notificationMethods: ["email", "in_app"],
         relatedEvent: events[4]._id,
         relatedClient: clients[4]._id,
+        relatedTask: tasks[6]._id,
         assignedTo: [demoOwner._id],
         venueId: demoVenue._id,
         createdBy: demoOwner._id,
@@ -938,6 +1165,7 @@ const seedDatabase = async () => {
         },
         status: "active",
         notificationMethods: ["in_app"],
+        relatedTask: tasks[4]._id,
         assignedTo: [demoStaff._id],
         venueId: demoVenue._id,
         createdBy: demoOwner._id,
@@ -946,27 +1174,41 @@ const seedDatabase = async () => {
     console.log(`✅ Created ${reminders.length} reminders\n`);
 
     // Summary
-    console.log("\n" + "=".repeat(50));
+    console.log("\n" + "=".repeat(60));
     console.log("🎉 DATABASE SEEDING COMPLETED SUCCESSFULLY!");
-    console.log("=".repeat(50));
+    console.log("=".repeat(60));
     console.log("\n📊 Summary:");
     console.log(`   ✅ ${createdPermissions.length} Permissions`);
     console.log(`   ✅ ${Object.keys(roles).length} Roles`);
-    console.log(`   ✅ 1 Venue`);
+    console.log(`   ✅ 1 Venue (Fiesta Demo Venue)`);
     console.log(`   ✅ 3 Users (Owner, Manager, Staff)`);
     console.log(`   ✅ ${clients.length} Clients`);
     console.log(`   ✅ ${partners.length} Partners`);
     console.log(`   ✅ ${events.length} Events`);
     console.log(`   ✅ ${payments.length} Payments`);
     console.log(`   ✅ ${financeRecords.length} Finance Records`);
-    console.log(`   ✅ ${tasks.length} Tasks`);
+    console.log(`   ✅ ${tasks.length} Enhanced Tasks with:`);
+    console.log(`      - Subtasks with descriptions and order`);
+    console.log(`      - Comments and mentions`);
+    console.log(`      - Progress tracking`);
+    console.log(`      - Watchers and assignees`);
+    console.log(`      - Tags and dependencies`);
+    console.log(`      - Multiple statuses (pending, todo, in_progress, completed, blocked)`);
     console.log(`   ✅ ${reminders.length} Reminders`);
     console.log("\n🔐 Login Credentials:");
     console.log("   Owner:   owner@demo.com   | password123");
     console.log("   Manager: manager@demo.com | password123");
     console.log("   Staff:   staff@demo.com   | password123");
-    console.log("\n✨ Your database is now populated with sample data!");
-    console.log("   Start your server and explore the application.\n");
+    console.log("\n✨ Your database is now populated with comprehensive demo data!");
+    console.log("   All enhanced task features are available:");
+    console.log("   • Task statuses, priorities, and categories");
+    console.log("   • Progress tracking and time logging");
+    console.log("   • Subtasks with completion tracking");
+    console.log("   • Comments and collaboration");
+    console.log("   • Watchers and assignments");
+    console.log("   • Tags and dependencies");
+    console.log("   • Blocked tasks with reasons");
+    console.log("   Start your server and explore the full task management system!\n");
     
     process.exit(0);
   } catch (error) {
