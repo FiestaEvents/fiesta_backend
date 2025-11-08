@@ -1063,6 +1063,33 @@ const seedDatabase = async () => {
 
     // 12. Seed Reminders
     console.log("🔔 Seeding reminders...");
+    const invoices = [
+  {
+    invoiceNumber: 'VEN-0001',
+    client: null, 
+    clientName: 'John and Sarah Wedding',
+    clientEmail: 'john.sarah@example.com',
+    issueDate: new Date('2024-11-01'),
+    dueDate: new Date('2024-12-01'),
+    items: [
+      {
+        description: 'Venue Rental - Main Hall',
+        quantity: 1,
+        rate: 5000,
+        amount: 5000
+      },
+      {
+        description: 'Catering Service',
+        quantity: 100,
+        rate: 50,
+        amount: 5000
+      }
+    ],
+    subtotal: 10000,
+    tax: 1000,
+    totalAmount: 11000,
+    status: 'paid'
+  },];
     const reminders = await Reminder.create([
       {
         title: "Final payment due - Smith-Johnson Wedding",

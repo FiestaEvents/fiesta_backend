@@ -2,31 +2,33 @@ import mongoose from "mongoose";
 
 const partnerSchema = new mongoose.Schema(
   {
-    name: { 
-      type: String, 
+    name: {
+      type: String,
       required: [true, "Partner name is required"],
       trim: true,
     },
-    email: { 
-      type: String, 
+    email: {
+      type: String,
       required: [true, "Email is required"],
       trim: true,
       lowercase: true,
       match: [/^\S+@\S+\.\S+$/, "Please provide a valid email"],
     },
-    phone: { 
-      type: String, 
+    phone: {
+      type: String,
       required: [true, "Phone is required"],
       trim: true,
     },
-    venueId: { 
-      type: mongoose.Schema.Types.ObjectId, 
-      ref: "Venue", 
+    venueId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Venue",
       required: true,
     },
     category: {
       type: String,
       enum: [
+        "driver",
+        "bakery",
         "catering",
         "decoration",
         "photography",
@@ -36,22 +38,23 @@ const partnerSchema = new mongoose.Schema(
         "audio_visual",
         "floral",
         "entertainment",
+        "hairstyling",
         "other",
       ],
       required: [true, "Category is required"],
     },
     company: { type: String },
-    status: { 
-      type: String, 
-      enum: ["active", "inactive"], 
+    status: {
+      type: String,
+      enum: ["active", "inactive"],
       default: "active",
     },
     location: { type: String },
     specialties: { type: String },
     hourlyRate: { type: Number, min: 0 },
-    rating: { 
-      type: Number, 
-      min: 0, 
+    rating: {
+      type: Number,
+      min: 0,
       max: 5,
       default: 0,
     },
@@ -70,12 +73,12 @@ const partnerSchema = new mongoose.Schema(
       type: String,
       maxlength: [1000, "Notes cannot exceed 1000 characters"],
     },
-    createdBy: { 
-      type: mongoose.Schema.Types.ObjectId, 
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
   },
-  { 
+  {
     timestamps: true,
   }
 );

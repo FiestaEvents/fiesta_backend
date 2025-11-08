@@ -63,7 +63,6 @@ const eventSchema = new mongoose.Schema(
         default: 0,
       },
     },
-    // FIXED: Reference Payment documents instead of nested object
     payments: [
       {
         type: mongoose.Schema.Types.ObjectId,

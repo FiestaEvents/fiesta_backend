@@ -10,6 +10,7 @@ import reminderRoutes from "./reminder.routes.js";
 import roleRoutes from "./role.routes.js";
 import teamRoutes from "./team.routes.js";
 import venueRoutes from "./venue.routes.js";
+import invoices from './invoices.routes.js';
 
 const router = express.Router();
 
@@ -25,5 +26,6 @@ router.use("/reminders", reminderRoutes);
 router.use("/roles", roleRoutes);
 router.use("/team", teamRoutes);
 router.use("/venues", venueRoutes);
+router.use('/invoices', invoices);
 
 export default router;
