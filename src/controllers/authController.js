@@ -10,6 +10,7 @@ import {
 import { User, Venue, Role, Permission } from "../models/index.js";
 import { PERMISSIONS } from "../config/permissions.js";
 import { DEFAULT_ROLES } from "../config/roles.js";
+import VenueSpace from "../models/VenueSpace.js";
 
 /**
  * @desc    Register new venue owner
@@ -17,7 +18,16 @@ import { DEFAULT_ROLES } from "../config/roles.js";
  * @access  Public
  */
 export const register = asyncHandler(async (req, res) => {
-  const { name, email, password, phone, venueName, venueAddress } = req.body;
+  const {
+    name,
+    email,
+    password,
+    phone,
+    venueName,
+    description,
+    address,
+    spaces = [],
+  } = req.body;
 
   // Check if user already exists
   const existingUser = await User.findOne({ email });
@@ -25,11 +35,20 @@ export const register = asyncHandler(async (req, res) => {
     throw new ApiError("Email already registered", 400);
   }
 
-  // Create venue
+  // Format address object (minimal processing)
+  const formattedAddress = {
+    street: address?.street || "",
+    city: address?.city || "",
+    state: address?.state || "",
+    zipCode: address?.zipCode || "",
+    country: address?.country || "",
+  };
+
+  // Create basic venue first (fast operation)
   const venue = await Venue.create({
     name: venueName,
-    description: `Welcome to ${venueName}`,
-    address: venueAddress,
+    description: description || `Welcome to ${venueName}`,
+    address: formattedAddress,
     contact: {
       phone,
       email,
@@ -51,40 +70,17 @@ export const register = asyncHandler(async (req, res) => {
     timeZone: "UTC",
   });
 
-  // Seed permissions for this venue
-  const permissionPromises = PERMISSIONS.map(async (perm) => {
-    return Permission.findOneAndUpdate({ name: perm.name }, perm, {
-      upsert: true,
-      new: true,
-    });
-  });
-  const createdPermissions = await Promise.all(permissionPromises);
-
-  const permissionMap = {};
-  createdPermissions.forEach((p) => {
-    permissionMap[p.name] = p._id;
+  // Create basic owner role (fast operation)
+  const ownerRole = await Role.create({
+    name: "Owner",
+    description: "Venue owner with full permissions",
+    level: 100,
+    permissions: [],
+    venueId: venue._id,
+    isSystemRole: true,
   });
 
-  // Create default roles for this venue
-  const rolePromises = DEFAULT_ROLES.map(async (roleConfig) => {
-    const permissionIds =
-      roleConfig.permissions === "ALL"
-        ? createdPermissions.map((p) => p._id)
-        : roleConfig.permissions
-            .map((permName) => permissionMap[permName])
-            .filter(Boolean);
-
-    return Role.create({
-      ...roleConfig,
-      permissions: permissionIds,
-      venueId: venue._id,
-    });
-  });
-
-  const createdRoles = await Promise.all(rolePromises);
-  const ownerRole = createdRoles.find((r) => r.name === "Owner");
-
-  // Create user
+  // Create user (fast operation)
   const user = await User.create({
     name,
     email,
@@ -99,21 +95,10 @@ export const register = asyncHandler(async (req, res) => {
   venue.owner = user._id;
   await venue.save();
 
-  // Generate token
+  // Generate token (fast operation)
   const token = generateToken(user._id);
 
-  // Send welcome email
-  try {
-    await sendWelcomeEmail({
-      email: user.email,
-      userName: user.name,
-      venueName: venue.name,
-    });
-  } catch (error) {
-    console.error("Failed to send welcome email:", error);
-  }
-
-  // Return response
+  // Return immediate response with user details
   new ApiResponse(
     {
       user: {
@@ -127,11 +112,127 @@ export const register = asyncHandler(async (req, res) => {
         },
       },
       token,
+      setupStatus: "in_progress",
     },
-    "Registration successful",
+    "Registration successful. Your venue setup is being completed in the background.",
     201
   ).send(res);
+
+  // Continue with heavy processing asynchronously after sending response
+  completeVenueSetupAsync({
+    venueId: venue._id,
+    userId: user._id,
+    spaces,
+    userEmail: email,
+    userName: name,
+    venueName: venueName,
+  });
 });
+
+/**
+ * Async function to handle the heavy venue setup after response is sent
+ */
+const completeVenueSetupAsync = async (setupData) => {
+  const { venueId, userId, spaces, userEmail, userName, venueName } = setupData;
+
+  try {
+    // Seed permissions for this venue (heavy operation)
+    const permissionPromises = PERMISSIONS.map(async (perm) => {
+      return Permission.findOneAndUpdate({ name: perm.name }, perm, {
+        upsert: true,
+        new: true,
+      });
+    });
+    const createdPermissions = await Promise.all(permissionPromises);
+
+    const permissionMap = {};
+    createdPermissions.forEach((p) => {
+      permissionMap[p.name] = p._id;
+    });
+
+    // Create all default roles with proper permissions (heavy operation)
+    const rolePromises = DEFAULT_ROLES.map(async (roleConfig) => {
+      // Skip owner role as it's already created
+      if (roleConfig.name === "Owner") return null;
+
+      const permissionIds =
+        roleConfig.permissions === "ALL"
+          ? createdPermissions.map((p) => p._id)
+          : roleConfig.permissions
+              .map((permName) => permissionMap[permName])
+              .filter(Boolean);
+
+      return Role.create({
+        ...roleConfig,
+        permissions: permissionIds,
+        venueId: venueId,
+      });
+    }).filter(Boolean); // Remove null promises
+
+    const createdRoles = await Promise.all(rolePromises);
+
+    // Update owner role with full permissions
+    const ownerRole = await Role.findOne({ venueId: venueId, name: "Owner" });
+    if (ownerRole) {
+      ownerRole.permissions = createdPermissions.map((p) => p._id);
+      await ownerRole.save();
+    }
+
+    // Create venue spaces if provided (heavy operation)
+    let createdSpaces = [];
+    if (spaces && spaces.length > 0) {
+      const spacePromises = spaces.map(async (space) => {
+        const venueSpace = await VenueSpace.create({
+          name: space.name,
+          description: space.description || `Welcome to ${space.name}`,
+          capacity: {
+            min: parseInt(space.minCapacity) || 1,
+            max: parseInt(space.maxCapacity) || 100,
+          },
+          basePrice: parseFloat(space.basePrice) || 0,
+          amenities: space.amenities || [],
+          images: space.images || [],
+          operatingHours: {
+            monday: { open: "09:00", close: "18:00", closed: false },
+            tuesday: { open: "09:00", close: "18:00", closed: false },
+            wednesday: { open: "09:00", close: "18:00", closed: false },
+            thursday: { open: "09:00", close: "18:00", closed: false },
+            friday: { open: "09:00", close: "18:00", closed: false },
+            saturday: { open: "09:00", close: "18:00", closed: false },
+            sunday: { open: "09:00", close: "18:00", closed: false },
+          },
+          venueId: venueId,
+          owner: userId,
+          isReserved: false,
+          isActive: true,
+          isArchived: false,
+          timeZone: "UTC",
+        });
+        return venueSpace;
+      });
+
+      createdSpaces = await Promise.all(spacePromises);
+    }
+
+    // Send welcome email (heavy operation)
+    try {
+      await sendWelcomeEmail({
+        email: userEmail,
+        userName: userName,
+        venueName: venueName,
+        spacesCount: createdSpaces.length,
+      });
+    } catch (error) {
+      console.error("Failed to send welcome email:", error);
+    }
+
+    console.log(`Venue setup completed successfully for user: ${userEmail}`);
+  } catch (error) {
+    console.error("Error during async venue setup:", error);
+    // Here you could implement error handling like sending an error notification email
+    // or updating a setup status in the database
+  }
+};
 
 /**
  * @desc    Login user
@@ -140,16 +241,13 @@ export const register = asyncHandler(async (req, res) => {
  */
 export const verifyEmail = asyncHandler(async (req, res) => {
   const { email } = req.body;
-
   // Check if user exists
   const user = await User.findOne({ email });
-
   if (user) {
     throw new ApiError("Try another email", 401);
   }
-
   // Return
-  res.status(200);
+  return res.status(200).send({ message: "Email is available" });
 });
 
 /**

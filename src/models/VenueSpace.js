@@ -1,38 +1,23 @@
 import mongoose from "mongoose";
 
-const venueSchema = new mongoose.Schema(
+const venueSpaceSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, "Venue name is required"],
+      required: [true, "Venue space name is required"],
       trim: true,
     },
     description: {
       type: String,
       required: [true, "Description is required"],
     },
-    address: {
-      street: { type: String },
-      city: { type: String, required: true },
-      state: { type: String },
-      zipCode: { type: String },
-      country: { type: String },
-    },
-    contact: {
-      phone: { type: String, required: true },
-      email: {
-        type: String,
-        required: true,
-        match: [/^\S+@\S+\.\S+$/, "Please provide a valid email"],
-      },
-    },
+
     capacity: {
       min: { type: Number, required: true, min: 1 },
       max: { type: Number, required: true, min: 1 },
     },
-    pricing: {
-      basePrice: { type: Number, required: true, min: 0 },
-    },
+
+    basePrice: { type: Number, required: true, min: 0 },
     amenities: [String],
     images: [String],
     operatingHours: {
@@ -72,26 +57,18 @@ const venueSchema = new mongoose.Schema(
         closed: { type: Boolean, default: false },
       },
     },
-    subscription: {
-      plan: {
-        type: String,
-        enum: ["free", "monthly", "annual", "lifetime", "custom"],
-        required: true,
-      },
-      status: {
-        type: String,
-        enum: ["active", "inactive", "pending", "cancelled"],
-        required: true,
-      },
-      startDate: { type: Date, required: true },
-      endDate: { type: Date },
-      amount: { type: Number, required: true },
+    venueId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Venue",
+      required: true,
     },
     owner: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    isReserved: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
+    isArchived: { type: Boolean, default: true },
     timeZone: { type: String, required: true, default: "UTC" },
   },
   {
@@ -100,34 +77,22 @@ const venueSchema = new mongoose.Schema(
 );
 
 // Cascade delete related documents
-venueSchema.pre("deleteOne", { document: true }, async function (next) {
+venueSpaceSchema.pre("deleteOne", { document: true }, async function (next) {
   const venueId = this._id;
 
   // Import models
   const Event = mongoose.model("Event");
-  const Client = mongoose.model("Client");
-  const Partner = mongoose.model("Partner");
-  const Payment = mongoose.model("Payment");
-  const Finance = mongoose.model("Finance");
   const Task = mongoose.model("Task");
   const Reminder = mongoose.model("Reminder");
-  const Role = mongoose.model("Role");
-  const User = mongoose.model("User");
 
   // Delete all related documents
   await Promise.all([
     Event.deleteMany({ venueId }),
-    Client.deleteMany({ venueId }),
-    Partner.deleteMany({ venueId }),
-    Payment.deleteMany({ venueId }),
-    Finance.deleteMany({ venueId }),
     Task.deleteMany({ venueId }),
     Reminder.deleteMany({ venueId }),
-    Role.deleteMany({ venueId, isSystemRole: false }),
-    User.deleteMany({ venueId }),
   ]);
 
   next();
 });
 
-export default mongoose.model("Venue", venueSchema);
+export default mongoose.model("VenueSpace", venueSpaceSchema);
