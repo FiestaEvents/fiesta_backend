@@ -66,6 +66,113 @@ export const getEvents = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Get events by client ID
+ * @route   GET /api/v1/events/client/:clientId
+ * @access  Private
+ */
+export const getEventsByClient = asyncHandler(async (req, res) => {
+  const { clientId } = req.params;
+  const {
+    page = 1,
+    limit = 50,
+    status,
+    sortBy = "startDate",
+    order = "desc",
+  } = req.query;
+
+  // Verify client exists and belongs to venue
+  const client = await Client.findOne({
+    _id: clientId,
+    venueId: req.user.venueId,
+  });
+
+  if (!client) {
+    throw new ApiError("Client not found", 404);
+  }
+
+  // Build query
+  const query = {
+    clientId: clientId,
+    venueId: req.user.venueId,
+  };
+
+  if (status) query.status = status;
+
+  // Pagination
+  const skip = (page - 1) * limit;
+
+  // Sort
+  const sortOrder = order === "asc" ? 1 : -1;
+  const sortOptions = { [sortBy]: sortOrder };
+
+  // Execute query
+  const [events, total] = await Promise.all([
+    Event.find(query)
+      .populate("clientId", "name email phone")
+      .populate("partners.partner", "name category")
+      .populate("createdBy", "name email")
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(parseInt(limit)),
+    Event.countDocuments(query),
+  ]);
+
+  // Calculate statistics for this client
+  const stats = await Event.aggregate([
+    { $match: query },
+    {
+      $group: {
+        _id: null,
+        totalEvents: { $sum: 1 },
+        totalRevenue: { $sum: "$pricing.totalAmount" },
+        totalPaid: { $sum: "$paymentSummary.paidAmount" },
+        upcomingEvents: {
+          $sum: {
+            $cond: [
+              { 
+                $and: [
+                  { $gt: ["$startDate", new Date()] },
+                  { $ne: ["$status", "cancelled"] }
+                ]
+              },
+              1,
+              0
+            ]
+          }
+        }
+      }
+    }
+  ]);
+
+  const clientStats = stats[0] || {
+    totalEvents: 0,
+    totalRevenue: 0,
+    totalPaid: 0,
+    upcomingEvents: 0
+  };
+
+  new ApiResponse({
+    events,
+    client: {
+      _id: client._id,
+      name: client.name,
+      email: client.email,
+      phone: client.phone,
+    },
+    stats: {
+      ...clientStats,
+      pendingAmount: clientStats.totalRevenue - clientStats.totalPaid
+    },
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      pages: Math.ceil(total / limit),
+    },
+  }).send(res);
+});
+
+/**
  * @desc    Get single event
  * @route   GET /api/v1/events/:id
  * @access  Private

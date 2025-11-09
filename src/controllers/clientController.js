@@ -1,7 +1,7 @@
 import asyncHandler from "../middleware/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import { Client, Event } from "../models/index.js";
+import { Client, Event,Payment } from "../models/index.js";
 
 /**
  * @desc    Get all clients
@@ -76,6 +76,11 @@ export const getClients = asyncHandler(async (req, res) => {
  * @route   GET /api/v1/clients/:id
  * @access  Private
  */
+/**
+ * @desc    Get single client
+ * @route   GET /api/v1/clients/:id
+ * @access  Private
+ */
 export const getClient = asyncHandler(async (req, res) => {
   const client = await Client.findOne({
     _id: req.params.id,
@@ -86,28 +91,70 @@ export const getClient = asyncHandler(async (req, res) => {
     throw new ApiError("Client not found", 404);
   }
 
-  // Get client's events
+  // Get client's events with payment information
   const events = await Event.find({ clientId: client._id })
-    .select("title type startDate status pricing")
+    .select("title type startDate endDate status pricing paymentSummary guestCount")
+    .populate("payments", "amount status method paidDate")
     .sort({ startDate: -1 })
-    .limit(10);
+    .limit(50);
 
-  // Calculate total spent
-  const totalSpent = await Event.aggregate([
+  // Calculate comprehensive stats
+  const totalSpentResult = await Event.aggregate([
     { $match: { clientId: client._id } },
     { $group: { _id: null, total: { $sum: "$pricing.totalAmount" } } },
   ]);
 
+  const paymentStats = await Event.aggregate([
+    { $match: { clientId: client._id } },
+    {
+      $group: {
+        _id: null,
+        totalRevenue: { $sum: "$pricing.totalAmount" },
+        totalPaid: { $sum: "$paymentSummary.paidAmount" },
+        upcomingEvents: {
+          $sum: {
+            $cond: [
+              { $and: [{ $gt: ["$startDate", new Date()] }, { $ne: ["$status", "cancelled"] }] },
+              1,
+              0
+            ]
+          }
+        }
+      }
+    }
+  ]);
+
+  const stats = paymentStats[0] || {
+    totalRevenue: 0,
+    totalPaid: 0,
+    upcomingEvents: 0
+  };
+
+  // Get recent payments - FIXED: Now using the imported Payment model
+  const recentPayments = await Payment.find({ 
+    client: client._id,
+    type: 'income'
+  })
+    .select("amount method status paidDate reference description")
+    .sort({ paidDate: -1 })
+    .limit(10);
+
   new ApiResponse({
     client: {
       ...client.toObject(),
-      recentEvents: events,
-      totalSpent: totalSpent[0]?.total || 0,
-      eventCount: events.length,
+      events: events,
+      recentPayments: recentPayments,
+      stats: {
+        totalSpent: totalSpentResult[0]?.total || 0,
+        totalRevenue: stats.totalRevenue,
+        totalPaid: stats.totalPaid,
+        upcomingEvents: stats.upcomingEvents,
+        totalEvents: events.length,
+        pendingAmount: stats.totalRevenue - stats.totalPaid
+      }
     },
   }).send(res);
 });
-
 /**
  * @desc    Create new client
  * @route   POST /api/v1/clients
@@ -188,11 +235,11 @@ export const deleteClient = asyncHandler(async (req, res) => {
   if (eventCount > 0) {
     throw new ApiError(
       `Cannot delete client with ${eventCount} associated event(s)`,
-      400
+     400
     );
   }
 
-  await client.deleteOne();
+await client.deleteOne();
 
   new ApiResponse(null, "Client deleted successfully").send(res);
 });

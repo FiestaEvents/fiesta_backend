@@ -1,6 +1,7 @@
 import express from "express";
 import {
   getEvents,
+  getEventsByClient, // Add this import
   getEvent,
   createEvent,
   updateEvent,
@@ -24,6 +25,13 @@ router.use(authenticate);
 
 // Stats
 router.get("/stats", checkPermission("events.read.all"), getEventStats);
+
+// Get events by client ID - ADD THIS ROUTE
+router.get(
+  "/client/:clientId",
+  checkPermission("events.read.all"),
+  getEventsByClient
+);
 
 // CRUD operations
 router
