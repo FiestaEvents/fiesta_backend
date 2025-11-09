@@ -3,7 +3,10 @@ import asyncHandler from "../middleware/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { generateToken } from "../utils/tokenService.js";
-import { sendWelcomeEmail, sendPasswordResetEmail } from "../utils/emailService.js";
+import {
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+} from "../utils/emailService.js";
 import { User, Venue, Role, Permission } from "../models/index.js";
 import { PERMISSIONS } from "../config/permissions.js";
 import { DEFAULT_ROLES } from "../config/roles.js";
@@ -26,16 +29,10 @@ export const register = asyncHandler(async (req, res) => {
   const venue = await Venue.create({
     name: venueName,
     description: `Welcome to ${venueName}`,
-    address: venueAddress || {
-      street: "123 Main St",
-      city: "City",
-      state: "State",
-      zipCode: "12345",
-      country: "Country",
-    },
+    address: venueAddress,
     contact: {
-      phone: phone || "+1234567890",
-      email: email,
+      phone,
+      email,
     },
     capacity: {
       min: 50,
@@ -45,22 +42,21 @@ export const register = asyncHandler(async (req, res) => {
       basePrice: 0,
     },
     subscription: {
-      plan: "monthly",
+      plan: "free",
       status: "active",
       startDate: new Date(),
       amount: 0,
     },
-    owner: null, 
+    owner: null,
     timeZone: "UTC",
   });
 
   // Seed permissions for this venue
   const permissionPromises = PERMISSIONS.map(async (perm) => {
-    return Permission.findOneAndUpdate(
-      { name: perm.name },
-      perm,
-      { upsert: true, new: true }
-    );
+    return Permission.findOneAndUpdate({ name: perm.name }, perm, {
+      upsert: true,
+      new: true,
+    });
   });
   const createdPermissions = await Promise.all(permissionPromises);
 
@@ -74,7 +70,9 @@ export const register = asyncHandler(async (req, res) => {
     const permissionIds =
       roleConfig.permissions === "ALL"
         ? createdPermissions.map((p) => p._id)
-        : roleConfig.permissions.map((permName) => permissionMap[permName]).filter(Boolean);
+        : roleConfig.permissions
+            .map((permName) => permissionMap[permName])
+            .filter(Boolean);
 
     return Role.create({
       ...roleConfig,
@@ -140,6 +138,25 @@ export const register = asyncHandler(async (req, res) => {
  * @route   POST /api/v1/auth/login
  * @access  Public
  */
+export const verifyEmail = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  // Check if user exists
+  const user = await User.findOne({ email });
+
+  if (user) {
+    throw new ApiError("Try another email", 401);
+  }
+
+  // Return
+  res.status(200);
+});
+
+/**
+ * @desc    Login user
+ * @route   POST /api/v1/auth/login
+ * @access  Public
+ */
 export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
@@ -183,34 +200,37 @@ export const login = asyncHandler(async (req, res) => {
   const token = generateToken(user._id);
 
   // Return response
-  new ApiResponse({
-    user: {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      avatar: user.avatar,
-      role: {
-        id: user.roleId._id,
-        name: user.roleId.name,
-        type: user.roleType,
-        level: user.roleId.level,
+  new ApiResponse(
+    {
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        avatar: user.avatar,
+        role: {
+          id: user.roleId._id,
+          name: user.roleId.name,
+          type: user.roleType,
+          level: user.roleId.level,
+        },
+        venue: {
+          id: user.venueId._id,
+          name: user.venueId.name,
+        },
+        permissions: populatedPermissions.map((p) => ({
+          id: p._id,
+          name: p.name,
+          displayName: p.displayName,
+          module: p.module,
+          action: p.action,
+          scope: p.scope,
+        })),
       },
-      venue: {
-        id: user.venueId._id,
-        name: user.venueId.name,
-      },
-      permissions: populatedPermissions.map((p) => ({
-        id: p._id,
-        name: p.name,
-        displayName: p.displayName,
-        module: p.module,
-        action: p.action,
-        scope: p.scope,
-      })),
+      token,
     },
-    token,
-  }, "Login successful").send(res);
+    "Login successful"
+  ).send(res);
 });
 
 /**
@@ -361,10 +381,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
       userName: user.name,
     });
 
-    new ApiResponse(
-      null,
-      "Password reset link sent to your email"
-    ).send(res);
+    new ApiResponse(null, "Password reset link sent to your email").send(res);
   } catch (error) {
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;

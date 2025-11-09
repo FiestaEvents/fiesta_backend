@@ -22,10 +22,7 @@ export const registerValidator = [
     .isLength({ min: 6 })
     .withMessage("Password must be at least 6 characters"),
 
-  body("venueName")
-    .trim()
-    .notEmpty()
-    .withMessage("Venue name is required"),
+  body("venueName").trim().notEmpty().withMessage("Venue name is required"),
 
   body("phone")
     .optional()
@@ -43,9 +40,17 @@ export const loginValidator = [
     .withMessage("Please provide a valid email")
     .normalizeEmail(),
 
-  body("password")
+  body("password").notEmpty().withMessage("Password is required"),
+];
+
+export const emailValidator = [
+  body("email")
+    .trim()
     .notEmpty()
-    .withMessage("Password is required"),
+    .withMessage("Email is required")
+    .isEmail()
+    .withMessage("Please provide a valid email")
+    .normalizeEmail(),
 ];
 
 export const forgotPasswordValidator = [
@@ -65,7 +70,5 @@ export const resetPasswordValidator = [
     .isLength({ min: 6 })
     .withMessage("Password must be at least 6 characters"),
 
-  body("token")
-    .notEmpty()
-    .withMessage("Reset token is required"),
+  body("token").notEmpty().withMessage("Reset token is required"),
 ];

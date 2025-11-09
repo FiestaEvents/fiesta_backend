@@ -8,6 +8,7 @@ import {
   forgotPassword,
   resetPassword,
   logout,
+  verifyEmail,
 } from "../controllers/authController.js";
 import { authenticate } from "../middleware/auth.js";
 import validateRequest from "../middleware/validateRequest.js";
@@ -16,6 +17,7 @@ import {
   loginValidator,
   forgotPasswordValidator,
   resetPasswordValidator,
+  emailValidator,
 } from "../validators/authValidator.js";
 
 const router = express.Router();
@@ -23,8 +25,19 @@ const router = express.Router();
 // Public routes
 router.post("/register", registerValidator, validateRequest, register);
 router.post("/login", loginValidator, validateRequest, login);
-router.post("/forgot-password", forgotPasswordValidator, validateRequest, forgotPassword);
-router.post("/reset-password", resetPasswordValidator, validateRequest, resetPassword);
+router.post("/verify-email", emailValidator, validateRequest, verifyEmail);
+router.post(
+  "/forgot-password",
+  forgotPasswordValidator,
+  validateRequest,
+  forgotPassword
+);
+router.post(
+  "/reset-password",
+  resetPasswordValidator,
+  validateRequest,
+  resetPassword
+);
 
 // Protected routes
 router.get("/me", authenticate, getCurrentUser);
