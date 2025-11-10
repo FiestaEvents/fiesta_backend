@@ -10,6 +10,7 @@ import Finance from "./Finance.js";
 import Task from "./Task.js";
 import Reminder from "./Reminder.js";
 import TeamInvitation from "./TeamInvitation.js";
+import VenueSpace from "./VenueSpace.js";
 
 export {
   User,
@@ -24,4 +25,5 @@ export {
   Task,
   Reminder,
   TeamInvitation,
+  VenueSpace,
 };

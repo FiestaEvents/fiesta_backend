@@ -68,7 +68,7 @@ const venueSpaceSchema = new mongoose.Schema(
     },
     isReserved: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
-    isArchived: { type: Boolean, default: true },
+    isArchived: { type: Boolean, default: false },
     timeZone: { type: String, required: true, default: "UTC" },
   },
   {

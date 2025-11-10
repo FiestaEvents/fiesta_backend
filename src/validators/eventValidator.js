@@ -26,24 +26,35 @@ export const createEventValidator = [
     .isISO8601()
     .withMessage("Invalid start date format"),
 
-body("endDate")
-  .notEmpty()
-  .withMessage("End date is required")
-  .isISO8601()
-  .withMessage("Invalid end date format")
-  .custom((value, { req }) => {
+  body("endDate").custom((value, { req }) => {
+    if (req.body.sameDayEvent === true || req.body.sameDayEvent === "true") {
+      return true;
+    }
+
+    if (!value) {
+      throw new Error("End date is required");
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isNaN(Date.parse(value))) {
+      throw new Error("Invalid end date format");
+    }
+
     const startDate = new Date(req.body.startDate);
     const endDate = new Date(value);
-    
-    // If same date, check times
-    if (req.body.startDate === value && req.body.startTime && req.body.endTime) {
+
+    if (
+      req.body.startDate === value &&
+      req.body.startTime &&
+      req.body.endTime
+    ) {
       if (req.body.startTime >= req.body.endTime) {
-        throw new Error("End time must be after start time when dates are the same");
+        throw new Error(
+          "End time must be after start time when dates are the same"
+        );
       }
       return true;
     }
-    
-    // Check if end date is before or equal to start date
+
     if (endDate <= startDate) {
       throw new Error("End date must be after start date");
     }
@@ -67,9 +78,7 @@ body("endDate")
 ];
 
 export const updateEventValidator = [
-  param("id")
-    .isMongoId()
-    .withMessage("Invalid event ID"),
+  param("id").isMongoId().withMessage("Invalid event ID"),
 
   body("title")
     .optional()
@@ -87,10 +96,7 @@ export const updateEventValidator = [
     .isISO8601()
     .withMessage("Invalid start date format"),
 
-  body("endDate")
-    .optional()
-    .isISO8601()
-    .withMessage("Invalid end date format"),
+  body("endDate").optional().isISO8601().withMessage("Invalid end date format"),
 
   body("status")
     .optional()
@@ -99,9 +105,7 @@ export const updateEventValidator = [
 ];
 
 export const getEventValidator = [
-  param("id")
-    .isMongoId()
-    .withMessage("Invalid event ID"),
+  param("id").isMongoId().withMessage("Invalid event ID"),
 ];
 
 export const listEventsValidator = [
