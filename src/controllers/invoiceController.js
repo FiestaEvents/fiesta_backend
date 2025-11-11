@@ -8,12 +8,20 @@ import { sendInvoiceEmail } from '../utils/emailService.js';
 import PDFDocument from 'pdfkit';
 
 // ============================================
-// UTILITY: GENERATE PDF
+// UTILITY: GENERATE PDF (UPDATED TO MATCH FRONTEND)
 // ============================================
 const generateInvoicePDF = async (invoice, venue) => {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({ margin: 50 });
+      const doc = new PDFDocument({ 
+        margin: 50,
+        size: 'A4',
+        info: {
+          Title: `Invoice ${invoice.invoiceNumber}`,
+          Author: venue.name,
+          Subject: `Invoice for ${invoice.recipientName}`
+        }
+      });
       const chunks = [];
       
       doc.on('data', (chunk) => chunks.push(chunk));
@@ -23,141 +31,301 @@ const generateInvoicePDF = async (invoice, venue) => {
       // Determine if it's a client or partner invoice
       const isClientInvoice = invoice.invoiceType === 'client';
       
-      // Header with venue info
-      doc
-        .fontSize(20)
-        .text(venue.name, 50, 50)
-        .fontSize(10)
-        .text(`${venue.address.street}`, 50, 80)
-        .text(`${venue.address.city}, ${venue.address.state} ${venue.address.zipCode}`, 50, 95)
-        .text(`Phone: ${venue.contact.phone}`, 50, 110)
-        .text(`Email: ${venue.contact.email}`, 50, 125);
+      // Colors matching frontend
+      const colors = {
+        primary: '#ea580c', // orange-600
+        secondary: '#6b7280', // gray-500
+        dark: '#1f2937', // gray-900
+        light: '#9ca3af', // gray-400
+        success: '#16a34a', // green-600
+        warning: '#d97706', // yellow-600
+        danger: '#dc2626', // red-600
+        info: '#2563eb' // blue-600
+      };
 
-      // Invoice title and number
-      const invoiceTitle = isClientInvoice ? 'INVOICE' : 'BILL / INVOICE';
+      // Header Section - Matching frontend modal header
       doc
-        .fontSize(20)
-        .text(invoiceTitle, 400, 50)
-        .fontSize(10)
-        .text(`#${invoice.invoiceNumber}`, 400, 80)
-        .text(`Type: ${isClientInvoice ? 'Client Invoice' : 'Partner Bill'}`, 400, 95)
-        .text(`Date: ${invoice.issueDate.toLocaleDateString()}`, 400, 110)
-        .text(`Due: ${invoice.dueDate.toLocaleDateString()}`, 400, 125);
-
-      // Recipient information
-      const recipientLabel = isClientInvoice ? 'Bill To:' : 'Pay To:';
-      doc
+        .fillColor(colors.dark)
+        .fontSize(24)
+        .font('Helvetica-Bold')
+        .text(`Invoice #${invoice.invoiceNumber}`, 50, 50)
         .fontSize(12)
-        .text(recipientLabel, 50, 180)
-        .fontSize(10)
-        .text(invoice.recipientName, 50, 200)
-        .text(invoice.recipientEmail, 50, 215);
-      
-      if (invoice.recipientCompany) {
-        doc.text(invoice.recipientCompany, 50, 230);
-      }
-      
-      if (invoice.recipientAddress?.street) {
-        doc
-          .text(`${invoice.recipientAddress.street}`, 50, 245)
-          .text(
-            `${invoice.recipientAddress.city}, ${invoice.recipientAddress.state} ${invoice.recipientAddress.zipCode}`,
-            50,
-            260
-          );
-      }
+        .font('Helvetica')
+        .fillColor(colors.secondary)
+        .text(`Issued: ${invoice.issueDate.toLocaleDateString()}`, 50, 85);
 
-      // Table header
-      const tableTop = 320;
+      if (invoice.sentAt) {
+        doc.text(`Sent: ${invoice.sentAt.toLocaleDateString()}`, 50, 100);
+      }
+      // Recipient Information Section - Matching frontend layout
       doc
-        .fontSize(10)
-        .text('Description', 50, tableTop, { bold: true })
-        .text('Qty', 300, tableTop)
-        .text('Rate', 370, tableTop)
-        .text('Amount', 450, tableTop);
+        .fillColor(colors.dark)
+        .fontSize(14)
+        .font('Helvetica-Bold')
+        .text(isClientInvoice ? 'Bill To:' : 'Pay To:', 50, 150)
+        .fontSize(12)
+        .font('Helvetica')
+        .fillColor(colors.dark)
+        .text(invoice.recipientName, 50, 175);
 
-      doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).stroke();
-
-      // Items
-      let yPosition = tableTop + 30;
-      invoice.items.forEach((item) => {
+      let recipientY = 195;
+      if (invoice.recipientCompany) {
         doc
+          .fillColor(colors.secondary)
+          .text(invoice.recipientCompany, 50, recipientY);
+        recipientY += 20;
+      }
+
+      if (invoice.recipientEmail) {
+        doc.text(invoice.recipientEmail, 50, recipientY);
+        recipientY += 20;
+      }
+
+      if (invoice.recipientPhone) {
+        doc.text(invoice.recipientPhone, 50, recipientY);
+        recipientY += 20;
+      }
+
+      if (invoice.recipientAddress?.street) {
+        doc.text(invoice.recipientAddress.street, 50, recipientY);
+        recipientY += 15;
+        const cityStateZip = [
+          invoice.recipientAddress.city,
+          invoice.recipientAddress.state,
+          invoice.recipientAddress.zipCode
+        ].filter(Boolean).join(', ');
+        doc.text(cityStateZip, 50, recipientY);
+        recipientY += 20;
+      }
+
+      // Invoice Details Section - Right aligned like frontend
+      doc
+        .fillColor(colors.dark)
+        .fontSize(14)
+        .font('Helvetica-Bold')
+        .text('Invoice Details:', 350, 150)
+        .fontSize(12)
+        .font('Helvetica');
+
+      let detailsY = 175;
+      
+      // Due Date
+      doc
+        .fillColor(colors.secondary)
+        .text('Due Date:', 350, detailsY)
+        .fillColor(colors.dark)
+        .text(invoice.dueDate.toLocaleDateString(), 450, detailsY);
+      detailsY += 20;
+
+      // Event
+      if (invoice.event) {
+        doc
+          .fillColor(colors.secondary)
+          .text('Event:', 350, detailsY)
+          .fillColor(colors.dark)
+          .text(invoice.event.title, 450, detailsY);
+        detailsY += 20;
+      }
+
+      // Currency
+      if (invoice.currency) {
+        doc
+          .fillColor(colors.secondary)
+          .text('Currency:', 350, detailsY)
+          .fillColor(colors.dark)
+          .text(invoice.currency, 450, detailsY);
+        detailsY += 20;
+      }
+
+      // Items Table Section - Matching frontend table design
+      const tableTop = Math.max(recipientY, detailsY) + 40;
+      
+      // Table Header with background
+      doc
+        .rect(50, tableTop, 500, 25)
+        .fill('#f9fafb') // gray-50
+        .fillColor(colors.dark)
+        .fontSize(11)
+        .font('Helvetica-Bold')
+        .text('Description', 55, tableTop + 8)
+        .text('Qty', 350, tableTop + 8)
+        .text('Rate', 400, tableTop + 8)
+        .text('Amount', 470, tableTop + 8);
+
+      // Table rows
+      let itemY = tableTop + 25;
+      invoice.items.forEach((item, index) => {
+        // Alternate row background
+        if (index % 2 === 0) {
+          doc.rect(50, itemY, 500, 30).fill('#ffffff');
+        } else {
+          doc.rect(50, itemY, 500, 30).fill('#f8fafc'); // subtle gray
+        }
+
+        doc
+          .fillColor(colors.dark)
           .fontSize(10)
-          .text(item.description, 50, yPosition, { width: 230 })
-          .text(item.quantity.toString(), 300, yPosition)
-          .text(`${invoice.currency} ${item.rate.toFixed(2)}`, 370, yPosition)
-          .text(`${invoice.currency} ${item.amount.toFixed(2)}`, 450, yPosition);
-        yPosition += 25;
+          .font('Helvetica')
+          .text(item.description || 'No description', 55, itemY + 10, {
+            width: 280,
+            align: 'left'
+          });
+
+        // Category if exists
+        if (item.category) {
+          doc
+            .fillColor(colors.light)
+            .fontSize(8)
+            .text(item.category.replace(/_/g, ' '), 55, itemY + 22);
+        }
+
+        doc
+          .fillColor(colors.dark)
+          .fontSize(10)
+          .text((item.quantity || 1).toString(), 350, itemY + 10)
+          .text(`${invoice.currency} ${(item.rate || 0).toFixed(2)}`, 400, itemY + 10)
+          .text(`${invoice.currency} ${(item.amount || 0).toFixed(2)}`, 470, itemY + 10);
+
+        itemY += 30;
       });
 
-      // Totals
-      yPosition += 20;
-      doc.moveTo(50, yPosition).lineTo(550, yPosition).stroke();
-      yPosition += 15;
+      // Totals Section - Matching frontend totals layout
+      const totalsTop = itemY + 30;
+      const totalsWidth = 200;
 
       doc
-        .fontSize(10)
-        .text('Subtotal:', 370, yPosition)
-        .text(`${invoice.currency} ${invoice.subtotal.toFixed(2)}`, 450, yPosition);
+        .fillColor(colors.dark)
+        .fontSize(11);
 
+      let totalY = totalsTop;
+
+      // Subtotal
+      doc
+        .text('Subtotal:', 350, totalY)
+        .text(`${invoice.currency} ${(invoice.subtotal || 0).toFixed(2)}`, 470, totalY);
+      totalY += 20;
+
+      // Tax
       if (invoice.tax > 0) {
-        yPosition += 20;
+        const taxLabel = invoice.taxRate ? `Tax (${invoice.taxRate}%)` : 'Tax';
         doc
-          .text(`Tax (${invoice.taxRate}%):`, 370, yPosition)
-          .text(`${invoice.currency} ${invoice.tax.toFixed(2)}`, 450, yPosition);
+          .text(taxLabel, 350, totalY)
+          .text(`${invoice.currency} ${(invoice.tax || 0).toFixed(2)}`, 470, totalY);
+        totalY += 20;
       }
 
+      // Discount
       if (invoice.discount > 0) {
-        yPosition += 20;
         doc
-          .text('Discount:', 370, yPosition)
-          .text(`-${invoice.currency} ${invoice.discount.toFixed(2)}`, 450, yPosition);
+          .fillColor(colors.danger)
+          .text('Discount:', 350, totalY)
+          .text(`-${invoice.currency} ${(invoice.discount || 0).toFixed(2)}`, 470, totalY)
+          .fillColor(colors.dark);
+        totalY += 20;
       }
 
-      yPosition += 20;
-      doc.moveTo(370, yPosition).lineTo(550, yPosition).stroke();
-      yPosition += 15;
+      // Total line
+      doc
+        .moveTo(350, totalY)
+        .lineTo(550, totalY)
+        .strokeColor(colors.light)
+        .stroke();
+      totalY += 15;
 
       doc
-        .fontSize(12)
-        .text('Total:', 370, yPosition, { bold: true })
-        .text(`${invoice.currency} ${invoice.totalAmount.toFixed(2)}`, 450, yPosition);
+        .fontSize(14)
+        .font('Helvetica-Bold')
+        .text('Total:', 350, totalY)
+        .text(`${invoice.currency} ${(invoice.totalAmount || 0).toFixed(2)}`, 470, totalY);
+      totalY += 25;
 
-      if (invoice.paymentStatus.amountPaid > 0) {
-        yPosition += 20;
+      // Payment status if applicable
+      if (invoice.paymentStatus?.amountPaid > 0) {
         doc
-          .fontSize(10)
-          .text('Amount Paid:', 370, yPosition)
-          .text(`${invoice.currency} ${invoice.paymentStatus.amountPaid.toFixed(2)}`, 450, yPosition);
+          .fontSize(11)
+          .font('Helvetica')
+          .fillColor(colors.success)
+          .text('Amount Paid:', 350, totalY)
+          .text(`${invoice.currency} ${(invoice.paymentStatus.amountPaid || 0).toFixed(2)}`, 470, totalY);
+        totalY += 20;
 
-        yPosition += 20;
         doc
-          .fontSize(12)
-          .text('Amount Due:', 370, yPosition, { bold: true })
-          .text(`${invoice.currency} ${invoice.paymentStatus.amountDue.toFixed(2)}`, 450, yPosition);
+          .fontSize(14)
+          .font('Helvetica-Bold')
+          .fillColor(colors.dark)
+          .text('Amount Due:', 350, totalY)
+          .text(`${invoice.currency} ${(invoice.paymentStatus.amountDue || 0).toFixed(2)}`, 470, totalY);
+        totalY += 20;
       }
 
-      // Notes and terms
+      // Notes & Terms Section - Matching frontend layout
+      let contentY = totalY + 50;
+
       if (invoice.notes || invoice.terms) {
-        yPosition += 50;
+        doc
+          .moveTo(50, contentY)
+          .lineTo(550, contentY)
+          .strokeColor(colors.light)
+          .stroke();
+        contentY += 30;
+
         if (invoice.notes) {
-          doc.fontSize(10).text('Notes:', 50, yPosition).text(invoice.notes, 50, yPosition + 15, { width: 500 });
-          yPosition += 60;
+          doc
+            .fillColor(colors.dark)
+            .fontSize(12)
+            .font('Helvetica-Bold')
+            .text('Notes', 50, contentY)
+            .fontSize(10)
+            .font('Helvetica')
+            .fillColor(colors.secondary)
+            .text(invoice.notes, 50, contentY + 20, {
+              width: 500,
+              align: 'left'
+            });
+          
+          // Calculate height needed for notes and move Y position
+          const notesHeight = doc.heightOfString(invoice.notes, { width: 500 }) + 40;
+          contentY += notesHeight;
         }
+
         if (invoice.terms) {
-          doc.fontSize(10).text('Terms:', 50, yPosition).text(invoice.terms, 50, yPosition + 15, { width: 500 });
+          doc
+            .fillColor(colors.dark)
+            .fontSize(12)
+            .font('Helvetica-Bold')
+            .text('Terms & Conditions', 50, contentY)
+            .fontSize(10)
+            .font('Helvetica')
+            .fillColor(colors.secondary)
+            .text(invoice.terms, 50, contentY + 20, {
+              width: 500,
+              align: 'left'
+            });
+          
+          // Calculate height needed for terms and move Y position
+          const termsHeight = doc.heightOfString(invoice.terms, { width: 500 }) + 40;
+          contentY += termsHeight;
         }
       }
 
-      // Footer
+      // Add some space before footer
+      contentY += 20;
+
+      // Check if we need a new page for the footer
+      if (contentY > doc.page.height - 100) {
+        doc.addPage();
+        contentY = 50;
+      }
+
+      // Simple centered footer - only "Thank you for your business!"
       doc
-        .fontSize(8)
-        .text(
-          'Thank you for your business!',
-          50,
-          doc.page.height - 50,
-          { align: 'center', width: doc.page.width - 100 }
-        );
+        .fillColor(colors.primary)
+        .fontSize(11)
+        .font('Helvetica-Bold')
+        .text('Thank you for your business!', 50, contentY, { 
+          align: 'center', 
+          width: 500 
+        });
 
       doc.end();
     } catch (error) {
@@ -165,7 +333,6 @@ const generateInvoicePDF = async (invoice, venue) => {
     }
   });
 };
-
 // ============================================
 // @desc    Get all invoices for venue
 // @route   GET /api/v1/invoices
@@ -406,7 +573,6 @@ export const createInvoice = async (req, res) => {
       ...recipientData,
       venue: venueId,
       createdBy: req.user.id,
-      status: 'draft',
       paymentStatus: {
         amountPaid: 0,
         amountDue: 0,
