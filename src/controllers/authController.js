@@ -23,14 +23,14 @@ export const register = asyncHandler(async (req, res) => {
     email,
     password,
     phone,
-    venueName,
     description,
+    venueName,
     address,
     spaces = [],
   } = req.body;
 
   // Check if user already exists
-  const existingUser = await User.findOne({ email });
+  const existingUser = await User.findOne({ email, isArchived: false });
   if (existingUser) {
     throw new ApiError("Email already registered", 400);
   }
@@ -68,6 +68,7 @@ export const register = asyncHandler(async (req, res) => {
     },
     owner: null,
     timeZone: "UTC",
+    isArchived: false,
   });
 
   // Create basic owner role (fast operation)
@@ -78,6 +79,7 @@ export const register = asyncHandler(async (req, res) => {
     permissions: [],
     venueId: venue._id,
     isSystemRole: true,
+    isArchived: false,
   });
 
   // Create user (fast operation)
@@ -89,6 +91,7 @@ export const register = asyncHandler(async (req, res) => {
     roleId: ownerRole._id,
     roleType: "owner",
     venueId: venue._id,
+    isArchived: false,
   });
 
   // Update venue owner
@@ -138,10 +141,14 @@ const completeVenueSetupAsync = async (setupData) => {
   try {
     // Seed permissions for this venue (heavy operation)
     const permissionPromises = PERMISSIONS.map(async (perm) => {
-      return Permission.findOneAndUpdate({ name: perm.name }, perm, {
-        upsert: true,
-        new: true,
-      });
+      return Permission.findOneAndUpdate(
+        { name: perm.name }, 
+        { ...perm, isArchived: false },
+        {
+          upsert: true,
+          new: true,
+        }
+      );
     });
     const createdPermissions = await Promise.all(permissionPromises);
 
@@ -166,13 +173,14 @@ const completeVenueSetupAsync = async (setupData) => {
         ...roleConfig,
         permissions: permissionIds,
         venueId: venueId,
+        isArchived: false,
       });
     }).filter(Boolean); // Remove null promises
 
     const createdRoles = await Promise.all(rolePromises);
 
     // Update owner role with full permissions
-    const ownerRole = await Role.findOne({ venueId: venueId, name: "Owner" });
+    const ownerRole = await Role.findOne({ venueId: venueId, name: "Owner", isArchived: false });
     if (ownerRole) {
       ownerRole.permissions = createdPermissions.map((p) => p._id);
       await ownerRole.save();
@@ -235,14 +243,14 @@ const completeVenueSetupAsync = async (setupData) => {
 };
 
 /**
- * @desc    Login user
- * @route   POST /api/v1/auth/login
+ * @desc    Verify email availability
+ * @route   POST /api/v1/auth/verify-email
  * @access  Public
  */
 export const verifyEmail = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  // Check if user exists
-  const user = await User.findOne({ email });
+  // Check if active user exists
+  const user = await User.findOne({ email, isArchived: false });
   if (user) {
     throw new ApiError("Try another email", 401);
   }
@@ -258,8 +266,8 @@ export const verifyEmail = asyncHandler(async (req, res) => {
 export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  // Check if user exists (include password for comparison)
-  const user = await User.findOne({ email })
+  // Check if user exists (include password for comparison) - exclude archived users
+  const user = await User.findOne({ email, isArchived: false })
     .select("+password")
     .populate("roleId")
     .populate("venueId");
@@ -292,6 +300,7 @@ export const login = asyncHandler(async (req, res) => {
   const permissions = await user.getPermissions();
   const populatedPermissions = await Permission.find({
     _id: { $in: permissions },
+    isArchived: false,
   });
 
   // Generate token
@@ -337,7 +346,7 @@ export const login = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getCurrentUser = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id)
+  const user = await User.findOne({ _id: req.user._id, isArchived: false })
     .populate("roleId")
     .populate("venueId");
 
@@ -349,6 +358,7 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
   const permissions = await user.getPermissions();
   const populatedPermissions = await Permission.find({
     _id: { $in: permissions },
+    isArchived: false,
   });
 
   new ApiResponse({
@@ -388,7 +398,7 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
 export const updateProfile = asyncHandler(async (req, res) => {
   const { name, phone, avatar } = req.body;
 
-  const user = await User.findById(req.user._id);
+  const user = await User.findOne({ _id: req.user._id, isArchived: false });
 
   if (!user) {
     throw new ApiError("User not found", 404);
@@ -423,7 +433,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
 export const changePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
-  const user = await User.findById(req.user._id).select("+password");
+  const user = await User.findOne({ _id: req.user._id, isArchived: false }).select("+password");
 
   if (!user) {
     throw new ApiError("User not found", 404);
@@ -450,7 +460,7 @@ export const changePassword = asyncHandler(async (req, res) => {
 export const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
 
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email, isArchived: false });
 
   if (!user) {
     // Don't reveal if user exists
@@ -500,10 +510,11 @@ export const resetPassword = asyncHandler(async (req, res) => {
   // Hash token
   const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
-  // Find user by token
+  // Find user by token (only non-archived users)
   const user = await User.findOne({
     resetPasswordToken: hashedToken,
     resetPasswordExpire: { $gt: Date.now() },
+    isArchived: false,
   });
 
   if (!user) {
@@ -521,6 +532,64 @@ export const resetPassword = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Archive user account (soft delete)
+ * @route   PATCH /api/v1/auth/archive
+ * @access  Private
+ */
+export const archiveAccount = asyncHandler(async (req, res) => {
+  const user = await User.findOne({ _id: req.user._id, isArchived: false });
+
+  if (!user) {
+    throw new ApiError("User not found", 404);
+  }
+
+  // Archive the user
+  user.isArchived = true;
+  user.archivedAt = new Date();
+  user.archivedBy = req.user._id;
+  
+  await user.save();
+
+  new ApiResponse(
+    null,
+    "Your account has been archived successfully"
+  ).send(res);
+});
+
+/**
+ * @desc    Restore archived user account
+ * @route   PATCH /api/v1/auth/restore
+ * @access  Public
+ */
+export const restoreAccount = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  const user = await User.findOne({ email, isArchived: true });
+
+  if (!user) {
+    throw new ApiError("No archived account found with this email", 404);
+  }
+
+  // Restore the user
+  user.isArchived = false;
+  user.archivedAt = undefined;
+  user.archivedBy = undefined;
+  
+  await user.save();
+
+  new ApiResponse(
+    {
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+    },
+    "Account restored successfully"
+  ).send(res);
+});
+
+/**
  * @desc    Logout user
  * @route   POST /api/v1/auth/logout
  * @access  Private
@@ -530,4 +599,44 @@ export const logout = asyncHandler(async (req, res) => {
   // If you implement token blacklisting, add that logic here
 
   new ApiResponse(null, "Logout successful").send(res);
+});
+
+/**
+ * @desc    Get user statistics
+ * @route   GET /api/v1/auth/stats
+ * @access  Private
+ */
+export const getUserStats = asyncHandler(async (req, res) => {
+  const venueId = req.user.venueId;
+
+  const stats = await User.aggregate([
+    {
+      $match: {
+        venueId: new mongoose.Types.ObjectId(venueId),
+      },
+    },
+    {
+      $group: {
+        _id: "$isArchived",
+        total: { $sum: 1 },
+        active: {
+          $sum: { $cond: [{ $eq: ["$isActive", true] }, 1, 0] },
+        },
+        inactive: {
+          $sum: { $cond: [{ $eq: ["$isActive", false] }, 1, 0] },
+        },
+      },
+    },
+  ]);
+
+  const archivedStats = stats.find(stat => stat._id === true) || { total: 0, active: 0, inactive: 0 };
+  const activeStats = stats.find(stat => stat._id === false) || { total: 0, active: 0, inactive: 0 };
+
+  new ApiResponse({
+    activeUsers: activeStats.total,
+    archivedUsers: archivedStats.total,
+    activeCount: activeStats.active,
+    inactiveCount: activeStats.inactive,
+    totalUsers: activeStats.total + archivedStats.total,
+  }).send(res);
 });
