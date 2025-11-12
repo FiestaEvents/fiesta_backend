@@ -5,6 +5,11 @@ import {
   updateSubscription,
   getVenueStats,
   getDashboardData,
+  getVenueSpaces,
+  createVenueSpace,
+  getVenueSpace,
+  updateVenueSpace,
+  deleteVenueSpace,
 } from "../controllers/venueController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
@@ -31,5 +36,17 @@ router
   .route("/me")
   .get(checkPermission("venue.read"), getVenue)
   .put(checkPermission("venue.update"), updateVenue);
+
+// Venue Spaces
+router
+  .route("/spaces")
+  .get(checkPermission("venue.read"), getVenueSpaces)
+  .post(checkPermission("venue.create"), createVenueSpace);
+
+router
+  .route("/spaces/:spaceId")
+  .get(checkPermission("venue.read"), getVenueSpace)
+  .put(checkPermission("venue.update"), updateVenueSpace)
+  .delete(checkPermission("venue.delete"), deleteVenueSpace);
 
 export default router;

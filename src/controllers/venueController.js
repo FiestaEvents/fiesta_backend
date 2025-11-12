@@ -1,7 +1,9 @@
+import mongoose from "mongoose";
 import asyncHandler from "../middleware/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { Venue } from "../models/index.js";
+import VenueSpace from "../models/VenueSpace.js";
 
 /**
  * @desc    Get venue details
@@ -95,7 +97,9 @@ export const updateSubscription = asyncHandler(async (req, res) => {
 export const getVenueStats = asyncHandler(async (req, res) => {
   const venueId = req.user.venueId;
 
-  const { Event, Client, Partner, Payment, User } = await import("../models/index.js");
+  const { Event, Client, Partner, Payment, User } = await import(
+    "../models/index.js"
+  );
 
   const [
     totalEvents,
@@ -230,4 +234,248 @@ export const getDashboardData = asyncHandler(async (req, res) => {
       eventsThisMonth,
     },
   }).send(res);
+});
+
+/**
+ * @desc    Get paginated venue spaces
+ * @route   GET /api/v1/venues/spaces
+ * @access  Private (venue.read)
+ */
+export const getVenueSpaces = asyncHandler(async (req, res) => {
+  const {
+    page = 1,
+    limit = 10,
+    search,
+    isActive,
+    isReserved,
+    includeArchived = "false",
+    sortBy = "createdAt",
+    order = "desc",
+  } = req.query;
+
+  const numericPage = Math.max(parseInt(page, 10) || 1, 1);
+  const numericLimit = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
+
+  const baseQuery = {
+    venueId: req.user.venueId,
+  };
+
+  if (includeArchived !== "true") {
+    baseQuery.isArchived = false;
+  }
+
+  const query = { ...baseQuery };
+
+  if (typeof isActive === "string") {
+    query.isActive = isActive === "true";
+  }
+
+  if (typeof isReserved === "string") {
+    query.isReserved = isReserved === "true";
+  }
+
+  if (search) {
+    const searchRegex = { $regex: search, $options: "i" };
+    query.$or = [
+      { name: searchRegex },
+      { description: searchRegex },
+      { amenities: searchRegex },
+    ];
+  }
+
+  const skip = (numericPage - 1) * numericLimit;
+  const sortDirection = order === "asc" ? 1 : -1;
+  const sortOptions = { [sortBy]: sortDirection };
+
+  const [spaces, total, activeCount, reservedCount] = await Promise.all([
+    VenueSpace.find(query).sort(sortOptions).skip(skip).limit(numericLimit),
+    VenueSpace.countDocuments(query),
+    VenueSpace.countDocuments({ ...baseQuery, isActive: true }),
+    VenueSpace.countDocuments({ ...baseQuery, isReserved: true }),
+  ]);
+
+  new ApiResponse({
+    spaces,
+    pagination: {
+      page: numericPage,
+      limit: numericLimit,
+      total,
+      pages: Math.ceil(total / numericLimit) || 1,
+    },
+    summary: {
+      totalSpaces: total,
+      totalActive: activeCount,
+      totalReserved: reservedCount,
+    },
+  }).send(res);
+});
+
+/**
+ * @desc    Create a new venue space
+ * @route   POST /api/v1/venues/spaces
+ * @access  Private (venue.create)
+ */
+export const createVenueSpace = asyncHandler(async (req, res) => {
+  const { name, capacity, description } = req.body;
+
+  if (!name || !description) {
+    throw new ApiError("Name and description are required", 400);
+  }
+
+  if (!capacity || capacity.min === undefined || capacity.max === undefined) {
+    throw new ApiError("Capacity with min and max values is required", 400);
+  }
+
+  if (capacity.min > capacity.max) {
+    throw new ApiError("Capacity minimum cannot be greater than maximum", 400);
+  }
+
+  const existingSpace = await VenueSpace.findOne({
+    venueId: req.user.venueId,
+    name: name.trim(),
+  });
+
+  if (existingSpace) {
+    throw new ApiError("A venue space with this name already exists", 400);
+  }
+
+  const venueSpace = await VenueSpace.create({
+    ...req.body,
+    name: name.trim(),
+    venueId: req.user.venueId,
+    owner: req.user._id,
+  });
+
+  new ApiResponse(
+    { space: venueSpace },
+    "Venue space created successfully",
+    201
+  ).send(res);
+});
+
+/**
+ * @desc    Get single venue space
+ * @route   GET /api/v1/venues/spaces/:spaceId
+ * @access  Private (venue.read)
+ */
+export const getVenueSpace = asyncHandler(async (req, res) => {
+  const { spaceId } = req.params;
+
+  if (!mongoose.isValidObjectId(spaceId)) {
+    throw new ApiError("Invalid venue space id", 400);
+  }
+
+  const venueSpace = await VenueSpace.findOne({
+    _id: spaceId,
+    venueId: req.user.venueId,
+  });
+
+  if (!venueSpace) {
+    throw new ApiError("Venue space not found", 404);
+  }
+
+  new ApiResponse({ space: venueSpace }).send(res);
+});
+
+/**
+ * @desc    Update venue space
+ * @route   PUT /api/v1/venues/spaces/:spaceId
+ * @access  Private (venue.update)
+ */
+export const updateVenueSpace = asyncHandler(async (req, res) => {
+  const { spaceId } = req.params;
+
+  if (!mongoose.isValidObjectId(spaceId)) {
+    throw new ApiError("Invalid venue space id", 400);
+  }
+
+  const venueSpace = await VenueSpace.findOne({
+    _id: spaceId,
+    venueId: req.user.venueId,
+  });
+
+  if (!venueSpace) {
+    throw new ApiError("Venue space not found", 404);
+  }
+
+  const allowedUpdates = [
+    "name",
+    "description",
+    "capacity",
+    "basePrice",
+    "amenities",
+    "images",
+    "operatingHours",
+    "isReserved",
+    "isActive",
+    "isArchived",
+    "timeZone",
+  ];
+
+  allowedUpdates.forEach((field) => {
+    if (req.body[field] !== undefined) {
+      venueSpace[field] = req.body[field];
+    }
+  });
+
+  if (req.body.capacity) {
+    const { min, max } = req.body.capacity;
+    if (
+      min === undefined ||
+      max === undefined ||
+      Number.isNaN(Number(min)) ||
+      Number.isNaN(Number(max))
+    ) {
+      throw new ApiError("Capacity must include valid min and max values", 400);
+    }
+
+    if (min > max) {
+      throw new ApiError(
+        "Capacity minimum cannot be greater than maximum",
+        400
+      );
+    }
+
+    venueSpace.capacity = {
+      min,
+      max,
+    };
+  }
+
+  if (req.body.name) {
+    venueSpace.name = req.body.name.trim();
+  }
+
+  await venueSpace.save();
+
+  new ApiResponse(
+    { space: venueSpace },
+    "Venue space updated successfully"
+  ).send(res);
+});
+
+/**
+ * @desc    Delete venue space
+ * @route   DELETE /api/v1/venues/spaces/:spaceId
+ * @access  Private (venue.delete)
+ */
+export const deleteVenueSpace = asyncHandler(async (req, res) => {
+  const { spaceId } = req.params;
+
+  if (!mongoose.isValidObjectId(spaceId)) {
+    throw new ApiError("Invalid venue space id", 400);
+  }
+
+  const venueSpace = await VenueSpace.findOne({
+    _id: spaceId,
+    venueId: req.user.venueId,
+  });
+
+  if (!venueSpace) {
+    throw new ApiError("Venue space not found", 404);
+  }
+
+  await venueSpace.deleteOne();
+
+  new ApiResponse({ spaceId }, "Venue space deleted successfully").send(res);
 });
