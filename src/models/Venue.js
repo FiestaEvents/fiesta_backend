@@ -93,41 +93,71 @@ const venueSchema = new mongoose.Schema(
     },
     isActive: { type: Boolean, default: true },
     timeZone: { type: String, required: true, default: "UTC" },
+    
+    // Archive fields
+    isArchived: { 
+      type: Boolean, 
+      default: false 
+    },
+    archivedAt: { 
+      type: Date 
+    },
+    archivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
   },
   {
     timestamps: true,
   }
 );
 
-// Cascade delete related documents
+// Update the cascade delete to archive instead of delete
 venueSchema.pre("deleteOne", { document: true }, async function (next) {
-  const venueId = this._id;
-
-  // Import models
-  const Event = mongoose.model("Event");
-  const Client = mongoose.model("Client");
-  const Partner = mongoose.model("Partner");
-  const Payment = mongoose.model("Payment");
-  const Finance = mongoose.model("Finance");
-  const Task = mongoose.model("Task");
-  const Reminder = mongoose.model("Reminder");
-  const Role = mongoose.model("Role");
-  const User = mongoose.model("User");
-
-  // Delete all related documents
-  await Promise.all([
-    Event.deleteMany({ venueId }),
-    Client.deleteMany({ venueId }),
-    Partner.deleteMany({ venueId }),
-    Payment.deleteMany({ venueId }),
-    Finance.deleteMany({ venueId }),
-    Task.deleteMany({ venueId }),
-    Reminder.deleteMany({ venueId }),
-    Role.deleteMany({ venueId, isSystemRole: false }),
-    User.deleteMany({ venueId }),
-  ]);
-
-  next();
+  // Instead of deleting, we'll archive the venue
+  this.isArchived = true;
+  this.archivedAt = new Date();
+  this.archivedBy = this.owner; // or req.user._id from context
+  
+  // Prevent the actual deletion
+  next(new Error("Venues should be archived instead of deleted. Use archiveVenue method."));
 });
+
+// Static method to archive a venue
+venueSchema.statics.archiveVenue = async function(venueId, archivedBy) {
+  return await this.findByIdAndUpdate(
+    venueId,
+    {
+      isArchived: true,
+      archivedAt: new Date(),
+      archivedBy: archivedBy,
+      isActive: false
+    },
+    { new: true }
+  );
+};
+
+// Static method to restore a venue
+venueSchema.statics.restoreVenue = async function(venueId) {
+  return await this.findByIdAndUpdate(
+    venueId,
+    {
+      isArchived: false,
+      archivedAt: null,
+      archivedBy: null,
+      isActive: true
+    },
+    { new: true }
+  );
+};
+
+// Query helper to exclude archived venues by default
+venueSchema.query.excludeArchived = function() {
+  return this.where({ isArchived: { $ne: true } });
+};
+
+venueSchema.query.includeArchived = function() {
+  return this;
+};
 
 export default mongoose.model("Venue", venueSchema);

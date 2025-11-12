@@ -7,6 +7,8 @@ import {
   deletePayment,
   getPaymentStats,
   processRefund,
+  restorePayment,
+  getArchivedPayments,
 } from "../controllers/paymentController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
@@ -24,6 +26,9 @@ router.use(authenticate);
 // Stats
 router.get("/stats", checkPermission("payments.read.all"), getPaymentStats);
 
+// Archived payments
+router.get("/archived", checkPermission("payments.read.all"), getArchivedPayments);
+
 // Refund
 router.post(
   "/:id/refund",
@@ -31,6 +36,15 @@ router.post(
   param("id").isMongoId(),
   validateRequest,
   processRefund
+);
+
+// Restore archived payment
+router.patch(
+  "/:id/restore",
+  checkPermission("payments.update.all"),
+  param("id").isMongoId(),
+  validateRequest,
+  restorePayment
 );
 
 // CRUD operations

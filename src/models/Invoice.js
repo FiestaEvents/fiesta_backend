@@ -167,6 +167,20 @@ const invoiceSchema = new mongoose.Schema(
       default: "draft",
       index: true,
     },
+    
+    // Archive fields
+    isArchived: { 
+      type: Boolean, 
+      default: false 
+    },
+    archivedAt: { 
+      type: Date 
+    },
+    archivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    
     paymentStatus: {
       amountPaid: {
         type: Number,
@@ -273,6 +287,7 @@ invoiceSchema.index({ venue: 1, client: 1 });
 invoiceSchema.index({ venue: 1, partner: 1 });
 invoiceSchema.index({ venue: 1, issueDate: -1 });
 invoiceSchema.index({ invoiceNumber: 1 }, { unique: true });
+invoiceSchema.index({ isArchived: 1 });
 
 // ============================================
 // VIRTUALS
@@ -349,6 +364,17 @@ invoiceSchema.pre("save", function (next) {
     return next(new Error("Invoice cannot have both client and partner"));
   }
   next();
+});
+
+// Update cascade delete to archive instead
+invoiceSchema.pre("deleteOne", { document: true }, async function (next) {
+  // Instead of deleting, archive the invoice
+  this.isArchived = true;
+  this.archivedAt = new Date();
+  this.archivedBy = this.createdBy;
+  
+  // Prevent the actual deletion
+  next(new Error("Invoices should be archived instead of deleted. Use archiveInvoice method."));
 });
 
 // ============================================
@@ -475,15 +501,65 @@ invoiceSchema.methods.canDelete = function () {
   );
 };
 
+// Archive instance method
+invoiceSchema.methods.archive = function (userId) {
+  this.isArchived = true;
+  this.archivedAt = new Date();
+  this.archivedBy = userId;
+  return this.save();
+};
+
+// Restore instance method
+invoiceSchema.methods.restore = function () {
+  this.isArchived = false;
+  this.archivedAt = null;
+  this.archivedBy = null;
+  return this.save();
+};
+
 // ============================================
 // STATIC METHODS
 // ============================================
+
+invoiceSchema.statics.archiveInvoice = async function(invoiceId, archivedBy) {
+  return await this.findByIdAndUpdate(
+    invoiceId,
+    {
+      isArchived: true,
+      archivedAt: new Date(),
+      archivedBy: archivedBy
+    },
+    { new: true }
+  );
+};
+
+invoiceSchema.statics.restoreInvoice = async function(invoiceId) {
+  return await this.findByIdAndUpdate(
+    invoiceId,
+    {
+      isArchived: false,
+      archivedAt: null,
+      archivedBy: null
+    },
+    { new: true }
+  );
+};
+
+// Query helpers
+invoiceSchema.query.excludeArchived = function() {
+  return this.where({ isArchived: { $ne: true } });
+};
+
+invoiceSchema.query.includeArchived = function() {
+  return this;
+};
 
 invoiceSchema.statics.getOverdue = function (venueId, invoiceType = null) {
   const query = {
     venue: venueId,
     status: { $in: ["sent", "partial"] },
     dueDate: { $lt: new Date() },
+    isArchived: { $ne: true }
   };
   if (invoiceType) {
     query.invoiceType = invoiceType;
@@ -500,6 +576,7 @@ invoiceSchema.statics.getDueSoon = function (venueId, days = 7, invoiceType = nu
     venue: venueId,
     status: { $in: ["sent", "partial"] },
     dueDate: { $gte: today, $lte: futureDate },
+    isArchived: { $ne: true }
   };
   if (invoiceType) {
     query.invoiceType = invoiceType;
@@ -513,7 +590,10 @@ invoiceSchema.statics.getStats = async function (
   endDate = null,
   invoiceType = null
 ) {
-  const matchQuery = { venue: new mongoose.Types.ObjectId(venueId) };
+  const matchQuery = { 
+    venue: new mongoose.Types.ObjectId(venueId),
+    isArchived: { $ne: true }
+  };
 
   if (invoiceType) {
     matchQuery.invoiceType = invoiceType;

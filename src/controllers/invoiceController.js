@@ -8,333 +8,7 @@ import { sendInvoiceEmail } from '../utils/emailService.js';
 import PDFDocument from 'pdfkit';
 
 // ============================================
-// UTILITY: GENERATE PDF (UPDATED TO MATCH FRONTEND)
-// ============================================
-const generateInvoicePDF = async (invoice, venue) => {
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({ 
-        margin: 50,
-        size: 'A4',
-        info: {
-          Title: `Invoice ${invoice.invoiceNumber}`,
-          Author: venue.name,
-          Subject: `Invoice for ${invoice.recipientName}`
-        }
-      });
-      const chunks = [];
-      
-      doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-
-      // Determine if it's a client or partner invoice
-      const isClientInvoice = invoice.invoiceType === 'client';
-      
-      // Colors matching frontend
-      const colors = {
-        primary: '#ea580c', // orange-600
-        secondary: '#6b7280', // gray-500
-        dark: '#1f2937', // gray-900
-        light: '#9ca3af', // gray-400
-        success: '#16a34a', // green-600
-        warning: '#d97706', // yellow-600
-        danger: '#dc2626', // red-600
-        info: '#2563eb' // blue-600
-      };
-
-      // Header Section - Matching frontend modal header
-      doc
-        .fillColor(colors.dark)
-        .fontSize(24)
-        .font('Helvetica-Bold')
-        .text(`Invoice #${invoice.invoiceNumber}`, 50, 50)
-        .fontSize(12)
-        .font('Helvetica')
-        .fillColor(colors.secondary)
-        .text(`Issued: ${invoice.issueDate.toLocaleDateString()}`, 50, 85);
-
-      if (invoice.sentAt) {
-        doc.text(`Sent: ${invoice.sentAt.toLocaleDateString()}`, 50, 100);
-      }
-      // Recipient Information Section - Matching frontend layout
-      doc
-        .fillColor(colors.dark)
-        .fontSize(14)
-        .font('Helvetica-Bold')
-        .text(isClientInvoice ? 'Bill To:' : 'Pay To:', 50, 150)
-        .fontSize(12)
-        .font('Helvetica')
-        .fillColor(colors.dark)
-        .text(invoice.recipientName, 50, 175);
-
-      let recipientY = 195;
-      if (invoice.recipientCompany) {
-        doc
-          .fillColor(colors.secondary)
-          .text(invoice.recipientCompany, 50, recipientY);
-        recipientY += 20;
-      }
-
-      if (invoice.recipientEmail) {
-        doc.text(invoice.recipientEmail, 50, recipientY);
-        recipientY += 20;
-      }
-
-      if (invoice.recipientPhone) {
-        doc.text(invoice.recipientPhone, 50, recipientY);
-        recipientY += 20;
-      }
-
-      if (invoice.recipientAddress?.street) {
-        doc.text(invoice.recipientAddress.street, 50, recipientY);
-        recipientY += 15;
-        const cityStateZip = [
-          invoice.recipientAddress.city,
-          invoice.recipientAddress.state,
-          invoice.recipientAddress.zipCode
-        ].filter(Boolean).join(', ');
-        doc.text(cityStateZip, 50, recipientY);
-        recipientY += 20;
-      }
-
-      // Invoice Details Section - Right aligned like frontend
-      doc
-        .fillColor(colors.dark)
-        .fontSize(14)
-        .font('Helvetica-Bold')
-        .text('Invoice Details:', 350, 150)
-        .fontSize(12)
-        .font('Helvetica');
-
-      let detailsY = 175;
-      
-      // Due Date
-      doc
-        .fillColor(colors.secondary)
-        .text('Due Date:', 350, detailsY)
-        .fillColor(colors.dark)
-        .text(invoice.dueDate.toLocaleDateString(), 450, detailsY);
-      detailsY += 20;
-
-      // Event
-      if (invoice.event) {
-        doc
-          .fillColor(colors.secondary)
-          .text('Event:', 350, detailsY)
-          .fillColor(colors.dark)
-          .text(invoice.event.title, 450, detailsY);
-        detailsY += 20;
-      }
-
-      // Currency
-      if (invoice.currency) {
-        doc
-          .fillColor(colors.secondary)
-          .text('Currency:', 350, detailsY)
-          .fillColor(colors.dark)
-          .text(invoice.currency, 450, detailsY);
-        detailsY += 20;
-      }
-
-      // Items Table Section - Matching frontend table design
-      const tableTop = Math.max(recipientY, detailsY) + 40;
-      
-      // Table Header with background
-      doc
-        .rect(50, tableTop, 500, 25)
-        .fill('#f9fafb') // gray-50
-        .fillColor(colors.dark)
-        .fontSize(11)
-        .font('Helvetica-Bold')
-        .text('Description', 55, tableTop + 8)
-        .text('Qty', 350, tableTop + 8)
-        .text('Rate', 400, tableTop + 8)
-        .text('Amount', 470, tableTop + 8);
-
-      // Table rows
-      let itemY = tableTop + 25;
-      invoice.items.forEach((item, index) => {
-        // Alternate row background
-        if (index % 2 === 0) {
-          doc.rect(50, itemY, 500, 30).fill('#ffffff');
-        } else {
-          doc.rect(50, itemY, 500, 30).fill('#f8fafc'); // subtle gray
-        }
-
-        doc
-          .fillColor(colors.dark)
-          .fontSize(10)
-          .font('Helvetica')
-          .text(item.description || 'No description', 55, itemY + 10, {
-            width: 280,
-            align: 'left'
-          });
-
-        // Category if exists
-        if (item.category) {
-          doc
-            .fillColor(colors.light)
-            .fontSize(8)
-            .text(item.category.replace(/_/g, ' '), 55, itemY + 22);
-        }
-
-        doc
-          .fillColor(colors.dark)
-          .fontSize(10)
-          .text((item.quantity || 1).toString(), 350, itemY + 10)
-          .text(`${invoice.currency} ${(item.rate || 0).toFixed(2)}`, 400, itemY + 10)
-          .text(`${invoice.currency} ${(item.amount || 0).toFixed(2)}`, 470, itemY + 10);
-
-        itemY += 30;
-      });
-
-      // Totals Section - Matching frontend totals layout
-      const totalsTop = itemY + 30;
-      const totalsWidth = 200;
-
-      doc
-        .fillColor(colors.dark)
-        .fontSize(11);
-
-      let totalY = totalsTop;
-
-      // Subtotal
-      doc
-        .text('Subtotal:', 350, totalY)
-        .text(`${invoice.currency} ${(invoice.subtotal || 0).toFixed(2)}`, 470, totalY);
-      totalY += 20;
-
-      // Tax
-      if (invoice.tax > 0) {
-        const taxLabel = invoice.taxRate ? `Tax (${invoice.taxRate}%)` : 'Tax';
-        doc
-          .text(taxLabel, 350, totalY)
-          .text(`${invoice.currency} ${(invoice.tax || 0).toFixed(2)}`, 470, totalY);
-        totalY += 20;
-      }
-
-      // Discount
-      if (invoice.discount > 0) {
-        doc
-          .fillColor(colors.danger)
-          .text('Discount:', 350, totalY)
-          .text(`-${invoice.currency} ${(invoice.discount || 0).toFixed(2)}`, 470, totalY)
-          .fillColor(colors.dark);
-        totalY += 20;
-      }
-
-      // Total line
-      doc
-        .moveTo(350, totalY)
-        .lineTo(550, totalY)
-        .strokeColor(colors.light)
-        .stroke();
-      totalY += 15;
-
-      doc
-        .fontSize(14)
-        .font('Helvetica-Bold')
-        .text('Total:', 350, totalY)
-        .text(`${invoice.currency} ${(invoice.totalAmount || 0).toFixed(2)}`, 470, totalY);
-      totalY += 25;
-
-      // Payment status if applicable
-      if (invoice.paymentStatus?.amountPaid > 0) {
-        doc
-          .fontSize(11)
-          .font('Helvetica')
-          .fillColor(colors.success)
-          .text('Amount Paid:', 350, totalY)
-          .text(`${invoice.currency} ${(invoice.paymentStatus.amountPaid || 0).toFixed(2)}`, 470, totalY);
-        totalY += 20;
-
-        doc
-          .fontSize(14)
-          .font('Helvetica-Bold')
-          .fillColor(colors.dark)
-          .text('Amount Due:', 350, totalY)
-          .text(`${invoice.currency} ${(invoice.paymentStatus.amountDue || 0).toFixed(2)}`, 470, totalY);
-        totalY += 20;
-      }
-
-      // Notes & Terms Section - Matching frontend layout
-      let contentY = totalY + 50;
-
-      if (invoice.notes || invoice.terms) {
-        doc
-          .moveTo(50, contentY)
-          .lineTo(550, contentY)
-          .strokeColor(colors.light)
-          .stroke();
-        contentY += 30;
-
-        if (invoice.notes) {
-          doc
-            .fillColor(colors.dark)
-            .fontSize(12)
-            .font('Helvetica-Bold')
-            .text('Notes', 50, contentY)
-            .fontSize(10)
-            .font('Helvetica')
-            .fillColor(colors.secondary)
-            .text(invoice.notes, 50, contentY + 20, {
-              width: 500,
-              align: 'left'
-            });
-          
-          // Calculate height needed for notes and move Y position
-          const notesHeight = doc.heightOfString(invoice.notes, { width: 500 }) + 40;
-          contentY += notesHeight;
-        }
-
-        if (invoice.terms) {
-          doc
-            .fillColor(colors.dark)
-            .fontSize(12)
-            .font('Helvetica-Bold')
-            .text('Terms & Conditions', 50, contentY)
-            .fontSize(10)
-            .font('Helvetica')
-            .fillColor(colors.secondary)
-            .text(invoice.terms, 50, contentY + 20, {
-              width: 500,
-              align: 'left'
-            });
-          
-          // Calculate height needed for terms and move Y position
-          const termsHeight = doc.heightOfString(invoice.terms, { width: 500 }) + 40;
-          contentY += termsHeight;
-        }
-      }
-
-      // Add some space before footer
-      contentY += 20;
-
-      // Check if we need a new page for the footer
-      if (contentY > doc.page.height - 100) {
-        doc.addPage();
-        contentY = 50;
-      }
-
-      // Simple centered footer - only "Thank you for your business!"
-      doc
-        .fillColor(colors.primary)
-        .fontSize(11)
-        .font('Helvetica-Bold')
-        .text('Thank you for your business!', 50, contentY, { 
-          align: 'center', 
-          width: 500 
-        });
-
-      doc.end();
-    } catch (error) {
-      reject(error);
-    }
-  });
-};
-// ============================================
-// @desc    Get all invoices for venue
+// @desc    Get all invoices for venue (non-archived by default)
 // @route   GET /api/v1/invoices
 // @access  Private
 // ============================================
@@ -352,10 +26,18 @@ export const getInvoices = async (req, res) => {
       page = 1,
       limit = 10,
       sort = '-createdAt',
+      isArchived = false, // New parameter to include archived invoices
     } = req.query;
 
     const venueId = req.user.venueId;
     const query = { venue: venueId };
+
+    // Handle archive filter
+    if (isArchived === "true" || isArchived === true) {
+      query.isArchived = true;
+    } else {
+      query.isArchived = { $ne: true };
+    }
 
     // Search filter
     if (search) {
@@ -407,6 +89,7 @@ export const getInvoices = async (req, res) => {
       .populate('partner', 'name email phone company category')
       .populate('event', 'title startDate')
       .populate('createdBy', 'name email')
+      .populate('archivedBy', 'name email')
       .sort(sort)
       .limit(limit * 1)
       .skip((page - 1) * limit)
@@ -435,7 +118,7 @@ export const getInvoices = async (req, res) => {
 };
 
 // ============================================
-// @desc    Get single invoice
+// @desc    Get single invoice (including archived)
 // @route   GET /api/v1/invoices/:id
 // @access  Private
 // ============================================
@@ -450,7 +133,8 @@ export const getInvoice = async (req, res) => {
       .populate('event', 'title startDate endDate type')
       .populate('payments')
       .populate('createdBy', 'name email')
-      .populate('lastModifiedBy', 'name email');
+      .populate('lastModifiedBy', 'name email')
+      .populate('archivedBy', 'name email');
 
     if (!invoice) {
       return res.status(404).json({
@@ -504,6 +188,7 @@ export const createInvoice = async (req, res) => {
       const client = await Client.findOne({
         _id: clientId,
         venueId: venueId,
+        isArchived: { $ne: true }
       });
 
       if (!client) {
@@ -534,6 +219,7 @@ export const createInvoice = async (req, res) => {
       const partner = await Partner.findOne({
         _id: partnerId,
         venueId: venueId,
+        isArchived: { $ne: true }
       });
 
       if (!partner) {
@@ -557,6 +243,7 @@ export const createInvoice = async (req, res) => {
       const event = await Event.findOne({
         _id: eventId,
         venueId: venueId,
+        isArchived: { $ne: true }
       });
 
       if (!event) {
@@ -577,6 +264,7 @@ export const createInvoice = async (req, res) => {
         amountPaid: 0,
         amountDue: 0,
       },
+      isArchived: false, // Ensure new invoices are not archived
     };
 
     // Create temporary invoice to calculate amounts
@@ -635,6 +323,7 @@ export const updateInvoice = async (req, res) => {
     let invoice = await Invoice.findOne({
       _id: req.params.id,
       venue: req.user.venueId,
+      isArchived: { $ne: true }
     });
 
     if (!invoice) {
@@ -656,6 +345,7 @@ export const updateInvoice = async (req, res) => {
       const client = await Client.findOne({
         _id: req.body.client,
         venueId: req.user.venueId,
+        isArchived: { $ne: true }
       });
 
       if (!client) {
@@ -676,6 +366,7 @@ export const updateInvoice = async (req, res) => {
       const partner = await Partner.findOne({
         _id: req.body.partner,
         venueId: req.user.venueId,
+        isArchived: { $ne: true }
       });
 
       if (!partner) {
@@ -727,7 +418,7 @@ export const updateInvoice = async (req, res) => {
 };
 
 // ============================================
-// @desc    Delete invoice
+// @desc    Archive invoice (soft delete)
 // @route   DELETE /api/v1/invoices/:id
 // @access  Private
 // ============================================
@@ -736,6 +427,7 @@ export const deleteInvoice = async (req, res) => {
     const invoice = await Invoice.findOne({
       _id: req.params.id,
       venue: req.user.venueId,
+      isArchived: { $ne: true }
     });
 
     if (!invoice) {
@@ -752,18 +444,217 @@ export const deleteInvoice = async (req, res) => {
       });
     }
 
-    await invoice.deleteOne();
+    // Archive the invoice instead of deleting
+    const archivedInvoice = await Invoice.archiveInvoice(req.params.id, req.user.id);
 
     res.json({
       success: true,
-      data: {},
-      message: 'Invoice deleted successfully',
+      data: { invoice: archivedInvoice },
+      message: 'Invoice archived successfully',
     });
   } catch (error) {
-    console.error('Delete invoice error:', error);
+    console.error('Archive invoice error:', error);
     res.status(500).json({
       success: false,
-      error: 'Server error while deleting invoice',
+      error: 'Server error while archiving invoice',
+    });
+  }
+};
+
+// ============================================
+// @desc    Restore archived invoice
+// @route   PATCH /api/v1/invoices/:id/restore
+// @access  Private
+// ============================================
+export const restoreInvoice = async (req, res) => {
+  try {
+    const invoice = await Invoice.findOne({
+      _id: req.params.id,
+      venue: req.user.venueId,
+      isArchived: true
+    });
+
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        error: 'Archived invoice not found',
+      });
+    }
+
+    const restoredInvoice = await Invoice.restoreInvoice(req.params.id);
+
+    res.json({
+      success: true,
+      data: { invoice: restoredInvoice },
+      message: 'Invoice restored successfully',
+    });
+  } catch (error) {
+    console.error('Restore invoice error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error while restoring invoice',
+    });
+  }
+};
+
+// ============================================
+// @desc    Get archived invoices
+// @route   GET /api/v1/invoices/archived
+// @access  Private
+// ============================================
+export const getArchivedInvoices = async (req, res) => {
+  try {
+    const {
+      search,
+      invoiceType,
+      page = 1,
+      limit = 10,
+      sortBy = 'archivedAt',
+      sortOrder = 'desc',
+    } = req.query;
+
+    const venueId = req.user.venueId;
+    const query = { 
+      venue: venueId,
+      isArchived: true 
+    };
+
+    // Search filter
+    if (search) {
+      query.$or = [
+        { invoiceNumber: { $regex: search, $options: 'i' } },
+        { recipientName: { $regex: search, $options: 'i' } },
+        { recipientEmail: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    // Invoice type filter
+    if (invoiceType && invoiceType !== 'all') {
+      query.invoiceType = invoiceType;
+    }
+
+    // Sort configuration
+    const sortConfig = {};
+    sortConfig[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    const invoices = await Invoice.find(query)
+      .populate('client', 'name email phone')
+      .populate('partner', 'name email phone company category')
+      .populate('event', 'title startDate')
+      .populate('archivedBy', 'name email')
+      .sort(sortConfig)
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .lean();
+
+    const total = await Invoice.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: {
+        invoices,
+        pagination: {
+          current: parseInt(page),
+          pages: Math.ceil(total / limit),
+          total,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Get archived invoices error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error while fetching archived invoices',
+    });
+  }
+};
+
+// ============================================
+// @desc    Bulk archive invoices
+// @route   POST /api/v1/invoices/bulk-archive
+// @access  Private
+// ============================================
+export const bulkArchiveInvoices = async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invoice IDs array is required',
+      });
+    }
+
+    const result = await Invoice.updateMany(
+      {
+        _id: { $in: ids },
+        venue: req.user.venueId,
+        isArchived: false,
+      },
+      {
+        $set: {
+          isArchived: true,
+          archivedAt: new Date(),
+          archivedBy: req.user.id,
+        },
+      }
+    );
+
+    res.json({
+      success: true,
+      data: { archived: result.modifiedCount },
+      message: `${result.modifiedCount} invoice(s) archived successfully`,
+    });
+  } catch (error) {
+    console.error('Bulk archive invoices error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error while bulk archiving invoices',
+    });
+  }
+};
+
+// ============================================
+// @desc    Bulk restore invoices
+// @route   POST /api/v1/invoices/bulk-restore
+// @access  Private
+// ============================================
+export const bulkRestoreInvoices = async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invoice IDs array is required',
+      });
+    }
+
+    const result = await Invoice.updateMany(
+      {
+        _id: { $in: ids },
+        venue: req.user.venueId,
+        isArchived: true,
+      },
+      {
+        $set: {
+          isArchived: false,
+          archivedAt: null,
+          archivedBy: null,
+        },
+      }
+    );
+
+    res.json({
+      success: true,
+      data: { restored: result.modifiedCount },
+      message: `${result.modifiedCount} invoice(s) restored successfully`,
+    });
+  } catch (error) {
+    console.error('Bulk restore invoices error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error while bulk restoring invoices',
     });
   }
 };
@@ -778,6 +669,7 @@ export const sendInvoice = async (req, res) => {
     const invoice = await Invoice.findOne({
       _id: req.params.id,
       venue: req.user.venueId,
+      isArchived: { $ne: true }
     })
       .populate('client')
       .populate('partner');
@@ -898,6 +790,7 @@ export const markAsPaid = async (req, res) => {
     const invoice = await Invoice.findOne({
       _id: req.params.id,
       venue: req.user.venueId,
+      isArchived: { $ne: true }
     });
 
     if (!invoice) {
@@ -966,6 +859,7 @@ export const cancelInvoice = async (req, res) => {
     const invoice = await Invoice.findOne({
       _id: req.params.id,
       venue: req.user.venueId,
+      isArchived: { $ne: true }
     });
 
     if (!invoice) {
@@ -1006,7 +900,7 @@ export const cancelInvoice = async (req, res) => {
 };
 
 // ============================================
-// @desc    Get invoice statistics
+// @desc    Get invoice statistics (non-archived only)
 // @route   GET /api/v1/invoices/stats
 // @access  Private
 // ============================================
@@ -1031,6 +925,7 @@ export const getInvoiceStats = async (req, res) => {
         $match: {
           venue: new mongoose.Types.ObjectId(venueId),
           status: 'paid',
+          isArchived: { $ne: true },
           paidAt: { $gte: sixMonthsAgo },
         },
       },
@@ -1075,7 +970,7 @@ export const getInvoiceStats = async (req, res) => {
 };
 
 // ============================================
-// @desc    Get invoices by client
+// @desc    Get invoices by client (non-archived only)
 // @route   GET /api/v1/invoices/client/:clientId
 // @access  Private
 // ============================================
@@ -1085,6 +980,7 @@ export const getInvoicesByClient = async (req, res) => {
       venue: req.user.venueId,
       client: req.params.clientId,
       invoiceType: 'client',
+      isArchived: { $ne: true }
     })
       .sort('-createdAt')
       .populate('event', 'title startDate');
@@ -1103,7 +999,7 @@ export const getInvoicesByClient = async (req, res) => {
 };
 
 // ============================================
-// @desc    Get invoices by partner
+// @desc    Get invoices by partner (non-archived only)
 // @route   GET /api/v1/invoices/partner/:partnerId
 // @access  Private
 // ============================================
@@ -1113,6 +1009,7 @@ export const getInvoicesByPartner = async (req, res) => {
       venue: req.user.venueId,
       partner: req.params.partnerId,
       invoiceType: 'partner',
+      isArchived: { $ne: true }
     })
       .sort('-createdAt')
       .populate('event', 'title startDate');
@@ -1131,7 +1028,7 @@ export const getInvoicesByPartner = async (req, res) => {
 };
 
 // ============================================
-// @desc    Get invoices by event
+// @desc    Get invoices by event (non-archived only)
 // @route   GET /api/v1/invoices/event/:eventId
 // @access  Private
 // ============================================
@@ -1140,6 +1037,7 @@ export const getInvoicesByEvent = async (req, res) => {
     const invoices = await Invoice.find({
       venue: req.user.venueId,
       event: req.params.eventId,
+      isArchived: { $ne: true }
     })
       .sort('-createdAt')
       .populate('client', 'name email')

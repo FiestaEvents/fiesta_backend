@@ -18,6 +18,7 @@ export const getEvents = asyncHandler(async (req, res) => {
     startDate,
     endDate,
     search,
+    includeArchived = false,
   } = req.query;
 
   // Build query
@@ -39,6 +40,13 @@ export const getEvents = asyncHandler(async (req, res) => {
     query.title = { $regex: search, $options: "i" };
   }
 
+  // Handle archive filter
+  if (includeArchived === "true" || includeArchived === true) {
+    // Include all events
+  } else {
+    query.isArchived = { $ne: true };
+  }
+
   // Pagination
   const skip = (page - 1) * limit;
 
@@ -48,6 +56,7 @@ export const getEvents = asyncHandler(async (req, res) => {
       .populate("clientId", "name email phone")
       .populate("partners.partner", "name category")
       .populate("createdBy", "name email")
+      .populate("archivedBy", "name email")
       .sort({ startDate: -1 })
       .skip(skip)
       .limit(parseInt(limit)),
@@ -78,6 +87,7 @@ export const getEventsByClient = asyncHandler(async (req, res) => {
     status,
     sortBy = "startDate",
     order = "desc",
+    includeArchived = false,
   } = req.query;
 
   // Verify client exists and belongs to venue
@@ -98,6 +108,13 @@ export const getEventsByClient = asyncHandler(async (req, res) => {
 
   if (status) query.status = status;
 
+  // Handle archive filter
+  if (includeArchived === "true" || includeArchived === true) {
+    // Include all events
+  } else {
+    query.isArchived = { $ne: true };
+  }
+
   // Pagination
   const skip = (page - 1) * limit;
 
@@ -117,9 +134,10 @@ export const getEventsByClient = asyncHandler(async (req, res) => {
     Event.countDocuments(query),
   ]);
 
-  // Calculate statistics for this client
+  // Calculate statistics for this client (excluding archived events)
+  const statsQuery = { ...query, isArchived: { $ne: true } };
   const stats = await Event.aggregate([
-    { $match: query },
+    { $match: statsQuery },
     {
       $group: {
         _id: null,
@@ -185,7 +203,8 @@ export const getEvent = asyncHandler(async (req, res) => {
     .populate("clientId")
     .populate("partners.partner")
     .populate("payments")
-    .populate("createdBy", "name email");
+    .populate("createdBy", "name email")
+    .populate("archivedBy", "name email");
 
   if (!event) {
     throw new ApiError("Event not found", 404);
@@ -216,10 +235,11 @@ export const createEvent = asyncHandler(async (req, res) => {
     throw new ApiError("Client not found", 404);
   }
 
-  // Check for date conflicts
+  // Check for date conflicts (excluding archived events)
   const conflictingEvent = await Event.findOne({
     venueId: req.user.venueId,
     status: { $nin: ["cancelled", "completed"] },
+    isArchived: { $ne: true },
     $or: [
       {
         startDate: {
@@ -255,6 +275,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
   let event = await Event.findOne({
     _id: req.params.id,
     venueId: req.user.venueId,
+    isArchived: { $ne: true }
   });
 
   if (!event) {
@@ -267,7 +288,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
     throw new ApiError("You can only update your own events", 403);
   }
 
-  // Check date conflicts if dates are being updated
+  // Check date conflicts if dates are being updated (excluding archived events)
   if (req.body.startDate || req.body.endDate) {
     const startDate = req.body.startDate
       ? new Date(req.body.startDate)
@@ -278,6 +299,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
       _id: { $ne: event._id },
       venueId: req.user.venueId,
       status: { $nin: ["cancelled", "completed"] },
+      isArchived: { $ne: true },
       $or: [
         {
           startDate: { $lte: endDate },
@@ -304,23 +326,96 @@ export const updateEvent = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Delete event
+ * @desc    Archive event (soft delete)
  * @route   DELETE /api/v1/events/:id
  * @access  Private (events.delete.all)
  */
-export const deleteEvent = asyncHandler(async (req, res) => {
+export const archiveEvent = asyncHandler(async (req, res) => {
   const event = await Event.findOne({
     _id: req.params.id,
     venueId: req.user.venueId,
+    isArchived: { $ne: true }
   });
 
   if (!event) {
     throw new ApiError("Event not found", 404);
   }
 
-  await event.deleteOne();
+  // Archive the event instead of deleting
+  const archivedEvent = await Event.archiveEvent(req.params.id, req.user._id);
 
-  new ApiResponse(null, "Event deleted successfully").send(res);
+  new ApiResponse({ event: archivedEvent }, "Event archived successfully").send(res);
+});
+
+/**
+ * @desc    Restore archived event
+ * @route   PATCH /api/v1/events/:id/restore
+ * @access  Private (events.delete.all)
+ */
+export const restoreEvent = asyncHandler(async (req, res) => {
+  const event = await Event.findOne({
+    _id: req.params.id,
+    venueId: req.user.venueId,
+    isArchived: true
+  });
+
+  if (!event) {
+    throw new ApiError("Archived event not found", 404);
+  }
+
+  const restoredEvent = await Event.restoreEvent(req.params.id);
+
+  new ApiResponse({ event: restoredEvent }, "Event restored successfully").send(res);
+});
+
+/**
+ * @desc    Get archived events
+ * @route   GET /api/v1/events/archived
+ * @access  Private (events.read.all)
+ */
+export const getArchivedEvents = asyncHandler(async (req, res) => {
+  const {
+    page = 1,
+    limit = 10,
+    search,
+  } = req.query;
+
+  // Build query for archived events
+  const query = { 
+    venueId: req.user.venueId,
+    isArchived: true 
+  };
+
+  // Search by title
+  if (search) {
+    query.title = { $regex: search, $options: "i" };
+  }
+
+  // Pagination
+  const skip = (page - 1) * limit;
+
+  // Execute query
+  const [events, total] = await Promise.all([
+    Event.find(query)
+      .populate("clientId", "name email phone")
+      .populate("partners.partner", "name category")
+      .populate("createdBy", "name email")
+      .populate("archivedBy", "name email")
+      .sort({ archivedAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit)),
+    Event.countDocuments(query),
+  ]);
+
+  new ApiResponse({
+    events,
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      pages: Math.ceil(total / limit),
+    },
+  }).send(res);
 });
 
 /**
@@ -331,8 +426,9 @@ export const deleteEvent = asyncHandler(async (req, res) => {
 export const getEventStats = asyncHandler(async (req, res) => {
   const venueId = req.user.venueId;
 
+  // Exclude archived events from stats
   const stats = await Event.aggregate([
-    { $match: { venueId } },
+    { $match: { venueId, isArchived: { $ne: true } } },
     {
       $group: {
         _id: "$status",
@@ -343,7 +439,7 @@ export const getEventStats = asyncHandler(async (req, res) => {
   ]);
 
   const typeStats = await Event.aggregate([
-    { $match: { venueId } },
+    { $match: { venueId, isArchived: { $ne: true } } },
     {
       $group: {
         _id: "$type",
@@ -352,8 +448,26 @@ export const getEventStats = asyncHandler(async (req, res) => {
     },
   ]);
 
+  // Get total events count
+  const totalEvents = await Event.countDocuments({ 
+    venueId, 
+    isArchived: { $ne: true } 
+  });
+
+  // Get upcoming events count
+  const upcomingEvents = await Event.countDocuments({
+    venueId,
+    isArchived: { $ne: true },
+    startDate: { $gte: new Date() },
+    status: { $in: ["pending", "confirmed"] }
+  });
+
   new ApiResponse({
     statusStats: stats,
     typeStats,
+    summary: {
+      totalEvents,
+      upcomingEvents
+    }
   }).send(res);
 });

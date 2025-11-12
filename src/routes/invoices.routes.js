@@ -13,6 +13,10 @@ import {
   getInvoicesByClient,
   getInvoicesByPartner,
   getInvoicesByEvent,
+  restoreInvoice,
+  getArchivedInvoices,
+  bulkArchiveInvoices,
+  bulkRestoreInvoices,
 } from '../controllers/invoiceController.js';
 import { authenticate, authorize, attachVenue } from '../middleware/auth.js';
 
@@ -41,6 +45,16 @@ router.use((req, res, next) => {
 // Stats route - must come before /:id to avoid conflicts
 router.route('/stats')
   .get(authorize('Owner', 'Manager', 'Staff', 'Viewer'), getInvoiceStats);
+
+// Archive routes
+router.route('/archived')
+  .get(authorize('Owner', 'Manager', 'Staff', 'Viewer'), getArchivedInvoices);
+
+router.route('/bulk-archive')
+  .post(authorize('Owner', 'Manager'), bulkArchiveInvoices);
+
+router.route('/bulk-restore')
+  .post(authorize('Owner', 'Manager'), bulkRestoreInvoices);
 
 // Client invoices route
 router.route('/client/:clientId')
@@ -77,5 +91,8 @@ router.route('/:id/paid')
 
 router.route('/:id/cancel')
   .patch(authorize('Owner', 'Manager'), cancelInvoice);
+
+router.route('/:id/restore')
+  .patch(authorize('Owner', 'Manager'), restoreInvoice);
 
 export default router;

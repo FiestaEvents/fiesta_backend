@@ -4,7 +4,7 @@ import ApiResponse from "../utils/ApiResponse.js";
 import { Finance, Event, Partner } from "../models/index.js";
 
 /**
- * @desc    Get all finance records
+ * @desc    Get all finance records (non-archived by default)
  * @route   GET /api/v1/finance
  * @access  Private
  */
@@ -20,6 +20,7 @@ export const getFinanceRecords = asyncHandler(async (req, res) => {
     search,
     sortBy = "date",
     order = "desc",
+    includeArchived = false, // New parameter to include archived records
   } = req.query;
 
   // Build query
@@ -28,6 +29,11 @@ export const getFinanceRecords = asyncHandler(async (req, res) => {
   if (type) query.type = type;
   if (category) query.category = category;
   if (status) query.status = status;
+  
+  // Modified: Only fetch non-archived records by default
+  if (!includeArchived) {
+    query.isArchived = false;
+  }
 
   // Date range filter
   if (startDate || endDate) {
@@ -57,6 +63,7 @@ export const getFinanceRecords = asyncHandler(async (req, res) => {
       .populate("relatedEvent", "title startDate")
       .populate("relatedPartner", "name category")
       .populate("createdBy", "name email")
+      .populate("archivedBy", "name email")
       .sort(sortOptions)
       .skip(skip)
       .limit(parseInt(limit)),
@@ -75,7 +82,7 @@ export const getFinanceRecords = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get single finance record
+ * @desc    Get single finance record (including archived)
  * @route   GET /api/v1/finance/:id
  * @access  Private
  */
@@ -86,7 +93,8 @@ export const getFinanceRecord = asyncHandler(async (req, res) => {
   })
     .populate("relatedEvent")
     .populate("relatedPartner")
-    .populate("createdBy", "name email");
+    .populate("createdBy", "name email")
+    .populate("archivedBy", "name email");
 
   if (!record) {
     throw new ApiError("Finance record not found", 404);
@@ -105,6 +113,7 @@ export const createFinanceRecord = asyncHandler(async (req, res) => {
     ...req.body,
     venueId: req.user.venueId,
     createdBy: req.user._id,
+    isArchived: false, // Ensure new records are not archived
   };
 
   // Verify related event if provided
@@ -165,6 +174,10 @@ export const updateFinanceRecord = asyncHandler(async (req, res) => {
     throw new ApiError("Finance record not found", 404);
   }
 
+  if (record.isArchived) {
+    throw new ApiError("Cannot update an archived finance record", 400);
+  }
+
   // Verify related resources if being changed
   if (req.body.relatedEvent) {
     const event = await Event.findOne({
@@ -194,7 +207,7 @@ export const updateFinanceRecord = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Delete finance record
+ * @desc    Archive finance record (soft delete)
  * @route   DELETE /api/v1/finance/:id
  * @access  Private (finance.delete.all)
  */
@@ -208,13 +221,108 @@ export const deleteFinanceRecord = asyncHandler(async (req, res) => {
     throw new ApiError("Finance record not found", 404);
   }
 
-  await record.deleteOne();
+  if (record.isArchived) {
+    throw new ApiError("Finance record is already archived", 400);
+  }
 
-  new ApiResponse(null, "Finance record deleted successfully").send(res);
+  // Soft delete: Archive the record instead of deleting
+  record.isArchived = true;
+  record.archivedAt = new Date();
+  record.archivedBy = req.user._id;
+  await record.save();
+
+  new ApiResponse(null, "Finance record archived successfully").send(res);
 });
 
 /**
- * @desc    Get financial summary
+ * @desc    Restore archived finance record
+ * @route   PATCH /api/v1/finance/:id/restore
+ * @access  Private (finance.update.all)
+ */
+export const restoreFinanceRecord = asyncHandler(async (req, res) => {
+  const record = await Finance.findOne({
+    _id: req.params.id,
+    venueId: req.user.venueId,
+  });
+
+  if (!record) {
+    throw new ApiError("Finance record not found", 404);
+  }
+
+  if (!record.isArchived) {
+    throw new ApiError("Finance record is not archived", 400);
+  }
+
+  record.isArchived = false;
+  record.archivedAt = undefined;
+  record.archivedBy = undefined;
+  await record.save();
+
+  await record.populate([
+    { path: "relatedEvent", select: "title startDate" },
+    { path: "relatedPartner", select: "name category" },
+  ]);
+
+  new ApiResponse({ record }, "Finance record restored successfully").send(res);
+});
+
+/**
+ * @desc    Get archived finance records
+ * @route   GET /api/v1/finance/archived
+ * @access  Private
+ */
+export const getArchivedFinanceRecords = asyncHandler(async (req, res) => {
+  const {
+    page = 1,
+    limit = 10,
+    type,
+    category,
+    sortBy = "archivedAt",
+    order = "desc",
+  } = req.query;
+
+  // Build query for archived records only
+  const query = { 
+    venueId: req.user.venueId,
+    isArchived: true 
+  };
+
+  if (type) query.type = type;
+  if (category) query.category = category;
+
+  // Pagination
+  const skip = (page - 1) * limit;
+
+  // Sort
+  const sortOrder = order === "asc" ? 1 : -1;
+  const sortOptions = { [sortBy]: sortOrder };
+
+  // Execute query
+  const [records, total] = await Promise.all([
+    Finance.find(query)
+      .populate("relatedEvent", "title startDate")
+      .populate("relatedPartner", "name category")
+      .populate("createdBy", "name email")
+      .populate("archivedBy", "name email")
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(parseInt(limit)),
+    Finance.countDocuments(query),
+  ]);
+
+  new ApiResponse({
+    records,
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      pages: Math.ceil(total / limit),
+    },
+  }).send(res);
+});
+
+/**
+ * @desc    Get financial summary (non-archived only)
  * @route   GET /api/v1/finance/summary
  * @access  Private
  */
@@ -222,7 +330,12 @@ export const getFinancialSummary = asyncHandler(async (req, res) => {
   const venueId = req.user.venueId;
   const { startDate, endDate, groupBy = "month" } = req.query;
 
-  const dateFilter = { venueId, status: "completed" };
+  const dateFilter = { 
+    venueId, 
+    status: "completed",
+    isArchived: false // Only count non-archived records
+  };
+  
   if (startDate || endDate) {
     dateFilter.date = {};
     if (startDate) dateFilter.date.$gte = new Date(startDate);
@@ -297,6 +410,7 @@ export const getFinancialSummary = asyncHandler(async (req, res) => {
   let totalExpense = 0;
   let incomeCount = 0;
   let expenseCount = 0;
+  let archivedCount = 0;
 
   summary.forEach((item) => {
     if (item._id === "income") {
@@ -307,6 +421,12 @@ export const getFinancialSummary = asyncHandler(async (req, res) => {
       totalExpense = item.totalAmount;
       expenseCount = item.count;
     }
+  });
+
+  // Get archived records count
+  archivedCount = await Finance.countDocuments({
+    venueId,
+    isArchived: true,
   });
 
   const netProfit = totalIncome - totalExpense;
@@ -348,6 +468,7 @@ export const getFinancialSummary = asyncHandler(async (req, res) => {
       profitMargin: parseFloat(profitMargin),
       incomeCount,
       expenseCount,
+      archivedCount,
       totalTransactions: incomeCount + expenseCount,
     },
     categoryBreakdown,
@@ -358,7 +479,7 @@ export const getFinancialSummary = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get cash flow report
+ * @desc    Get cash flow report (non-archived only)
  * @route   GET /api/v1/finance/cashflow
  * @access  Private
  */
@@ -366,7 +487,12 @@ export const getCashFlowReport = asyncHandler(async (req, res) => {
   const venueId = req.user.venueId;
   const { startDate, endDate, groupBy = "month" } = req.query;
 
-  const dateFilter = { venueId, status: "completed" };
+  const dateFilter = { 
+    venueId, 
+    status: "completed",
+    isArchived: false // Only count non-archived records
+  };
+  
   if (startDate || endDate) {
     dateFilter.date = {};
     if (startDate) dateFilter.date.$gte = new Date(startDate);
@@ -473,7 +599,7 @@ export const getCashFlowReport = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get expense breakdown by category
+ * @desc    Get expense breakdown by category (non-archived only)
  * @route   GET /api/v1/finance/expenses/breakdown
  * @access  Private
  */
@@ -481,7 +607,13 @@ export const getExpenseBreakdown = asyncHandler(async (req, res) => {
   const venueId = req.user.venueId;
   const { startDate, endDate } = req.query;
 
-  const dateFilter = { venueId, type: "expense", status: "completed" };
+  const dateFilter = { 
+    venueId, 
+    type: "expense", 
+    status: "completed",
+    isArchived: false // Only count non-archived records
+  };
+  
   if (startDate || endDate) {
     dateFilter.date = {};
     if (startDate) dateFilter.date.$gte = new Date(startDate);
@@ -519,7 +651,7 @@ export const getExpenseBreakdown = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get income breakdown by category
+ * @desc    Get income breakdown by category (non-archived only)
  * @route   GET /api/v1/finance/income/breakdown
  * @access  Private
  */
@@ -527,7 +659,13 @@ export const getIncomeBreakdown = asyncHandler(async (req, res) => {
   const venueId = req.user.venueId;
   const { startDate, endDate } = req.query;
 
-  const dateFilter = { venueId, type: "income", status: "completed" };
+  const dateFilter = { 
+    venueId, 
+    type: "income", 
+    status: "completed",
+    isArchived: false // Only count non-archived records
+  };
+  
   if (startDate || endDate) {
     dateFilter.date = {};
     if (startDate) dateFilter.date.$gte = new Date(startDate);
@@ -565,7 +703,7 @@ export const getIncomeBreakdown = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get profit and loss statement
+ * @desc    Get profit and loss statement (non-archived only)
  * @route   GET /api/v1/finance/profit-loss
  * @access  Private
  */
@@ -573,7 +711,12 @@ export const getProfitLossStatement = asyncHandler(async (req, res) => {
   const venueId = req.user.venueId;
   const { startDate, endDate } = req.query;
 
-  const dateFilter = { venueId, status: "completed" };
+  const dateFilter = { 
+    venueId, 
+    status: "completed",
+    isArchived: false // Only count non-archived records
+  };
+  
   if (startDate || endDate) {
     dateFilter.date = {};
     if (startDate) dateFilter.date.$gte = new Date(startDate);
@@ -651,7 +794,7 @@ export const getProfitLossStatement = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get financial trends
+ * @desc    Get financial trends (non-archived only)
  * @route   GET /api/v1/finance/trends
  * @access  Private
  */
@@ -667,6 +810,7 @@ export const getFinancialTrends = asyncHandler(async (req, res) => {
       $match: {
         venueId,
         status: "completed",
+        isArchived: false, // Only count non-archived records
         date: { $gte: startDate },
       },
     },
@@ -717,7 +861,7 @@ export const getFinancialTrends = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get tax summary
+ * @desc    Get tax summary (non-archived only)
  * @route   GET /api/v1/finance/tax-summary
  * @access  Private
  */
@@ -734,6 +878,7 @@ export const getTaxSummary = asyncHandler(async (req, res) => {
       $match: {
         venueId,
         status: "completed",
+        isArchived: false, // Only count non-archived records
         date: { $gte: startDate, $lte: endDate },
       },
     },
@@ -746,11 +891,12 @@ export const getTaxSummary = asyncHandler(async (req, res) => {
     },
   ]);
 
-  // Get tax-specific records
+  // Get tax-specific records (including archived for completeness)
   const taxRecords = await Finance.find({
     venueId,
     category: "taxes",
     date: { $gte: startDate, $lte: endDate },
+    isArchived: false, // Only show non-archived tax records
   }).sort({ date: -1 });
 
   let totalIncome = 0;

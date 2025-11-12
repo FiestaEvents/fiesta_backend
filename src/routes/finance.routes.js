@@ -12,6 +12,8 @@ import {
   getProfitLossStatement,
   getFinancialTrends,
   getTaxSummary,
+  restoreFinanceRecord,
+  getArchivedFinanceRecords,
 } from "../controllers/financeController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
@@ -30,6 +32,18 @@ router.get("/income/breakdown", checkPermission("finance.read.all"), getIncomeBr
 router.get("/profit-loss", checkPermission("finance.read.all"), getProfitLossStatement);
 router.get("/trends", checkPermission("finance.read.all"), getFinancialTrends);
 router.get("/tax-summary", checkPermission("finance.read.all"), getTaxSummary);
+
+// Archived records
+router.get("/archived", checkPermission("finance.read.all"), getArchivedFinanceRecords);
+
+// Restore archived record
+router.patch(
+  "/:id/restore",
+  checkPermission("finance.update.all"),
+  param("id").isMongoId(),
+  validateRequest,
+  restoreFinanceRecord
+);
 
 // CRUD operations
 router

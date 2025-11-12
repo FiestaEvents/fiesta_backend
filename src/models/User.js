@@ -40,6 +40,13 @@ const userSchema = new mongoose.Schema(
       ref: "Venue",
       required: [true, "Venue is required"],
     },
+    isActive: { type: Boolean, default: true },
+    isArchived: { type: Boolean, default: false },
+    archivedAt: { type: Date },
+    archivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
     customPermissions: {
       granted: [
         {

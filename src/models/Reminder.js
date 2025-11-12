@@ -17,6 +17,20 @@ const reminderSchema = new mongoose.Schema(
       enum: ["event", "payment", "task", "maintenance", "followup", "other"],
       default: "other",
     },
+    
+    // Fixed: Properly indented archive fields
+    isArchived: { 
+      type: Boolean, 
+      default: false 
+    },
+    archivedAt: { 
+      type: Date 
+    },
+    archivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    
     priority: {
       type: String,
       enum: ["low", "medium", "high", "urgent"],
@@ -113,7 +127,42 @@ const reminderSchema = new mongoose.Schema(
   }
 );
 
+// Add static methods for archive functionality
+reminderSchema.statics.archiveReminder = async function(reminderId, archivedBy) {
+  return await this.findByIdAndUpdate(
+    reminderId,
+    {
+      isArchived: true,
+      archivedAt: new Date(),
+      archivedBy: archivedBy
+    },
+    { new: true }
+  );
+};
+
+reminderSchema.statics.restoreReminder = async function(reminderId) {
+  return await this.findByIdAndUpdate(
+    reminderId,
+    {
+      isArchived: false,
+      archivedAt: null,
+      archivedBy: null
+    },
+    { new: true }
+  );
+};
+
+// Query helpers
+reminderSchema.query.excludeArchived = function() {
+  return this.where({ isArchived: { $ne: true } });
+};
+
+reminderSchema.query.includeArchived = function() {
+  return this;
+};
+
 reminderSchema.index({ venueId: 1, reminderDate: 1, status: 1 });
 reminderSchema.index({ assignedTo: 1, status: 1 });
+reminderSchema.index({ isArchived: 1 });
 
 export default mongoose.model("Reminder", reminderSchema);

@@ -41,6 +41,20 @@ const eventSchema = new mongoose.Schema(
       enum: ["pending", "confirmed", "in-progress", "completed", "cancelled"],
       default: "pending",
     },
+    
+    // Archive fields
+    isArchived: { 
+      type: Boolean, 
+      default: false 
+    },
+    archivedAt: { 
+      type: Date 
+    },
+    archivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    
     pricing: {
       basePrice: {
         type: Number,
@@ -127,7 +141,7 @@ eventSchema.pre("save", function (next) {
     const end = new Date(this.endDate);
     
     // If same date, check times
-    if (this.startDate === this.endDate && this.startTime ===this.endTime) {
+    if (this.startDate === this.endDate && this.startTime === this.endTime) {
       if (this.startTime >= this.endTime) {
         return next(new Error("End time must be after start time"));
       }
@@ -161,28 +175,56 @@ eventSchema.pre("save", function (next) {
   next();
 });
 
-// Cascade delete related documents
+// Update cascade delete to archive instead
 eventSchema.pre("deleteOne", { document: true }, async function (next) {
-  const eventId = this._id;
-
-  const Task = mongoose.model("Task");
-  const Reminder = mongoose.model("Reminder");
-  const Payment = mongoose.model("Payment");
-  const Finance = mongoose.model("Finance");
-
-  await Promise.all([
-    Task.deleteMany({ relatedEvent: eventId }),
-    Reminder.deleteMany({ relatedEvent: eventId }),
-    Payment.deleteMany({ event: eventId }),
-    Finance.deleteMany({ relatedEvent: eventId }),
-  ]);
-
-  next();
+  // Instead of deleting, archive the event
+  this.isArchived = true;
+  this.archivedAt = new Date();
+  this.archivedBy = this.createdBy;
+  
+  // Prevent the actual deletion
+  next(new Error("Events should be archived instead of deleted. Use archiveEvent method."));
 });
+
+// Static method to archive an event
+eventSchema.statics.archiveEvent = async function(eventId, archivedBy) {
+  return await this.findByIdAndUpdate(
+    eventId,
+    {
+      isArchived: true,
+      archivedAt: new Date(),
+      archivedBy: archivedBy
+    },
+    { new: true }
+  );
+};
+
+// Static method to restore an event
+eventSchema.statics.restoreEvent = async function(eventId) {
+  return await this.findByIdAndUpdate(
+    eventId,
+    {
+      isArchived: false,
+      archivedAt: null,
+      archivedBy: null
+    },
+    { new: true }
+  );
+};
+
+// Query helper to exclude archived events by default
+eventSchema.query.excludeArchived = function() {
+  return this.where({ isArchived: { $ne: true } });
+};
+
+eventSchema.query.includeArchived = function() {
+  return this;
+};
 
 eventSchema.index({ startDate: 1, endDate: 1 });
 eventSchema.index({ venueId: 1, startDate: 1 });
 eventSchema.index({ clientId: 1 });
 eventSchema.index({ status: 1 });
+eventSchema.index({ isArchived: 1 });
 
 export default mongoose.model("Event", eventSchema);

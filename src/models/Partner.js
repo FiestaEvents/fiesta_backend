@@ -49,6 +49,12 @@ const partnerSchema = new mongoose.Schema(
       enum: ["active", "inactive"],
       default: "active",
     },
+  isArchived: { type: Boolean, default: false },
+  archivedAt: { type: Date },
+  archivedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
     location: { type: String },
     specialties: { type: String },
     hourlyRate: { type: Number, min: 0 },

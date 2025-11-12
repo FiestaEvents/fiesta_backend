@@ -6,6 +6,8 @@ import {
   updatePartner,
   deletePartner,
   getPartnerStats,
+  restorePartner,
+  getArchivedPartners,
 } from "../controllers/partnerController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
@@ -18,6 +20,9 @@ router.use(authenticate);
 
 // Stats
 router.get("/stats", checkPermission("partners.read.all"), getPartnerStats);
+
+// Archived partners
+router.get("/archived", checkPermission("partners.read.all"), getArchivedPartners);
 
 // CRUD operations
 router
@@ -45,5 +50,14 @@ router
     validateRequest,
     deletePartner
   );
+
+// Restore archived partner
+router.patch(
+  "/:id/restore",
+  checkPermission("partners.update.all"),
+  param("id").isMongoId(),
+  validateRequest,
+  restorePartner
+);
 
 export default router;

@@ -4,7 +4,7 @@ import ApiResponse from "../utils/ApiResponse.js";
 import { Payment, Event, Client } from "../models/index.js";
 
 /**
- * @desc    Get all payments
+ * @desc    Get all payments (non-archived by default)
  * @route   GET /api/v1/payments
  * @access  Private
  */
@@ -19,6 +19,7 @@ export const getPayments = asyncHandler(async (req, res) => {
     clientId,
     startDate,
     endDate,
+    includeArchived = false, // New parameter to include archived payments
   } = req.query;
 
   // Build query
@@ -29,6 +30,11 @@ export const getPayments = asyncHandler(async (req, res) => {
   if (method) query.method = method;
   if (eventId) query.event = eventId;
   if (clientId) query.client = clientId;
+  
+  // Modified: Only fetch non-archived payments by default
+  if (!includeArchived) {
+    query.isArchived = false;
+  }
 
   // Date range filter
   if (startDate || endDate) {
@@ -46,6 +52,7 @@ export const getPayments = asyncHandler(async (req, res) => {
       .populate("event", "title startDate")
       .populate("client", "name email")
       .populate("processedBy", "name email")
+      .populate("archivedBy", "name email")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit)),
@@ -64,7 +71,7 @@ export const getPayments = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get single payment
+ * @desc    Get single payment (including archived)
  * @route   GET /api/v1/payments/:id
  * @access  Private
  */
@@ -75,7 +82,8 @@ export const getPayment = asyncHandler(async (req, res) => {
   })
     .populate("event")
     .populate("client")
-    .populate("processedBy", "name email");
+    .populate("processedBy", "name email")
+    .populate("archivedBy", "name email");
 
   if (!payment) {
     throw new ApiError("Payment not found", 404);
@@ -94,6 +102,7 @@ export const createPayment = asyncHandler(async (req, res) => {
     ...req.body,
     venueId: req.user.venueId,
     processedBy: req.user._id,
+    isArchived: false, // Ensure new payments are not archived
   };
 
   // Verify event exists if provided
@@ -127,31 +136,9 @@ export const createPayment = asyncHandler(async (req, res) => {
 
   const payment = await Payment.create(paymentData);
 
-  // Update event payment summary if payment is for an event
-  if (payment.event && payment.type === "income") {
-    const event = await Event.findById(payment.event);
-    
-    // Add payment to event's payments array
-    event.payments.push(payment._id);
-    
-    // Update payment summary
-    const allPayments = await Payment.find({
-      event: payment.event,
-      status: "completed",
-      type: "income",
-    });
-
-    const totalPaid = allPayments.reduce((sum, p) => sum + p.netAmount, 0);
-    event.paymentSummary.paidAmount = totalPaid;
-
-    // Update payment status
-    if (totalPaid >= event.pricing.totalAmount) {
-      event.paymentSummary.status = "paid";
-    } else if (totalPaid > 0) {
-      event.paymentSummary.status = "partial";
-    }
-
-    await event.save();
+  // Update event payment summary if payment is for an event and not archived
+  if (payment.event && payment.type === "income" && !payment.isArchived) {
+    await updateEventPaymentSummary(payment.event);
   }
 
   await payment.populate([
@@ -177,6 +164,10 @@ export const updatePayment = asyncHandler(async (req, res) => {
     throw new ApiError("Payment not found", 404);
   }
 
+  if (payment.isArchived) {
+    throw new ApiError("Cannot update an archived payment", 400);
+  }
+
   // If status is being changed to completed, set paidDate
   if (req.body.status === "completed" && payment.status !== "completed") {
     req.body.paidDate = new Date();
@@ -186,26 +177,8 @@ export const updatePayment = asyncHandler(async (req, res) => {
   await payment.save();
 
   // Update event payment summary if applicable
-  if (payment.event) {
-    const event = await Event.findById(payment.event);
-    const allPayments = await Payment.find({
-      event: payment.event,
-      status: "completed",
-      type: "income",
-    });
-
-    const totalPaid = allPayments.reduce((sum, p) => sum + p.netAmount, 0);
-    event.paymentSummary.paidAmount = totalPaid;
-
-    if (totalPaid >= event.pricing.totalAmount) {
-      event.paymentSummary.status = "paid";
-    } else if (totalPaid > 0) {
-      event.paymentSummary.status = "partial";
-    } else {
-      event.paymentSummary.status = "pending";
-    }
-
-    await event.save();
+  if (payment.event && payment.type === "income") {
+    await updateEventPaymentSummary(payment.event);
   }
 
   await payment.populate([
@@ -217,7 +190,7 @@ export const updatePayment = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Delete payment
+ * @desc    Archive payment (soft delete)
  * @route   DELETE /api/v1/payments/:id
  * @access  Private (payments.delete.all)
  */
@@ -231,22 +204,63 @@ export const deletePayment = asyncHandler(async (req, res) => {
     throw new ApiError("Payment not found", 404);
   }
 
-  // Remove payment from event if applicable
-  if (payment.event) {
-    const event = await Event.findById(payment.event);
-    event.payments = event.payments.filter(
-      (p) => p.toString() !== payment._id.toString()
-    );
-    await event.save();
+  if (payment.isArchived) {
+    throw new ApiError("Payment is already archived", 400);
   }
 
-  await payment.deleteOne();
+  // Soft delete: Archive the payment instead of deleting
+  payment.isArchived = true;
+  payment.archivedAt = new Date();
+  payment.archivedBy = req.user._id;
+  await payment.save();
 
-  new ApiResponse(null, "Payment deleted successfully").send(res);
+  // Update event payment summary if this payment was associated with an event
+  if (payment.event && payment.type === "income") {
+    await updateEventPaymentSummary(payment.event);
+  }
+
+  new ApiResponse(null, "Payment archived successfully").send(res);
 });
 
 /**
- * @desc    Get payment statistics
+ * @desc    Restore archived payment
+ * @route   PATCH /api/v1/payments/:id/restore
+ * @access  Private (payments.update.all)
+ */
+export const restorePayment = asyncHandler(async (req, res) => {
+  const payment = await Payment.findOne({
+    _id: req.params.id,
+    venueId: req.user.venueId,
+  });
+
+  if (!payment) {
+    throw new ApiError("Payment not found", 404);
+  }
+
+  if (!payment.isArchived) {
+    throw new ApiError("Payment is not archived", 400);
+  }
+
+  payment.isArchived = false;
+  payment.archivedAt = undefined;
+  payment.archivedBy = undefined;
+  await payment.save();
+
+  // Update event payment summary if this payment is associated with an event
+  if (payment.event && payment.type === "income") {
+    await updateEventPaymentSummary(payment.event);
+  }
+
+  await payment.populate([
+    { path: "event", select: "title startDate" },
+    { path: "client", select: "name email" },
+  ]);
+
+  new ApiResponse({ payment }, "Payment restored successfully").send(res);
+});
+
+/**
+ * @desc    Get payment statistics (non-archived only)
  * @route   GET /api/v1/payments/stats
  * @access  Private
  */
@@ -254,7 +268,11 @@ export const getPaymentStats = asyncHandler(async (req, res) => {
   const venueId = req.user.venueId;
   const { startDate, endDate } = req.query;
 
-  const dateFilter = { venueId };
+  const dateFilter = { 
+    venueId,
+    isArchived: false // Only count non-archived payments
+  };
+  
   if (startDate || endDate) {
     dateFilter.createdAt = {};
     if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
@@ -294,6 +312,7 @@ export const getPaymentStats = asyncHandler(async (req, res) => {
     totalExpense: 0,
     pendingPayments: 0,
     completedPayments: 0,
+    archivedPayments: 0,
   };
 
   stats.forEach((stat) => {
@@ -309,6 +328,12 @@ export const getPaymentStats = asyncHandler(async (req, res) => {
     if (stat._id.status === "completed") {
       totals.completedPayments += stat.count;
     }
+  });
+
+  // Get archived payments count
+  totals.archivedPayments = await Payment.countDocuments({
+    venueId,
+    isArchived: true,
   });
 
   totals.netRevenue = totals.totalIncome - totals.totalExpense;
@@ -337,6 +362,10 @@ export const processRefund = asyncHandler(async (req, res) => {
     throw new ApiError("Payment not found", 404);
   }
 
+  if (payment.isArchived) {
+    throw new ApiError("Cannot refund an archived payment", 400);
+  }
+
   if (payment.status !== "completed") {
     throw new ApiError("Can only refund completed payments", 400);
   }
@@ -352,5 +381,95 @@ export const processRefund = asyncHandler(async (req, res) => {
 
   await payment.save();
 
+  // Update event payment summary if applicable
+  if (payment.event && payment.type === "income") {
+    await updateEventPaymentSummary(payment.event);
+  }
+
   new ApiResponse({ payment }, "Refund processed successfully").send(res);
 });
+
+/**
+ * @desc    Get archived payments
+ * @route   GET /api/v1/payments/archived
+ * @access  Private
+ */
+export const getArchivedPayments = asyncHandler(async (req, res) => {
+  const {
+    page = 1,
+    limit = 10,
+    type,
+    method,
+    sortBy = "archivedAt",
+    order = "desc",
+  } = req.query;
+
+  // Build query for archived payments only
+  const query = { 
+    venueId: req.user.venueId,
+    isArchived: true 
+  };
+
+  if (type) query.type = type;
+  if (method) query.method = method;
+
+  // Pagination
+  const skip = (page - 1) * limit;
+
+  // Sort
+  const sortOrder = order === "asc" ? 1 : -1;
+  const sortOptions = { [sortBy]: sortOrder };
+
+  // Execute query
+  const [payments, total] = await Promise.all([
+    Payment.find(query)
+      .populate("event", "title startDate")
+      .populate("client", "name email")
+      .populate("processedBy", "name email")
+      .populate("archivedBy", "name email")
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(parseInt(limit)),
+    Payment.countDocuments(query),
+  ]);
+
+  new ApiResponse({
+    payments,
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      pages: Math.ceil(total / limit),
+    },
+  }).send(res);
+});
+
+/**
+ * @desc    Helper function to update event payment summary
+ */
+const updateEventPaymentSummary = async (eventId) => {
+  const event = await Event.findById(eventId);
+  if (!event) return;
+
+  // Get all non-archived completed income payments for this event
+  const allPayments = await Payment.find({
+    event: eventId,
+    status: "completed",
+    type: "income",
+    isArchived: false,
+  });
+
+  const totalPaid = allPayments.reduce((sum, p) => sum + p.netAmount, 0);
+  event.paymentSummary.paidAmount = totalPaid;
+
+  // Update payment status
+  if (totalPaid >= event.pricing.totalAmount) {
+    event.paymentSummary.status = "paid";
+  } else if (totalPaid > 0) {
+    event.paymentSummary.status = "partial";
+  } else {
+    event.paymentSummary.status = "pending";
+  }
+
+  await event.save();
+};

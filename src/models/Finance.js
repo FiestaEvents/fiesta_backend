@@ -33,6 +33,12 @@ const financeSchema = new mongoose.Schema(
       required: [true, "Amount is required"],
       min: [0, "Amount cannot be negative"],
     },
+      isArchived: { type: Boolean, default: false },
+  archivedAt: { type: Date },
+  archivedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
     date: {
       type: Date,
       required: [true, "Date is required"],

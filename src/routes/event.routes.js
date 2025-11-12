@@ -1,11 +1,13 @@
 import express from "express";
 import {
   getEvents,
-  getEventsByClient, // Add this import
+  getEventsByClient,
   getEvent,
   createEvent,
   updateEvent,
-  deleteEvent,
+  archiveEvent,
+  restoreEvent,
+  getArchivedEvents,
   getEventStats,
 } from "../controllers/eventController.js";
 import { authenticate } from "../middleware/auth.js";
@@ -26,7 +28,11 @@ router.use(authenticate);
 // Stats
 router.get("/stats", checkPermission("events.read.all"), getEventStats);
 
-// Get events by client ID - ADD THIS ROUTE
+// Archive routes
+router.get("/archived", checkPermission("events.read.all"), getArchivedEvents);
+router.patch("/:id/restore", checkPermission("events.delete.all"), restoreEvent);
+
+// Get events by client ID
 router.get(
   "/client/:clientId",
   checkPermission("events.read.all"),
@@ -67,7 +73,7 @@ router
     checkPermission("events.delete.all"),
     getEventValidator,
     validateRequest,
-    deleteEvent
+    archiveEvent  // Changed from deleteEvent to archiveEvent
   );
 
 export default router;

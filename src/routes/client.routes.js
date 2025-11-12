@@ -4,7 +4,9 @@ import {
   getClient,
   createClient,
   updateClient,
-  deleteClient,
+  archiveClient,
+  restoreClient,
+  getArchivedClients,
   getClientStats,
 } from "../controllers/clientController.js";
 import { authenticate } from "../middleware/auth.js";
@@ -22,6 +24,10 @@ router.use(authenticate);
 
 // Stats
 router.get("/stats", checkPermission("clients.read.all"), getClientStats);
+
+// Archive routes
+router.get("/archived", checkPermission("clients.read.all"), getArchivedClients);
+router.patch("/:id/restore", checkPermission("clients.delete.all"), restoreClient);
 
 // CRUD operations
 router
@@ -52,7 +58,7 @@ router
     checkPermission("clients.delete.all"),
     getClientValidator,
     validateRequest,
-    deleteClient
+    archiveClient  // Changed from deleteClient to archiveClient
   );
 
 export default router;

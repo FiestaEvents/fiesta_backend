@@ -11,7 +11,7 @@ import roleRoutes from "./role.routes.js";
 import teamRoutes from "./team.routes.js";
 import venueRoutes from "./venue.routes.js";
 import invoices from './invoices.routes.js';
-
+import userRoutes from "./user.routes.js";
 const router = express.Router();
 
 // Mount routes
@@ -27,5 +27,6 @@ router.use("/roles", roleRoutes);
 router.use("/team", teamRoutes);
 router.use("/venues", venueRoutes);
 router.use('/invoices', invoices);
+router.use("/users", userRoutes);
 
 export default router;

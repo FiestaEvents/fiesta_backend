@@ -16,6 +16,13 @@ const paymentSchema = new mongoose.Schema(
       enum: ["income", "expense"],
       default: "income",
     },
+      isArchived: { type: Boolean, default: false },
+  archivedAt: { type: Date },
+  archivedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
+  
     amount: {
       type: Number,
       required: [true, "Payment amount is required"],
