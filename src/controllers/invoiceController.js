@@ -749,7 +749,7 @@ export const downloadInvoice = async (req, res) => {
     const invoice = await Invoice.findOne({
       _id: req.params.id,
       venue: req.user.venueId,
-    });
+    }).populate('client partner event');
 
     if (!invoice) {
       return res.status(404).json({
@@ -761,7 +761,22 @@ export const downloadInvoice = async (req, res) => {
     const Venue = mongoose.model('Venue');
     const venue = await Venue.findById(req.user.venueId);
 
+    if (!venue) {
+      return res.status(404).json({
+        success: false,
+        error: 'Venue not found',
+      });
+    }
+
+    console.log(`Generating PDF for invoice: ${invoice.invoiceNumber}`);
+    
     const pdfBuffer = await generateInvoicePDF(invoice, venue);
+
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      throw new Error('Generated PDF is empty');
+    }
+
+    console.log(`PDF generated successfully, size: ${pdfBuffer.length} bytes`);
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -770,12 +785,17 @@ export const downloadInvoice = async (req, res) => {
     });
 
     res.send(pdfBuffer);
+
   } catch (error) {
     console.error('Download invoice error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Server error while generating invoice PDF',
-    });
+    
+    // Send JSON error for API calls, but make sure it's not after headers are sent
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: `Failed to generate PDF: ${error.message}`,
+      });
+    }
   }
 };
 
@@ -1054,4 +1074,185 @@ export const getInvoicesByEvent = async (req, res) => {
       error: 'Server error while fetching event invoices',
     });
   }
+};
+// ============================================
+// @desc    Generate invoice PDF
+// @route   Utility function
+// ============================================
+const generateInvoicePDF = async (invoice, venue) => {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ margin: 50 });
+      const buffers = [];
+
+      doc.on('data', buffers.push.bind(buffers));
+      doc.on('end', () => {
+        const pdfData = Buffer.concat(buffers);
+        resolve(pdfData);
+      });
+      doc.on('error', reject);
+
+      // Header
+      doc.fontSize(20).font('Helvetica-Bold')
+         .text(venue.name, 50, 50);
+      doc.fontSize(10).font('Helvetica')
+         .text(venue.contact?.address || 'Address not specified', 50, 75)
+         .text(`Phone: ${venue.contact?.phone || 'N/A'} | Email: ${venue.contact?.email || 'N/A'}`, 50, 90);
+
+      // Invoice Title
+      doc.fontSize(16).font('Helvetica-Bold')
+         .text(`INVOICE ${invoice.invoiceNumber}`, 400, 50, { align: 'right' });
+      doc.fontSize(10).font('Helvetica')
+         .text(`Issue Date: ${invoice.issueDate.toLocaleDateString()}`, 400, 70, { align: 'right' })
+         .text(`Due Date: ${invoice.dueDate.toLocaleDateString()}`, 400, 85, { align: 'right' });
+
+      // Status Badge
+      const statusColors = {
+        draft: '#6B7280',
+        sent: '#3B82F6',
+        paid: '#10B981',
+        partial: '#F59E0B',
+        overdue: '#EF4444',
+        cancelled: '#6B7280'
+      };
+      
+      doc.rect(400, 100, 100, 20).fillColor(statusColors[invoice.status] || '#6B7280').fill();
+      doc.fillColor('#FFFFFF').fontSize(8).font('Helvetica-Bold')
+         .text(invoice.status.toUpperCase(), 425, 105, { align: 'center' });
+
+      // Reset color
+      doc.fillColor('#000000');
+
+      // Recipient Information
+      doc.fontSize(12).font('Helvetica-Bold')
+         .text(invoice.invoiceType === 'client' ? 'BILL TO:' : 'PAY TO:', 50, 140);
+      doc.fontSize(10).font('Helvetica')
+         .text(invoice.recipientName, 50, 160);
+      
+      if (invoice.recipientCompany) {
+        doc.text(invoice.recipientCompany, 50, 175);
+      }
+      
+      if (invoice.recipientEmail) {
+        doc.text(invoice.recipientEmail, 50, 190);
+      }
+      
+      if (invoice.recipientPhone) {
+        doc.text(invoice.recipientPhone, 50, 205);
+      }
+
+      // Line items table header
+      let yPosition = 250;
+      doc.fontSize(10).font('Helvetica-Bold')
+         .text('Description', 50, yPosition)
+         .text('Qty', 350, yPosition)
+         .text('Rate', 400, yPosition)
+         .text('Amount', 470, yPosition, { align: 'right' });
+
+      yPosition += 20;
+      doc.moveTo(50, yPosition).lineTo(550, yPosition).stroke();
+
+      // Line items
+      invoice.items.forEach((item, index) => {
+        yPosition += 20;
+        
+        if (yPosition > 700) {
+          doc.addPage();
+          yPosition = 50;
+        }
+
+        doc.fontSize(9).font('Helvetica')
+           .text(item.description || 'No description', 50, yPosition, { width: 280 })
+           .text((item.quantity || 1).toString(), 350, yPosition)
+           .text(formatCurrency(item.rate || 0, invoice.currency), 400, yPosition)
+           .text(formatCurrency(item.amount || 0, invoice.currency), 470, yPosition, { align: 'right' });
+
+        if (item.category) {
+          yPosition += 12;
+          doc.fontSize(7).fillColor('#6B7280')
+             .text(`Category: ${item.category.replace(/_/g, ' ')}`, 50, yPosition);
+          doc.fillColor('#000000');
+        }
+      });
+
+      yPosition += 30;
+
+      // Totals
+      doc.moveTo(350, yPosition).lineTo(550, yPosition).stroke();
+      yPosition += 20;
+
+      doc.fontSize(10)
+         .text('Subtotal:', 350, yPosition)
+         .text(formatCurrency(invoice.subtotal || 0, invoice.currency), 470, yPosition, { align: 'right' });
+
+      if (invoice.tax > 0) {
+        yPosition += 15;
+        doc.text(`Tax (${invoice.taxRate || 0}%):`, 350, yPosition)
+           .text(formatCurrency(invoice.tax || 0, invoice.currency), 470, yPosition, { align: 'right' });
+      }
+
+      if (invoice.discount > 0) {
+        yPosition += 15;
+        doc.text('Discount:', 350, yPosition)
+           .text(`-${formatCurrency(invoice.discount || 0, invoice.currency)}`, 470, yPosition, { align: 'right' });
+      }
+
+      yPosition += 20;
+      doc.moveTo(350, yPosition).lineTo(550, yPosition).stroke();
+      yPosition += 20;
+
+      doc.fontSize(12).font('Helvetica-Bold')
+         .text('TOTAL:', 350, yPosition)
+         .text(formatCurrency(invoice.totalAmount || 0, invoice.currency), 470, yPosition, { align: 'right' });
+
+      // Payment status if applicable
+      if (invoice.paymentStatus?.amountPaid > 0) {
+        yPosition += 30;
+        doc.fontSize(9).fillColor('#10B981')
+           .text(`Amount Paid: ${formatCurrency(invoice.paymentStatus.amountPaid, invoice.currency)}`, 350, yPosition);
+        yPosition += 15;
+        doc.fillColor('#000000').font('Helvetica-Bold')
+           .text(`Amount Due: ${formatCurrency(invoice.paymentStatus.amountDue, invoice.currency)}`, 350, yPosition);
+      }
+
+      // Notes and Terms
+      if (invoice.notes || invoice.terms) {
+        yPosition += 40;
+        
+        if (invoice.notes) {
+          doc.fontSize(10).font('Helvetica-Bold').text('Notes:', 50, yPosition);
+          yPosition += 15;
+          doc.fontSize(9).font('Helvetica').text(invoice.notes, 50, yPosition, { width: 500 });
+          yPosition += 30;
+        }
+
+        if (invoice.terms) {
+          doc.fontSize(10).font('Helvetica-Bold').text('Terms & Conditions:', 50, yPosition);
+          yPosition += 15;
+          doc.fontSize(9).font('Helvetica').text(invoice.terms, 50, yPosition, { width: 500 });
+        }
+      }
+
+      // Footer
+      const pageHeight = doc.page.height;
+      doc.fontSize(8).fillColor('#6B7280')
+         .text(`Generated on ${new Date().toLocaleDateString()}`, 50, pageHeight - 50)
+         .text('Thank you for your business!', 50, pageHeight - 35);
+
+      doc.end();
+
+    } catch (error) {
+      reject(new Error(`PDF generation failed: ${error.message}`));
+    }
+  });
+};
+
+// Helper function for currency formatting
+const formatCurrency = (amount, currency = 'TND') => {
+  return new Intl.NumberFormat('tn-TN', {
+    style: 'currency',
+    currency: currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
 };
