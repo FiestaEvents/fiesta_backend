@@ -129,18 +129,21 @@ export const forgotPasswordValidator = [
 ];
 
 export const resetPasswordValidator = [
-  body("password")
-    .notEmpty()
-    .withMessage("Password is required")
-    .isLength({ min: 8 })
-    .withMessage("Password must be at least 8 characters")
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-    .withMessage(
-      "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
-    )
-    .isLength({ max: 128 })
-    .withMessage("Password must be less than 128 characters"),
-
+// In your backend registerValidator
+body("password")
+  .notEmpty()
+  .withMessage("Password is required")
+  .isLength({ min: 8 })
+  .withMessage("Password must be at least 8 characters")
+  .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/)
+  .withMessage(
+    "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
+  )
+  .matches(/^[A-Za-z\d!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]+$/)
+  .withMessage("Password contains invalid characters. Only letters, numbers, and common special characters are allowed.")
+  .isLength({ max: 128 })
+  .withMessage("Password must be less than 128 characters"),
+  
   body("token")
     .notEmpty()
     .withMessage("Reset token is required")
