@@ -23,11 +23,14 @@ const SALT_ROUNDS = 10;
 
 const seedDatabase = async () => {
   try {
+    console.log("🔗 Connecting to database...");
     await connectDB();
+    console.log("✅ Database connected successfully!\n");
 
     console.log("🌱 Starting database seeding...\n");
 
     // 1. Clear existing data
+    console.log("🧹 Clearing existing data...");
     await Permission.deleteMany({});
     await Role.deleteMany({});
     await User.deleteMany({});
@@ -133,6 +136,7 @@ const seedDatabase = async () => {
 
     // 5. Create Demo Users
     console.log("👤 Creating demo users...");
+    
     const demoOwner = await User.create({
       name: "Demo Owner",
       email: "owner@demo.com",
@@ -1063,33 +1067,6 @@ const seedDatabase = async () => {
 
     // 12. Seed Reminders
     console.log("🔔 Seeding reminders...");
-    const invoices = [
-  {
-    invoiceNumber: 'VEN-0001',
-    client: null, 
-    clientName: 'John and Sarah Wedding',
-    clientEmail: 'john.sarah@example.com',
-    issueDate: new Date('2024-11-01'),
-    dueDate: new Date('2024-12-01'),
-    items: [
-      {
-        description: 'Venue Rental - Main Hall',
-        quantity: 1,
-        rate: 5000,
-        amount: 5000
-      },
-      {
-        description: 'Catering Service',
-        quantity: 100,
-        rate: 50,
-        amount: 5000
-      }
-    ],
-    subtotal: 10000,
-    tax: 1000,
-    totalAmount: 11000,
-    status: 'paid'
-  },];
     const reminders = await Reminder.create([
       {
         title: "Final payment due - Smith-Johnson Wedding",
@@ -1237,6 +1214,8 @@ const seedDatabase = async () => {
     console.log("   • Blocked tasks with reasons");
     console.log("   Start your server and explore the full task management system!\n");
     
+    // Add a small delay to ensure all logs are printed
+    await new Promise(resolve => setTimeout(resolve, 500));
     process.exit(0);
   } catch (error) {
     console.error("❌ Error seeding database:", error);
@@ -1245,9 +1224,5 @@ const seedDatabase = async () => {
   }
 };
 
-// Run if executed directly
-if (process.argv[1] === new URL(import.meta.url).pathname) {
-  seedDatabase();
-}
-
-export default seedDatabase;
+// Always run the seed function - REMOVED THE CONDITIONAL CHECK
+seedDatabase();

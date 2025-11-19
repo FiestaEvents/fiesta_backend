@@ -72,6 +72,11 @@ const eventSchema = new mongoose.Schema(
         default: 0,
         min: [0, "Discount cannot be negative"],
       },
+      discountType: {
+        type: String,
+        enum: ["fixed", "percentage"],
+        default: "fixed",
+      },
       totalAmount: {
         type: Number,
         default: 0,
@@ -100,6 +105,7 @@ const eventSchema = new mongoose.Schema(
         },
         service: String,
         cost: Number,
+        hours: Number,  // ✅ Add hours field
         status: {
           type: String,
           enum: ["pending", "confirmed", "completed"],
@@ -117,6 +123,12 @@ const eventSchema = new mongoose.Schema(
     notes: {
       type: String,
       maxlength: [1000, "Notes cannot exceed 1000 characters"],
+    },
+    // ✅ CHANGED: Use venueSpaceId instead of venueId
+    venueSpaceId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "VenueSpace",
+      required: true,
     },
     venueId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -136,18 +148,15 @@ const eventSchema = new mongoose.Schema(
 // Validate that end date is after start date
 eventSchema.pre("save", function (next) {
   if (this.endDate && this.startDate) {
-    // Create dates without timezone issues
     const start = new Date(this.startDate);
     const end = new Date(this.endDate);
     
-    // If same date, check times
     if (this.startDate === this.endDate && this.startTime === this.endTime) {
       if (this.startTime >= this.endTime) {
         return next(new Error("End time must be after start time"));
       }
     }
     
-    // Check if end date is before start date
     if (end < start) {
       return next(new Error("End date must be after start date"));
     }
@@ -175,18 +184,7 @@ eventSchema.pre("save", function (next) {
   next();
 });
 
-// Update cascade delete to archive instead
-eventSchema.pre("deleteOne", { document: true }, async function (next) {
-  // Instead of deleting, archive the event
-  this.isArchived = true;
-  this.archivedAt = new Date();
-  this.archivedBy = this.createdBy;
-  
-  // Prevent the actual deletion
-  next(new Error("Events should be archived instead of deleted. Use archiveEvent method."));
-});
-
-// Static method to archive an event
+// Archive methods
 eventSchema.statics.archiveEvent = async function(eventId, archivedBy) {
   return await this.findByIdAndUpdate(
     eventId,
@@ -199,7 +197,6 @@ eventSchema.statics.archiveEvent = async function(eventId, archivedBy) {
   );
 };
 
-// Static method to restore an event
 eventSchema.statics.restoreEvent = async function(eventId) {
   return await this.findByIdAndUpdate(
     eventId,
@@ -212,7 +209,6 @@ eventSchema.statics.restoreEvent = async function(eventId) {
   );
 };
 
-// Query helper to exclude archived events by default
 eventSchema.query.excludeArchived = function() {
   return this.where({ isArchived: { $ne: true } });
 };
@@ -223,6 +219,7 @@ eventSchema.query.includeArchived = function() {
 
 eventSchema.index({ startDate: 1, endDate: 1 });
 eventSchema.index({ venueId: 1, startDate: 1 });
+eventSchema.index({ venueSpaceId: 1, startDate: 1 });
 eventSchema.index({ clientId: 1 });
 eventSchema.index({ status: 1 });
 eventSchema.index({ isArchived: 1 });
