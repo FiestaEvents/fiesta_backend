@@ -133,9 +133,6 @@ const taskSchema = new mongoose.Schema(
     blockedReason: {
       type: String,
       maxlength: [500, "Blocked reason cannot exceed 500 characters"],
-      required: function () {
-        return this.status === "blocked";
-      },
     },
     subtasks: [
       {
@@ -387,14 +384,6 @@ taskSchema.pre("save", function (next) {
 taskSchema.pre("save", function (next) {
   if (this.isModified("assignedTo") && this.assignedTo) {
     this.assignedAt = new Date();
-  }
-  next();
-});
-
-// Validate blocked status
-taskSchema.pre("save", function (next) {
-  if (this.status === "blocked" && !this.blockedReason) {
-    return next(new Error("Blocked reason is required when status is blocked"));
   }
   next();
 });

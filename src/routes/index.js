@@ -10,11 +10,14 @@ import reminderRoutes from "./reminder.routes.js";
 import roleRoutes from "./role.routes.js";
 import teamRoutes from "./team.routes.js";
 import venueRoutes from "./venue.routes.js";
-import invoices from './invoices.routes.js';
 import userRoutes from "./user.routes.js";
+import uploadRoutes from "./uploadRoutes.js";
+
+// ✅ Import the Combined File
+import invoices from './invoices.routes.js';
+
 const router = express.Router();
 
-// Mount routes
 router.use("/auth", authRoutes);
 router.use("/events", eventRoutes);
 router.use("/clients", clientRoutes);
@@ -26,7 +29,10 @@ router.use("/reminders", reminderRoutes);
 router.use("/roles", roleRoutes);
 router.use("/team", teamRoutes);
 router.use("/venues", venueRoutes);
-router.use('/invoices', invoices);
+router.use("/upload", uploadRoutes);
 router.use("/users", userRoutes);
+
+// ✅ SINGLE MOUNT POINT (This file now handles settings/stats internal routing)
+router.use("/invoices", invoices);
 
 export default router;

@@ -263,14 +263,6 @@ router.patch(
   body("status")
     .isIn(["pending", "todo", "in_progress", "completed", "cancelled", "blocked"])
     .withMessage("Invalid status"),
-  body("blockedReason")
-    .if(body("status").equals("blocked"))
-    .notEmpty()
-    .withMessage("Blocked reason is required"),
-  body("cancellationReason")
-    .if(body("status").equals("cancelled"))
-    .notEmpty()
-    .withMessage("Cancellation reason is required"),
   validateRequest,
   updateStatus
 );
@@ -293,7 +285,6 @@ router.post(
 router.post(
   "/:id/block",
   param("id").isMongoId(),
-  body("reason").notEmpty().withMessage("Blocked reason is required"),
   validateRequest,
   blockTask
 );

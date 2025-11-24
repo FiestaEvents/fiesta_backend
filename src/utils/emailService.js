@@ -44,56 +44,28 @@ export const sendEmail = async (emailOptions) => {
 /**
  * Send invoice email with PDF attachment
  */
-export const sendInvoiceEmail = async ({
-  to,
-  invoiceNumber,
-  venueName,
-  clientName,
-  issueDate,
-  dueDate,
-  totalAmount,
-  customMessage,
-  pdfBuffer,
-}) => {
-  const mailOptions = {
-    from: config.email?.from || process.env.EMAIL_FROM,
-    to,
-    subject: `Invoice ${invoiceNumber} from ${venueName}`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Invoice from ${venueName}</h2>
-        <p>Dear ${clientName},</p>
-        <p>Please find your invoice attached.</p>
-        
-        ${customMessage ? `<p>${customMessage}</p>` : ''}
-        
-        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
-          <p style="margin: 5px 0;"><strong>Invoice Number:</strong> ${invoiceNumber}</p>
-          <p style="margin: 5px 0;"><strong>Issue Date:</strong> ${new Date(issueDate).toLocaleDateString()}</p>
-          <p style="margin: 5px 0;"><strong>Due Date:</strong> ${new Date(dueDate).toLocaleDateString()}</p>
-          <p style="margin: 5px 0;"><strong>Total Amount:</strong> $${totalAmount.toFixed(2)}</p>
-        </div>
-        
-        <p>If you have any questions, please don't hesitate to contact us.</p>
-        
-        <p>Best regards,<br>${venueName}</p>
-      </div>
-    `,
-    attachments: [
-      {
-        filename: `invoice-${invoiceNumber}.pdf`,
-        content: pdfBuffer,
-        contentType: 'application/pdf',
-      },
-    ],
-  };
-
+export const sendInvoiceEmail = async ({ to, subject, text, pdfBuffer, filename }) => {
   try {
-    await transporter.sendMail(mailOptions);
-    console.log(`✅ Invoice email sent to ${to}`);
+    const info = await transporter.sendMail({
+      from: `"${process.env.FROM_NAME}" <${process.env.FROM_EMAIL}>`,
+      to,
+      subject,
+      text, // Plain text body
+      html: `<p>${text.replace(/\n/g, "<br>")}</p>`, // HTML body
+      attachments: [
+        {
+          filename: filename,
+          content: pdfBuffer,
+          contentType: "application/pdf",
+        },
+      ],
+    });
+
+    console.log("Message sent: %s", info.messageId);
+    return info;
   } catch (error) {
-    console.error(`❌ Error sending invoice email to ${to}:`, error);
-    throw new Error('Failed to send invoice email');
+    console.error("Error sending email:", error);
+    throw error;
   }
 };
 

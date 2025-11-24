@@ -1,98 +1,50 @@
-import express from 'express';
+import express from "express";
+import { authenticate } from "../middleware/auth.js"; // Use authenticate specifically
+
 import {
-  getInvoices,
-  getInvoice,
-  createInvoice,
-  updateInvoice,
-  deleteInvoice,
-  sendInvoice,
-  downloadInvoice,
-  markAsPaid,
-  cancelInvoice,
-  getInvoiceStats,
-  getInvoicesByClient,
-  getInvoicesByPartner,
-  getInvoicesByEvent,
-  restoreInvoice,
-  getArchivedInvoices,
-  bulkArchiveInvoices,
-  bulkRestoreInvoices,
-} from '../controllers/invoiceController.js';
-import { authenticate, authorize, attachVenue } from '../middleware/auth.js';
+  getAllInvoices, createInvoice, getInvoiceById, updateInvoice, deleteInvoice,
+  getInvoiceStats, downloadInvoice, sendInvoice, markAsPaid, cancelInvoice
+} from "../controllers/invoiceController.js";
+
+import {
+  getInvoiceSettings, updateInvoiceSettings,
+  previewInvoice, resetToDefaults, applyTemplate
+} from "../controllers/invoiceSettingsController.js";
 
 const router = express.Router();
 
-// Apply authentication and venue attachment to all routes
+// Apply Middleware
 router.use(authenticate);
-router.use(attachVenue);
 
-// Debug middleware (optional - remove in production)
-router.use((req, res, next) => {
-  console.log('👤 User role:', req.user.roleId?.name || req.user.role);
-  console.log('👤 User data:', {
-    id: req.user._id,
-    name: req.user.firstName + ' ' + req.user.lastName,
-    role: req.user.roleId?.name || req.user.role,
-    venue: req.venue?.name
-  });
-  next();
-});
+// ====================================================
+// 1. SETTINGS & STATS (Static paths first)
+// ====================================================
+router.get("/settings", getInvoiceSettings);
+router.put("/settings", updateInvoiceSettings);
+router.post("/settings/preview", previewInvoice);
+router.post("/settings/reset", resetToDefaults);
+router.post("/settings/apply-template", applyTemplate);
 
-// ============================================
-// INVOICE ROUTES
-// ============================================
+router.get("/stats", getInvoiceStats);
 
-// Stats route - must come before /:id to avoid conflicts
-router.route('/stats')
-  .get(authorize('Owner', 'Manager', 'Staff', 'Viewer'), getInvoiceStats);
+// ====================================================
+// 2. GENERAL ROUTES
+// ====================================================
+router.route("/")
+  .get(getAllInvoices)
+  .post(createInvoice);
 
-// Archive routes
-router.route('/archived')
-  .get(authorize('Owner', 'Manager', 'Staff', 'Viewer'), getArchivedInvoices);
+// ====================================================
+// 3. ID ROUTES (Dynamic paths last)
+// ====================================================
+router.get("/:id/download", downloadInvoice);
+router.post("/:id/send", sendInvoice);
+router.post("/:id/mark-paid", markAsPaid);
+router.post("/:id/cancel", cancelInvoice);
 
-router.route('/bulk-archive')
-  .post(authorize('Owner', 'Manager'), bulkArchiveInvoices);
-
-router.route('/bulk-restore')
-  .post(authorize('Owner', 'Manager'), bulkRestoreInvoices);
-
-// Client invoices route
-router.route('/client/:clientId')
-  .get(authorize('Owner', 'Manager', 'Staff', 'Viewer'), getInvoicesByClient);
-
-// Partner invoices route
-router.route('/partner/:partnerId')
-  .get(authorize('Owner', 'Manager', 'Staff', 'Viewer'), getInvoicesByPartner);
-
-// Event invoices route
-router.route('/event/:eventId')
-  .get(authorize('Owner', 'Manager', 'Staff', 'Viewer'), getInvoicesByEvent);
-
-// Main invoice routes
-router.route('/')
-  .get(authorize('Owner', 'Manager', 'Staff', 'Viewer'), getInvoices)
-  .post(authorize('Owner', 'Manager', 'Staff'), createInvoice);
-
-// Single invoice routes
-router.route('/:id')
-  .get(authorize('Owner', 'Manager', 'Staff', 'Viewer'), getInvoice)
-  .put(authorize('Owner', 'Manager', 'Staff'), updateInvoice)
-  .delete(authorize('Owner', 'Manager'), deleteInvoice);
-
-// Invoice action routes
-router.route('/:id/send')
-  .post(authorize('Owner', 'Manager', 'Staff'), sendInvoice);
-
-router.route('/:id/download')
-  .get(authorize('Owner', 'Manager', 'Staff', 'Viewer'), downloadInvoice);
-
-router.route('/:id/paid')
-  .patch(authorize('Owner', 'Manager', 'Staff'), markAsPaid);
-
-router.route('/:id/cancel')
-  .patch(authorize('Owner', 'Manager'), cancelInvoice);
-
-router.route('/:id/restore')
-  .patch(authorize('Owner', 'Manager'), restoreInvoice);
+router.route("/:id")
+  .get(getInvoiceById)
+  .put(updateInvoice)
+  .delete(deleteInvoice);
 
 export default router;

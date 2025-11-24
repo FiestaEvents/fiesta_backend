@@ -413,15 +413,6 @@ export const updateStatus = asyncHandler(async (req, res) => {
     throw new ApiError("Task not found", 404);
   }
 
-  // Validate status-specific requirements
-  if (status === "blocked" && !blockedReason) {
-    throw new ApiError("Blocked reason is required", 400);
-  }
-
-  if (status === "cancelled" && !cancellationReason) {
-    throw new ApiError("Cancellation reason is required", 400);
-  }
-
   task.status = status;
 
   if (status === "completed") {
@@ -511,9 +502,6 @@ export const cancelTask = asyncHandler(async (req, res) => {
 export const blockTask = asyncHandler(async (req, res) => {
   const { reason } = req.body;
 
-  if (!reason) {
-    throw new ApiError("Blocked reason is required", 400);
-  }
 
   const task = await Task.findOne({
     _id: req.params.id,
@@ -525,7 +513,7 @@ export const blockTask = asyncHandler(async (req, res) => {
   }
 
   task.status = "blocked";
-  task.blockedReason = reason;
+  if (reason) task.blockedReason = reason;
 
   await task.save();
 

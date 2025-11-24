@@ -30,8 +30,14 @@ const eventSchema = new mongoose.Schema(
       type: Date,
       required: [true, "End date is required"],
     },
-    startTime: String,
-    endTime: String,
+    startTime: {
+      type: String,
+      required: [true, "Start time is required"], // Ensure time is present for collision check
+    },
+    endTime: {
+      type: String,
+      required: [true, "End time is required"], // Ensure time is present for collision check
+    },
     guestCount: {
       type: Number,
       min: [1, "Guest count must be at least 1"],
@@ -77,6 +83,10 @@ const eventSchema = new mongoose.Schema(
         enum: ["fixed", "percentage"],
         default: "fixed",
       },
+      taxRate: {
+        type: Number,
+        default: 19,
+      },
       totalAmount: {
         type: Number,
         default: 0,
@@ -105,7 +115,7 @@ const eventSchema = new mongoose.Schema(
         },
         service: String,
         cost: Number,
-        hours: Number,  // ✅ Add hours field
+        hours: Number,
         status: {
           type: String,
           enum: ["pending", "confirmed", "completed"],
@@ -124,7 +134,6 @@ const eventSchema = new mongoose.Schema(
       type: String,
       maxlength: [1000, "Notes cannot exceed 1000 characters"],
     },
-    // ✅ CHANGED: Use venueSpaceId instead of venueId
     venueSpaceId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "VenueSpace",
@@ -145,26 +154,73 @@ const eventSchema = new mongoose.Schema(
   }
 );
 
-// Validate that end date is after start date
-eventSchema.pre("save", function (next) {
-  if (this.endDate && this.startDate) {
-    const start = new Date(this.startDate);
-    const end = new Date(this.endDate);
+// ======================================================
+// 1. HELPER: Combine Date and Time String into Date Object
+// ======================================================
+const createDateTime = (date, timeStr) => {
+  if (!date || !timeStr) return null;
+  const d = new Date(date);
+  const [hours, minutes] = timeStr.split(':');
+  d.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+  return d;
+};
+
+// ======================================================
+// 2. MIDDLEWARE: Collision Detection
+// ======================================================
+eventSchema.pre("save", async function (next) {
+  // Only run check if scheduling fields are modified
+  if (
+    this.isModified("venueSpaceId") ||
+    this.isModified("startDate") ||
+    this.isModified("endDate") ||
+    this.isModified("startTime") ||
+    this.isModified("endTime") ||
+    this.isNew
+  ) {
     
-    if (this.startDate === this.endDate && this.startTime === this.endTime) {
-      if (this.startTime >= this.endTime) {
-        return next(new Error("End time must be after start time"));
-      }
+    // Basic logical validation
+    const startDateTime = createDateTime(this.startDate, this.startTime);
+    const endDateTime = createDateTime(this.endDate, this.endTime);
+
+    if (startDateTime && endDateTime && endDateTime <= startDateTime) {
+      return next(new Error("End time must be after start time"));
     }
+
+    // --- COLLISION CHECK ---
+    const Event = mongoose.model("Event");
     
-    if (end < start) {
-      return next(new Error("End date must be after start date"));
+    // Find potential conflicts in the SAME Venue Space
+    const potentialConflicts = await Event.find({
+      venueSpaceId: this.venueSpaceId, // Scope to specific space
+      status: { $ne: "cancelled" },    // Ignore cancelled events
+      isArchived: { $ne: true },       // Ignore archived events
+      _id: { $ne: this._id },          // Exclude current event (if editing)
+      // Optimization: Only look for events that overlap dates roughly first
+      $or: [
+        { startDate: { $lte: this.endDate }, endDate: { $gte: this.startDate } }
+      ]
+    });
+
+    // Precise Time Check
+    const hasConflict = potentialConflicts.some(existing => {
+      const existingStart = createDateTime(existing.startDate, existing.startTime);
+      const existingEnd = createDateTime(existing.endDate, existing.endTime);
+
+      // Overlap Logic: (StartA < EndB) and (EndA > StartB)
+      return startDateTime < existingEnd && endDateTime > existingStart;
+    });
+
+    if (hasConflict) {
+      return next(new Error("This time slot conflicts with another event in this venue space."));
     }
   }
   next();
 });
 
-// Calculate total amount before saving
+// ======================================================
+// 3. MIDDLEWARE: Price Calculations
+// ======================================================
 eventSchema.pre("save", function (next) {
   if (this.pricing) {
     let total = this.pricing.basePrice || 0;
@@ -178,13 +234,19 @@ eventSchema.pre("save", function (next) {
 
     total -= this.pricing.discount || 0;
 
+    // Recalculate totals if not explicitly set correctly
+    // Note: In your frontend you calculate tax, we should ideally store taxRate 
+    // and let backend verify, but for now we trust the totalAmount
     this.pricing.totalAmount = Math.max(0, total);
     this.paymentSummary.totalAmount = this.pricing.totalAmount;
   }
   next();
 });
 
-// Archive methods
+// ======================================================
+// 4. METHODS
+// ======================================================
+
 eventSchema.statics.archiveEvent = async function(eventId, archivedBy) {
   return await this.findByIdAndUpdate(
     eventId,
@@ -209,19 +271,38 @@ eventSchema.statics.restoreEvent = async function(eventId) {
   );
 };
 
-eventSchema.query.excludeArchived = function() {
-  return this.where({ isArchived: { $ne: true } });
+eventSchema.statics.checkAvailability = async function(venueSpaceId, startDate, startTime, endDate, endTime, excludeEventId = null) {
+  const startDateTime = createDateTime(startDate, startTime);
+  const endDateTime = createDateTime(endDate, endTime);
+
+  const query = {
+    venueSpaceId: venueSpaceId,
+    status: { $ne: "cancelled" },
+    isArchived: { $ne: true },
+    $or: [
+      { startDate: { $lte: endDate }, endDate: { $gte: startDate } }
+    ]
+  };
+
+  if (excludeEventId) {
+    query._id = { $ne: excludeEventId };
+  }
+
+  const potentialConflicts = await this.find(query);
+
+  const isConflict = potentialConflicts.some(existing => {
+    const existingStart = createDateTime(existing.startDate, existing.startTime);
+    const existingEnd = createDateTime(existing.endDate, existing.endTime);
+    return startDateTime < existingEnd && endDateTime > existingStart;
+  });
+
+  return !isConflict;
 };
 
-eventSchema.query.includeArchived = function() {
-  return this;
-};
-
+// Indexes for Performance
 eventSchema.index({ startDate: 1, endDate: 1 });
-eventSchema.index({ venueId: 1, startDate: 1 });
-eventSchema.index({ venueSpaceId: 1, startDate: 1 });
+eventSchema.index({ venueSpaceId: 1, startDate: 1 }); // Critical for collision check
+eventSchema.index({ venueId: 1, status: 1 });
 eventSchema.index({ clientId: 1 });
-eventSchema.index({ status: 1 });
-eventSchema.index({ isArchived: 1 });
 
 export default mongoose.model("Event", eventSchema);

@@ -11,6 +11,8 @@ import Task from "./Task.js";
 import Reminder from "./Reminder.js";
 import TeamInvitation from "./TeamInvitation.js";
 import VenueSpace from "./VenueSpace.js";
+import Invoice from "./Invoice.js";
+import InvoiceSettings from "./InvoiceSettings.js"; 
 
 export {
   User,
@@ -26,4 +28,6 @@ export {
   Reminder,
   TeamInvitation,
   VenueSpace,
+  Invoice,
+  InvoiceSettings, 
 };
