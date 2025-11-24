@@ -36,5 +36,5 @@ jobs:
 
             # Restart the app
             # If running for the first time, we start it. If running again, we reload it.
-            pm2 reload api || pm2 start index.js --name "api"
-            pm2 save
+            /root/.nvm/versions/node/v22.21.1/bin/pm2 reload api || /root/.nvm/versions/node/v22.21.1/bin/pm2 start index.js --name "api"
+            /root/.nvm/versions/node/v22.21.1/bin/pm2 save
