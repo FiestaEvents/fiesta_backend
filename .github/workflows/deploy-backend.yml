@@ -1,0 +1,40 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # 1. Copy files to Server
+      - name: Copy files via SSH
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "."
+          target: "/var/www/fiesta/server"
+          rm: false # Don't delete the .env file we made earlier!
+
+      # 2. Install Deps & Restart
+      - name: Deploy Backend
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /var/www/fiesta/server
+            npm ci --production
+
+            # Restart the app
+            # If running for the first time, we start it. If running again, we reload it.
+            pm2 reload api || pm2 start index.js --name "api"
+            pm2 save
