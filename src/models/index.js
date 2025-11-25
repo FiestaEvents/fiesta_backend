@@ -1,3 +1,4 @@
+// models/index.js
 import User from "./User.js";
 import Venue from "./Venue.js";
 import Role from "./Role.js";
@@ -12,7 +13,9 @@ import Reminder from "./Reminder.js";
 import TeamInvitation from "./TeamInvitation.js";
 import VenueSpace from "./VenueSpace.js";
 import Invoice from "./Invoice.js";
-import InvoiceSettings from "./InvoiceSettings.js"; 
+import InvoiceSettings from "./InvoiceSettings.js";
+import Contract from "./Contract.js";
+import ContractSettings from "./ContractSettings.js";
 
 export {
   User,
@@ -29,5 +32,7 @@ export {
   TeamInvitation,
   VenueSpace,
   Invoice,
-  InvoiceSettings, 
+  InvoiceSettings,
+  Contract,
+  ContractSettings,
 };
