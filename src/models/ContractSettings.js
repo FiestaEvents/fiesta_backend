@@ -1,5 +1,130 @@
 import mongoose from "mongoose";
 
+// =========================================================
+// DEFAULT SETTINGS CONSTANTS
+// =========================================================
+const DEFAULT_SETTINGS = {
+  branding: {
+    colors: {
+      primary: "#F18237", // Brand Orange
+      secondary: "#374151", // Slate 700
+      accent: "#3B82F6", // Blue 500
+      text: "#1F2937", // Gray 800
+      background: "#FFFFFF",
+    },
+    fonts: {
+      heading: "Helvetica-Bold",
+      body: "Helvetica",
+      size: 11,
+    },
+  },
+  layout: {
+    template: "professional",
+    paperSize: "A4",
+    margins: { top: 50, bottom: 50, left: 50, right: 50 },
+    headerHeight: 80,
+    footerHeight: 60,
+    showPageNumbers: true,
+    showDate: true,
+  },
+  financialDefaults: {
+    currency: "TND",
+    defaultVatRate: 19,
+    defaultStampDuty: 1.000,
+    depositPercentage: 30,
+    depositRequired: true,
+    securityDepositAmount: 1000,
+    paymentMethods: ["Virement", "Chèque", "Espèces"],
+    lateFeePercentage: 0,
+  },
+  labels: {
+    contractTitle: "CONTRAT DE PRESTATION",
+    partiesTitle: "ENTRE LES SOUSSIGNÉS",
+    serviceProvider: "Le Prestataire",
+    clientLabel: "Le Client",
+    partnerLabel: "Le Partenaire",
+    servicesTitle: "OBJET DU CONTRAT",
+    paymentTitle: "MODALITÉS DE PAIEMENT",
+    signaturesTitle: "SIGNATURES",
+    dateLabel: "Fait à Tunis, le",
+    signatureLabel: "Lu et approuvé",
+  },
+  defaultSections: [
+    {
+      id: "scope",
+      title: "Article 1 : Objet du Contrat",
+      content: "Le présent contrat a pour objet la location de la salle et/ou la fourniture de services pour l'événement décrit ci-dessus.",
+      type: "scope",
+      order: 1,
+      isRequired: true,
+      isDefault: true,
+    },
+    {
+      id: "payment",
+      title: "Article 2 : Modalités de Paiement",
+      content: "Le Client s'engage à verser une avance de 30% à la signature. Le solde doit être réglé impérativement avant la date de l'événement.",
+      type: "payment",
+      order: 2,
+      isRequired: true,
+      isDefault: true,
+    },
+    {
+      id: "cancellation",
+      title: "Article 3 : Annulation",
+      content: "Toute annulation doit être notifiée par écrit. L'acompte versé reste acquis au Prestataire à titre d'indemnité forfaitaire si l'annulation intervient moins de 30 jours avant l'événement.",
+      type: "cancellation",
+      order: 3,
+      isRequired: true,
+      isDefault: true,
+    },
+    {
+      id: "liability",
+      title: "Article 4 : Responsabilité",
+      content: "Le Client est responsable de tout dommage causé aux locaux ou équipements par ses invités.",
+      type: "liability",
+      order: 4,
+      isRequired: true,
+      isDefault: true,
+    },
+    {
+      id: "jurisdiction",
+      title: "Article 5 : Juridiction",
+      content: "En cas de litige, et faute d'accord amiable, les tribunaux de Tunis seront seuls compétents.",
+      type: "jurisdiction",
+      order: 5,
+      isRequired: true,
+      isDefault: true,
+    },
+  ],
+  cancellationPolicy: {
+    enabled: true,
+    tiers: [
+      { daysBeforeEvent: 90, penaltyPercentage: 0, description: "Annulation gratuite" },
+      { daysBeforeEvent: 30, penaltyPercentage: 50, description: "50% de pénalité" },
+      { daysBeforeEvent: 7, penaltyPercentage: 100, description: "100% de pénalité" },
+    ],
+  },
+  structure: {
+    prefix: "CTR",
+    separator: "-",
+    includeYear: true,
+    yearFormat: "YYYY",
+    sequenceDigits: 4,
+    resetSequenceYearly: true,
+  },
+  emailTemplates: {
+    sendContract: {
+      subject: "Contrat à signer - {{eventTitle}}",
+    },
+    reminder: {
+      subject: "Rappel : Contrat en attente",
+    },
+    signed: {
+      subject: "Contrat signé - {{contractNumber}}",
+    },
+  },
+};
+
 const contractSettingsSchema = new mongoose.Schema(
   {
     venue: {
@@ -15,16 +140,16 @@ const contractSettingsSchema = new mongoose.Schema(
     branding: {
       logo: { url: String, width: Number, height: Number },
       colors: {
-        primary: { type: String, default: "#F18237" }, // Brand Orange
-        secondary: { type: String, default: "#374151" }, // Slate 700
-        accent: { type: String, default: "#3B82F6" }, // Blue 500
-        text: { type: String, default: "#1F2937" }, // Gray 800
-        background: { type: String, default: "#FFFFFF" },
+        primary: { type: String, default: DEFAULT_SETTINGS.branding.colors.primary },
+        secondary: { type: String, default: DEFAULT_SETTINGS.branding.colors.secondary },
+        accent: { type: String, default: DEFAULT_SETTINGS.branding.colors.accent },
+        text: { type: String, default: DEFAULT_SETTINGS.branding.colors.text },
+        background: { type: String, default: DEFAULT_SETTINGS.branding.colors.background },
       },
       fonts: {
-        heading: { type: String, default: "Helvetica-Bold" },
-        body: { type: String, default: "Helvetica" },
-        size: { type: Number, default: 11 }, // Standard PT size for contracts
+        heading: { type: String, default: DEFAULT_SETTINGS.branding.fonts.heading },
+        body: { type: String, default: DEFAULT_SETTINGS.branding.fonts.body },
+        size: { type: Number, default: DEFAULT_SETTINGS.branding.fonts.size },
       },
       watermark: { enabled: Boolean, text: String, opacity: Number },
     },
@@ -33,55 +158,55 @@ const contractSettingsSchema = new mongoose.Schema(
     // 2. PDF LAYOUT SETTINGS
     // =========================================================
     layout: {
-      template: { type: String, default: "professional" }, // professional, modern, legal
-      paperSize: { type: String, default: "A4" },
+      template: { type: String, default: DEFAULT_SETTINGS.layout.template },
+      paperSize: { type: String, default: DEFAULT_SETTINGS.layout.paperSize },
       margins: {
-        top: { type: Number, default: 50 },
-        bottom: { type: Number, default: 50 },
-        left: { type: Number, default: 50 },
-        right: { type: Number, default: 50 },
+        top: { type: Number, default: DEFAULT_SETTINGS.layout.margins.top },
+        bottom: { type: Number, default: DEFAULT_SETTINGS.layout.margins.bottom },
+        left: { type: Number, default: DEFAULT_SETTINGS.layout.margins.left },
+        right: { type: Number, default: DEFAULT_SETTINGS.layout.margins.right },
       },
-      headerHeight: { type: Number, default: 80 },
-      footerHeight: { type: Number, default: 60 },
-      showPageNumbers: { type: Boolean, default: true },
-      showDate: { type: Boolean, default: true },
+      headerHeight: { type: Number, default: DEFAULT_SETTINGS.layout.headerHeight },
+      footerHeight: { type: Number, default: DEFAULT_SETTINGS.layout.footerHeight },
+      showPageNumbers: { type: Boolean, default: DEFAULT_SETTINGS.layout.showPageNumbers },
+      showDate: { type: Boolean, default: DEFAULT_SETTINGS.layout.showDate },
     },
 
     // =========================================================
-    // 3. VENUE COMPANY INFO (The "First Party")
+    // 3. VENUE COMPANY INFO
     // =========================================================
     companyInfo: {
       legalName: { type: String, required: true }, // Raison Sociale
-      displayName: String, // Enseigne Commerciale
-      matriculeFiscale: { type: String, required: true }, // MF: 1234567/A/M/000
-      address: { type: String, required: true }, // Siège Social
+      displayName: String, // Enseigne
+      matriculeFiscale: { type: String, required: true }, // MF
+      address: { type: String, required: true },
       phone: String,
       email: String,
       website: String,
-      rib: String, // Relevé d'Identité Bancaire (20 digits)
+      rib: String, // Bank Account
       bankName: String,
       legalRepresentative: String, // Gérant
     },
 
     // =========================================================
-    // 4. DEFAULT FINANCIAL TERMS (Tunisian System)
+    // 4. FINANCIAL DEFAULTS (Tunisian Context)
     // =========================================================
     financialDefaults: {
-      currency: { type: String, default: "TND" },
-      defaultVatRate: { type: Number, default: 19 }, // TVA Standard
-      defaultStampDuty: { type: Number, default: 1.000 }, // Timbre Fiscal
-      depositPercentage: { type: Number, default: 30 }, // Avance Standard
-      depositRequired: { type: Boolean, default: true },
-      securityDepositAmount: { type: Number, default: 1000 }, // Caution Standard
+      currency: { type: String, default: DEFAULT_SETTINGS.financialDefaults.currency },
+      defaultVatRate: { type: Number, default: DEFAULT_SETTINGS.financialDefaults.defaultVatRate },
+      defaultStampDuty: { type: Number, default: DEFAULT_SETTINGS.financialDefaults.defaultStampDuty },
+      depositPercentage: { type: Number, default: DEFAULT_SETTINGS.financialDefaults.depositPercentage },
+      depositRequired: { type: Boolean, default: DEFAULT_SETTINGS.financialDefaults.depositRequired },
+      securityDepositAmount: { type: Number, default: DEFAULT_SETTINGS.financialDefaults.securityDepositAmount },
       paymentMethods: {
         type: [String],
-        default: ["Virement", "Chèque", "Espèces"]
+        default: DEFAULT_SETTINGS.financialDefaults.paymentMethods,
       },
-      lateFeePercentage: { type: Number, default: 0 },
+      lateFeePercentage: { type: Number, default: DEFAULT_SETTINGS.financialDefaults.lateFeePercentage },
     },
 
     // =========================================================
-    // 5. DEFAULT CLAUSES & SECTIONS
+    // 5. DEFAULT CLAUSES
     // =========================================================
     defaultSections: [
       {
@@ -99,80 +224,86 @@ const contractSettingsSchema = new mongoose.Schema(
     ],
 
     // =========================================================
-    // 6. LABELS (Localization - FR/AR/EN)
+    // 6. LABELS (Frontend Mapping)
     // =========================================================
     labels: {
-      contractTitle: { type: String, default: "CONTRAT DE PRESTATION DE SERVICE" },
-      partiesTitle: { type: String, default: "ENTRE LES SOUSSIGNÉS" },
-      serviceProvider: { type: String, default: "Le Prestataire" },
-      clientLabel: { type: String, default: "Le Client" },
-      partnerLabel: { type: String, default: "Le Partenaire" },
-      servicesTitle: { type: String, default: "OBJET DU CONTRAT" },
-      paymentTitle: { type: String, default: "MODALITÉS DE PAIEMENT" },
-      signaturesTitle: { type: String, default: "SIGNATURES" },
-      dateLabel: { type: String, default: "Fait à Tunis, le" },
-      signatureLabel: { type: String, default: "Lu et approuvé" },
+      contractTitle: { type: String, default: DEFAULT_SETTINGS.labels.contractTitle },
+      partiesTitle: { type: String, default: DEFAULT_SETTINGS.labels.partiesTitle },
+      serviceProvider: { type: String, default: DEFAULT_SETTINGS.labels.serviceProvider },
+      clientLabel: { type: String, default: DEFAULT_SETTINGS.labels.clientLabel },
+      partnerLabel: { type: String, default: DEFAULT_SETTINGS.labels.partnerLabel },
+      servicesTitle: { type: String, default: DEFAULT_SETTINGS.labels.servicesTitle },
+      paymentTitle: { type: String, default: DEFAULT_SETTINGS.labels.paymentTitle },
+      signaturesTitle: { type: String, default: DEFAULT_SETTINGS.labels.signaturesTitle },
+      dateLabel: { type: String, default: DEFAULT_SETTINGS.labels.dateLabel },
+      signatureLabel: { type: String, default: DEFAULT_SETTINGS.labels.signatureLabel },
     },
 
     // =========================================================
-    // 7. CANCELLATION POLICY DEFAULTS
+    // 7. CANCELLATION & WORKFLOW
     // =========================================================
     defaultCancellationPolicy: {
-      enabled: { type: Boolean, default: true },
+      enabled: { type: Boolean, default: DEFAULT_SETTINGS.cancellationPolicy.enabled },
       tiers: [
         {
           daysBeforeEvent: Number,
-          penaltyPercentage: Number, // Changed from refund to penalty for clarity in backend logic
+          penaltyPercentage: Number,
           description: String,
         },
       ],
     },
 
-    // =========================================================
-    // 8. SIGNATURE & WORKFLOW
-    // =========================================================
     signatureSettings: {
       requireBothParties: { type: Boolean, default: true },
       allowElectronicSignature: { type: Boolean, default: true },
       signatureExpiryDays: { type: Number, default: 7 },
-      autoArchiveAfter: { type: Number, default: 365 }, // Days after event
+      autoArchiveAfter: { type: Number, default: 365 },
     },
 
-    // =========================================================
-    // 9. EMAIL TEMPLATES
-    // =========================================================
     emailTemplates: {
       sendContract: {
-        subject: { type: String, default: "Contrat à signer - {{eventTitle}}" },
+        subject: { type: String, default: DEFAULT_SETTINGS.emailTemplates.sendContract.subject },
         body: String,
       },
       reminder: {
-        subject: { type: String, default: "Rappel : Contrat en attente de signature" },
+        subject: { type: String, default: DEFAULT_SETTINGS.emailTemplates.reminder.subject },
         body: String,
       },
       signed: {
-        subject: { type: String, default: "Contrat signé - {{contractNumber}}" },
+        subject: { type: String, default: DEFAULT_SETTINGS.emailTemplates.signed.subject },
         body: String,
       },
+    },
+
+    // =========================================================
+    // 8. DOCUMENT STRUCTURE (Serialization)
+    // =========================================================
+    structure: {
+      prefix: { type: String, default: DEFAULT_SETTINGS.structure.prefix },
+      separator: { type: String, default: DEFAULT_SETTINGS.structure.separator },
+      includeYear: { type: Boolean, default: DEFAULT_SETTINGS.structure.includeYear },
+      yearFormat: { type: String, enum: ["YYYY", "YY"], default: DEFAULT_SETTINGS.structure.yearFormat },
+      sequenceDigits: { type: Number, default: DEFAULT_SETTINGS.structure.sequenceDigits },
+      resetSequenceYearly: { type: Boolean, default: DEFAULT_SETTINGS.structure.resetSequenceYearly },
     },
   },
   { timestamps: true }
 );
 
 // =========================================================
-// STATIC METHOD: Get Or Create Defaults
+// STATIC: Get Or Create Defaults
 // =========================================================
 contractSettingsSchema.statics.getOrCreate = async function (venueId) {
   let settings = await this.findOne({ venue: venueId });
-  
+
   if (!settings) {
-    // Fetch venue details to pre-fill company info if possible
     const Venue = mongoose.model("Venue");
     const venue = await Venue.findById(venueId);
 
     settings = await this.create({
       venue: venueId,
-      
+
+      // 1. Company Info (Pre-filled from Venue)
       companyInfo: {
         legalName: venue?.name || "Votre Raison Sociale",
         displayName: venue?.name || "Nom Commercial",
@@ -184,62 +315,23 @@ contractSettingsSchema.statics.getOrCreate = async function (venueId) {
         legalRepresentative: "",
       },
 
-      defaultSections: [
-        {
-          id: "scope",
-          title: "Article 1 : Objet du Contrat",
-          content: "Le présent contrat a pour objet la location de la salle et/ou la fourniture de services pour l'événement décrit ci-dessus.",
-          type: "scope",
-          order: 1,
-          isRequired: true,
-          isDefault: true,
-        },
-        {
-          id: "payment",
-          title: "Article 2 : Modalités de Paiement",
-          content: "Le Client s'engage à verser une avance de {{depositPercentage}}% à la signature. Le solde doit être réglé impérativement avant la date de l'événement.",
-          type: "payment",
-          order: 2,
-          isRequired: true,
-          isDefault: true,
-        },
-        {
-          id: "cancellation",
-          title: "Article 3 : Annulation",
-          content: "Toute annulation doit être notifiée par écrit. L'acompte versé reste acquis au Prestataire à titre d'indemnité forfaitaire.",
-          type: "cancellation",
-          order: 3,
-          isRequired: true,
-          isDefault: true,
-        },
-        {
-          id: "liability",
-          title: "Article 4 : Responsabilité & Assurance",
-          content: "Le Client est responsable de tout dommage causé aux locaux ou équipements par ses invités. Une caution de {{securityDepositAmount}} TND est requise.",
-          type: "liability",
-          order: 4,
-          isRequired: true,
-          isDefault: true,
-        },
-        {
-          id: "jurisdiction",
-          title: "Article 5 : Juridiction Compétente",
-          content: "En cas de litige, et faute d'accord amiable, les tribunaux de Tunis seront seuls compétents.",
-          type: "jurisdiction",
-          order: 5,
-          isRequired: true,
-          isDefault: true,
-        },
-      ],
+      // 2. Branding
+      branding: DEFAULT_SETTINGS.branding,
 
-      defaultCancellationPolicy: {
-        enabled: true,
-        tiers: [
-          { daysBeforeEvent: 90, penaltyPercentage: 0, description: "Annulation gratuite" },
-          { daysBeforeEvent: 30, penaltyPercentage: 50, description: "50% de pénalité" },
-          { daysBeforeEvent: 7, penaltyPercentage: 100, description: "100% de pénalité (Aucun remboursement)" },
-        ],
-      },
+      // 3. Layout
+      layout: DEFAULT_SETTINGS.layout,
+
+      // 4. Labels
+      labels: DEFAULT_SETTINGS.labels,
+
+      // 5. Default Clauses
+      defaultSections: DEFAULT_SETTINGS.defaultSections,
+
+      // 6. Cancellation Policy
+      defaultCancellationPolicy: DEFAULT_SETTINGS.cancellationPolicy,
+
+      // 7. Structure
+      structure: DEFAULT_SETTINGS.structure,
     });
   }
   return settings;

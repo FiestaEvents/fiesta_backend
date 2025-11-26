@@ -17,6 +17,7 @@ import {
   markContractViewed,
   signContract,
   duplicateContract,
+  downloadContractPdf, // ✅ Added
   
   // Settings & Stats
   getContractSettings,
@@ -36,7 +37,7 @@ const router = express.Router();
 router.use(authenticate);
 
 // =================================================================
-// 1. STATIC ROUTES (Must be before /:id)
+// 1. STATIC ROUTES (Must come before /:id)
 // =================================================================
 
 // Contract Global Settings (Branding, Defaults, Tax Info)
@@ -58,7 +59,7 @@ router.get(
 );
 
 // =================================================================
-// 2. GENERAL CRUD
+// 2. GENERAL CRUD (Root)
 // =================================================================
 
 router.route("/")
@@ -72,7 +73,58 @@ router.route("/")
   );
 
 // =================================================================
-// 3. SINGLE CONTRACT OPERATIONS (Dynamic :id)
+// 3. SPECIFIC ACTIONS (ID based, but specific paths)
+// =================================================================
+
+// PDF Download
+router.get(
+  "/:id/download",
+  checkPermission("finance", "read"),
+  downloadContractPdf
+);
+
+// Archiving
+router.patch(
+  "/:id/archive", 
+  checkPermission("finance", "update"), 
+  archiveContract
+);
+
+router.patch(
+  "/:id/restore", 
+  checkPermission("finance", "update"), 
+  restoreContract
+);
+
+// Workflow: Duplicate
+router.post(
+  "/:id/duplicate", 
+  checkPermission("finance", "create"), 
+  duplicateContract
+);
+
+// Workflow: Send
+router.post(
+  "/:id/send", 
+  checkPermission("finance", "update"), 
+  sendContract
+);
+
+// External Interactions (View/Sign)
+// Note: If these are accessed by the client via a public link, 
+// they should be moved to a public router without 'authenticate' middleware.
+router.patch(
+  "/:id/view", 
+  markContractViewed
+);
+
+router.post(
+  "/:id/sign", 
+  signContract
+);
+
+// =================================================================
+// 4. SINGLE CONTRACT OPERATIONS (General /:id)
 // =================================================================
 
 router.route("/:id")
@@ -88,48 +140,5 @@ router.route("/:id")
     checkPermission("finance", "delete"), 
     deleteContract
   );
-
-// =================================================================
-// 4. SPECIFIC ACTIONS
-// =================================================================
-
-// Archiving
-router.patch(
-  "/:id/archive", 
-  checkPermission("finance", "update"), 
-  archiveContract
-);
-
-router.patch(
-  "/:id/restore", 
-  checkPermission("finance", "update"), 
-  restoreContract
-);
-
-// Workflow
-router.post(
-  "/:id/duplicate", 
-  checkPermission("finance", "create"), 
-  duplicateContract
-);
-
-router.post(
-  "/:id/send", 
-  checkPermission("finance", "update"), 
-  sendContract
-);
-
-// External Interactions (View/Sign)
-// Note: 'view' and 'sign' might logically be accessed by the Client via a public link later.
-// For now, if accessed via the app API, we keep authentication.
-router.patch(
-  "/:id/view", 
-  markContractViewed
-);
-
-router.post(
-  "/:id/sign", 
-  signContract
-);
 
 export default router;
