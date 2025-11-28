@@ -1,5 +1,5 @@
-// routes/contract.routes.js
 import express from "express";
+import { authenticate } from "../middleware/auth.js";
 import {
   // CRUD
   getContracts,
@@ -7,138 +7,68 @@ import {
   createContract,
   updateContract,
   deleteContract,
-  
   // Archive
   archiveContract,
   restoreContract,
-  
-  // Workflow Actions
+  // Actions
   sendContract,
+  duplicateContract,
   markContractViewed,
   signContract,
-  duplicateContract,
-  downloadContractPdf, // ✅ Added
-  
-  // Settings & Stats
+  // Settings
   getContractSettings,
   updateContractSettings,
+  // Stats & Download
   getContractStats,
+  downloadContractPdf,
 } from "../controllers/contractController.js";
-
-import { authenticate } from "../middleware/auth.js";
-import { checkPermission } from "../middleware/checkPermission.js";
 
 const router = express.Router();
 
-// =================================================================
-// MIDDLEWARE
-// =================================================================
-// All routes require login. Specific permissions are checked per route.
+// All routes require authentication
 router.use(authenticate);
 
-// =================================================================
-// 1. STATIC ROUTES (Must come before /:id)
-// =================================================================
-
-// Contract Global Settings (Branding, Defaults, Tax Info)
+// ============================================
+// SETTINGS (Must be before /:id routes)
+// ============================================
 router.route("/settings")
-  .get(
-    checkPermission("settings", "read"), 
-    getContractSettings
-  )
-  .put(
-    checkPermission("settings", "manage"), 
-    updateContractSettings
-  );
+  .get(getContractSettings)
+  .put(updateContractSettings);
 
-// Dashboard Statistics
-router.get(
-  "/stats", 
-  checkPermission("finance", "read"), 
-  getContractStats
-);
+// ============================================
+// STATS (Must be before /:id routes)
+// ============================================
+router.get("/stats", getContractStats);
 
-// =================================================================
-// 2. GENERAL CRUD (Root)
-// =================================================================
-
+// ============================================
+// CRUD OPERATIONS
+// ============================================
 router.route("/")
-  .get(
-    checkPermission("finance", "read"), 
-    getContracts
-  )
-  .post(
-    checkPermission("finance", "create"), 
-    createContract
-  );
-
-// =================================================================
-// 3. SPECIFIC ACTIONS (ID based, but specific paths)
-// =================================================================
-
-// PDF Download
-router.get(
-  "/:id/download",
-  checkPermission("finance", "read"),
-  downloadContractPdf
-);
-
-// Archiving
-router.patch(
-  "/:id/archive", 
-  checkPermission("finance", "update"), 
-  archiveContract
-);
-
-router.patch(
-  "/:id/restore", 
-  checkPermission("finance", "update"), 
-  restoreContract
-);
-
-// Workflow: Duplicate
-router.post(
-  "/:id/duplicate", 
-  checkPermission("finance", "create"), 
-  duplicateContract
-);
-
-// Workflow: Send
-router.post(
-  "/:id/send", 
-  checkPermission("finance", "update"), 
-  sendContract
-);
-
-// External Interactions (View/Sign)
-// Note: If these are accessed by the client via a public link, 
-// they should be moved to a public router without 'authenticate' middleware.
-router.patch(
-  "/:id/view", 
-  markContractViewed
-);
-
-router.post(
-  "/:id/sign", 
-  signContract
-);
-
-// =================================================================
-// 4. SINGLE CONTRACT OPERATIONS (General /:id)
-// =================================================================
+  .get(getContracts)
+  .post(createContract);
 
 router.route("/:id")
-  .get(
-    checkPermission("finance", "read"), 
-    getContractById
-  )
-  .put(
-    checkPermission("finance", "update"), 
-    updateContract
-  )
-  .delete(
-    checkPermission("finance", "delete"), 
-    deleteContract
-  );
+  .get(getContractById)
+  .put(updateContract)
+  .delete(deleteContract);
+
+// ============================================
+// ARCHIVE & RESTORE
+// ============================================
+router.patch("/:id/archive", archiveContract);
+router.patch("/:id/restore", restoreContract);
+
+// ============================================
+// ACTIONS
+// ============================================
+router.post("/:id/send", sendContract);
+router.post("/:id/duplicate", duplicateContract);
+router.patch("/:id/view", markContractViewed);
+router.post("/:id/sign", signContract);
+
+// ============================================
+// DOWNLOAD PDF
+// ============================================
+router.get("/:id/download", downloadContractPdf);
 
 export default router;
