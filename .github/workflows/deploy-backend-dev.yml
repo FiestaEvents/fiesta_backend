@@ -1,8 +1,8 @@
-name: Deploy Backend (PROD)
+name: Deploy Backend (DEV)
 
 on:
   push:
-    branches: [main] # <--- Triggers only on 'main' branch
+    branches: [dev] # <--- Triggers only on 'dev' branch
 
 jobs:
   deploy:
@@ -12,7 +12,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # 1. Copy files to the PROD folder
+      # 1. Copy files to the DEV folder
       - name: Copy files via SSH
         uses: appleboy/scp-action@master
         with:
@@ -20,10 +20,10 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           source: "."
-          target: "/var/www/fiesta/server" # <--- TARGET PROD FOLDER
+          target: "/var/www/fiesta_dev/server" # <--- TARGET DEV FOLDER
           rm: false
 
-      # 2. Install Deps & Restart using PROD Config
+      # 2. Install Deps & Restart using DEV Config
       - name: Deploy Backend
         uses: appleboy/ssh-action@master
         with:
@@ -31,14 +31,13 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            cd /var/www/fiesta/server
+            cd /var/www/fiesta_dev/server
             npm ci --production
 
             # Define PM2 Path
             PM2_PATH=/root/.nvm/versions/node/v22.21.1/bin/pm2
 
-            # Start/Reload using the PROD Ecosystem file
-            # (Assumes you named the prod file ecosystem.config.cjs)
-            $PM2_PATH startOrReload ecosystem.prod.config.cjs --update-env
+            # Start/Reload using the DEV Ecosystem file
+            $PM2_PATH startOrReload ecosystem.dev.config.cjs --update-env
 
             $PM2_PATH save
