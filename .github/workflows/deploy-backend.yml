@@ -1,8 +1,8 @@
-name: Deploy Backend
+name: Deploy Backend (PROD)
 
 on:
   push:
-    branches: [main]
+    branches: [main] # <--- Triggers only on 'main' branch
 
 jobs:
   deploy:
@@ -12,7 +12,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # 1. Copy files to Server
+      # 1. Copy files to the PROD folder
       - name: Copy files via SSH
         uses: appleboy/scp-action@master
         with:
@@ -20,10 +20,10 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           source: "."
-          target: "/var/www/fiesta/server"
-          rm: false # Don't delete the .env file we made earlier!
+          target: "/var/www/fiesta/server" # <--- TARGET PROD FOLDER
+          rm: false
 
-      # 2. Install Deps & Restart
+      # 2. Install Deps & Restart using PROD Config
       - name: Deploy Backend
         uses: appleboy/ssh-action@master
         with:
@@ -34,7 +34,11 @@ jobs:
             cd /var/www/fiesta/server
             npm ci --production
 
-            # Restart the app
-            # If running for the first time, we start it. If running again, we reload it.
-            /root/.nvm/versions/node/v22.21.1/bin/pm2 reload api || /root/.nvm/versions/node/v22.21.1/bin/pm2 start index.js --name "api"
-            /root/.nvm/versions/node/v22.21.1/bin/pm2 save
+            # Define PM2 Path
+            PM2_PATH=/root/.nvm/versions/node/v22.21.1/bin/pm2
+
+            # Start/Reload using the PROD Ecosystem file
+            # (Assumes you named the prod file ecosystem.config.cjs)
+            $PM2_PATH startOrReload ecosystem.prod.config.cjs --update-env
+
+            $PM2_PATH save
