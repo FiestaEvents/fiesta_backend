@@ -1,3 +1,4 @@
+// routes/index.js
 import express from "express";
 import authRoutes from "./auth.routes.js";
 import eventRoutes from "./event.routes.js";
@@ -12,9 +13,8 @@ import teamRoutes from "./team.routes.js";
 import venueRoutes from "./venue.routes.js";
 import userRoutes from "./user.routes.js";
 import uploadRoutes from "./uploadRoutes.js";
-
-// ✅ Import the Combined File
-import invoices from './invoices.routes.js';
+import invoiceRoutes from "./invoices.routes.js";
+import contractRoutes from "./contract.routes.js";
 
 const router = express.Router();
 
@@ -31,8 +31,7 @@ router.use("/team", teamRoutes);
 router.use("/venues", venueRoutes);
 router.use("/upload", uploadRoutes);
 router.use("/users", userRoutes);
-
-// ✅ SINGLE MOUNT POINT (This file now handles settings/stats internal routing)
-router.use("/invoices", invoices);
+router.use("/invoices", invoiceRoutes);
+router.use("/contracts", contractRoutes);
 
 export default router;
