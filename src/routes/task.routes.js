@@ -1,79 +1,110 @@
 import express from "express";
 import {
-  getEvents,
-  getEventsByClient,
-  getEvent,
-  createEvent,
-  updateEvent,
-  archiveEvent,
-  restoreEvent,
-  getEventStats,
-} from "../controllers/eventController.js";
+  // Basic CRUD
+  getTasks,
+  getTask,
+  createTask,
+  updateTask,
+  deleteTask,
+  bulkDeleteTasks,
+  
+  // Status
+  updateStatus,
+  completeTask,
+  
+  // Assignment
+  assignTask,
+  unassignTask,
+  
+  // Tags
+  addTags,
+  removeTags,
+  
+  // Archive
+  archiveTask,
+  unarchiveTask,
+  getArchivedTasks,
+  
+  // Subtasks
+  addSubtask,
+  updateSubtask,
+  toggleSubtask,
+  deleteSubtask,
+  
+  // Views & Stats
+  getTaskBoard,
+  getTaskStats,
+  getMyTasks,
+  getOverdueTasks,
+  getDueTodayTasks,
+  getUpcomingTasks,
+  searchTasks
+} from "../controllers/taskController.js";
 import { authenticate } from "../middleware/auth.js";
-import { checkPermission } from "../middleware/checkPermission.js";
-import validateRequest from "../middleware/validateRequest.js";
-import {
-  createEventValidator,
-  updateEventValidator,
-  getEventValidator,
-  listEventsValidator,
-} from "../validators/eventValidator.js";
 
 const router = express.Router();
 
-// All routes require authentication
+// Apply authentication middleware to all routes
 router.use(authenticate);
 
-// Stats
-router.get("/stats", checkPermission("events.read.all"), getEventStats);
+// ============================================
+// SPECIALIZED VIEWS & STATS (Must be before /:id)
+// ============================================
+router.get("/stats", getTaskStats);
+router.get("/board", getTaskBoard);
+router.get("/my", getMyTasks);
+router.get("/archived", getArchivedTasks);
+router.get("/overdue", getOverdueTasks);
+router.get("/due-today", getDueTodayTasks);
+router.get("/upcoming", getUpcomingTasks);
+router.get("/search", searchTasks);
 
-// REMOVED: router.get("/archived", ...) because getEvents now handles archived items via query param
+// ============================================
+// BULK OPERATIONS
+// ============================================
+router.post("/bulk-delete", bulkDeleteTasks);
 
-// Restore archived event
-router.patch("/:id/restore", checkPermission("events.delete.all"), restoreEvent);
+// ============================================
+// ROOT ROUTES (List & Create)
+// ============================================
+router.route("/")
+  .get(getTasks)
+  .post(createTask);
 
-// Get events by client ID
-router.get(
-  "/client/:clientId",
-  checkPermission("events.read.all"),
-  getEventsByClient
-);
+// ============================================
+// SPECIFIC TASK OPERATIONS (Using :id)
+// ============================================
 
-// CRUD operations
-router
-  .route("/")
-  .get(
-    checkPermission("events.read.all"),
-    listEventsValidator,
-    validateRequest,
-    getEvents
-  )
-  .post(
-    checkPermission("events.create"),
-    createEventValidator,
-    validateRequest,
-    createEvent
-  );
+// Status Management
+router.patch("/:id/status", updateStatus);
+router.post("/:id/complete", completeTask);
 
-router
-  .route("/:id")
-  .get(
-    checkPermission("events.read.all"),
-    getEventValidator,
-    validateRequest,
-    getEvent
-  )
-  .put(
-    checkPermission("events.update.all"),
-    updateEventValidator,
-    validateRequest,
-    updateEvent
-  )
-  .delete(
-    checkPermission("events.delete.all"),
-    getEventValidator,
-    validateRequest,
-    archiveEvent
-  );
+// Assignment
+router.patch("/:id/assign", assignTask);
+router.patch("/:id/unassign", unassignTask);
+
+// Tags
+router.post("/:id/tags", addTags);
+router.delete("/:id/tags", removeTags);
+
+// Archive / Restore
+router.post("/:id/archive", archiveTask);
+router.post("/:id/unarchive", unarchiveTask);
+
+// Subtasks
+router.post("/:id/subtasks", addSubtask);
+router.route("/:id/subtasks/:subtaskId")
+  .put(updateSubtask)
+  .delete(deleteSubtask);
+router.patch("/:id/subtasks/:subtaskId/toggle", toggleSubtask);
+
+// ============================================
+// GENERIC ID ROUTES (Get, Update, Delete)
+// ============================================
+// These must be last so they don't catch other specific routes
+router.route("/:id")
+  .get(getTask)
+  .put(updateTask)
+  .delete(deleteTask);
 
 export default router;
