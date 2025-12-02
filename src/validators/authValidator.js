@@ -1,14 +1,24 @@
 import { body } from "express-validator";
 
+// =========================================================
+// PASSWORD REQUIREMENTS (Simplified)
+// =========================================================
+const PASSWORD_REQUIREMENTS = {
+  MIN_LENGTH: 8,
+  MAX_LENGTH: 128,
+  ERROR_MESSAGE: "Password must be at least 8 characters long"
+};
+
+// =========================================================
+// REGISTER VALIDATOR
+// =========================================================
 export const registerValidator = [
   body("name")
     .trim()
     .notEmpty()
     .withMessage("Name is required")
     .isLength({ min: 2, max: 50 })
-    .withMessage("Name must be between 2 and 50 characters")
-    .matches(/^[a-zA-Z\s]+$/)
-    .withMessage("Name can only contain letters and spaces"),
+    .withMessage("Name must be between 2 and 50 characters"),
 
   body("email")
     .trim()
@@ -23,23 +33,27 @@ export const registerValidator = [
   body("password")
     .notEmpty()
     .withMessage("Password is required")
-    .isLength({ min: 8 })
-    .withMessage("Password must be at least 8 characters")
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-    .withMessage(
-      "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
-    )
-    .isLength({ max: 128 })
-    .withMessage("Password must be less than 128 characters"),
+    .isLength({ min: PASSWORD_REQUIREMENTS.MIN_LENGTH })
+    .withMessage(PASSWORD_REQUIREMENTS.ERROR_MESSAGE)
+    .isLength({ max: PASSWORD_REQUIREMENTS.MAX_LENGTH })
+    .withMessage(`Password must be less than ${PASSWORD_REQUIREMENTS.MAX_LENGTH} characters`),
+
+  body("confirmPassword")
+    .notEmpty()
+    .withMessage("Please confirm your password")
+    .custom((value, { req }) => {
+      if (value !== req.body.password) {
+        throw new Error("Passwords do not match");
+      }
+      return true;
+    }),
 
   body("venueName")
     .trim()
     .notEmpty()
     .withMessage("Venue name is required")
     .isLength({ min: 2, max: 100 })
-    .withMessage("Venue name must be between 2 and 100 characters")
-    .matches(/^[a-zA-Z0-9\s\-&',.]+$/)
-    .withMessage("Venue name contains invalid characters"),
+    .withMessage("Venue name must be between 2 and 100 characters"),
 
   body("phone")
     .optional()
@@ -86,6 +100,9 @@ export const registerValidator = [
     .withMessage("Country must be less than 100 characters"),
 ];
 
+// =========================================================
+// LOGIN VALIDATOR
+// =========================================================
 export const loginValidator = [
   body("email")
     .trim()
@@ -104,6 +121,9 @@ export const loginValidator = [
     .withMessage("Password is required"),
 ];
 
+// =========================================================
+// EMAIL VALIDATOR (Generic)
+// =========================================================
 export const emailValidator = [
   body("email")
     .trim()
@@ -116,6 +136,9 @@ export const emailValidator = [
     .withMessage("Email must be less than 100 characters"),
 ];
 
+// =========================================================
+// FORGOT PASSWORD VALIDATOR
+// =========================================================
 export const forgotPasswordValidator = [
   body("email")
     .trim()
@@ -128,31 +151,40 @@ export const forgotPasswordValidator = [
     .withMessage("Email must be less than 100 characters"),
 ];
 
+// =========================================================
+// RESET PASSWORD VALIDATOR
+// =========================================================
 export const resetPasswordValidator = [
-// In your backend registerValidator
-body("password")
-  .notEmpty()
-  .withMessage("Password is required")
-  .isLength({ min: 8 })
-  .withMessage("Password must be at least 8 characters")
-  .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/)
-  .withMessage(
-    "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
-  )
-  .matches(/^[A-Za-z\d!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]+$/)
-  .withMessage("Password contains invalid characters. Only letters, numbers, and common special characters are allowed.")
-  .isLength({ max: 128 })
-  .withMessage("Password must be less than 128 characters"),
+  body("password")
+    .notEmpty()
+    .withMessage("Password is required")
+    .isLength({ min: PASSWORD_REQUIREMENTS.MIN_LENGTH })
+    .withMessage(PASSWORD_REQUIREMENTS.ERROR_MESSAGE)
+    .isLength({ max: PASSWORD_REQUIREMENTS.MAX_LENGTH })
+    .withMessage(`Password must be less than ${PASSWORD_REQUIREMENTS.MAX_LENGTH} characters`),
+
+  body("confirmPassword")
+    .notEmpty()
+    .withMessage("Please confirm your password")
+    .custom((value, { req }) => {
+      if (value !== req.body.password) {
+        throw new Error("Passwords do not match");
+      }
+      return true;
+    }),
   
   body("token")
     .notEmpty()
     .withMessage("Reset token is required")
     .isLength({ min: 64, max: 64 })
     .withMessage("Invalid reset token format")
-    .matches(/^[A-Za-z0-9]+$/)
+    .matches(/^[A-Fa-f0-9]+$/)
     .withMessage("Reset token contains invalid characters"),
 ];
 
+// =========================================================
+// RESTORE ACCOUNT VALIDATOR
+// =========================================================
 export const restoreAccountValidator = [
   body("email")
     .trim()
@@ -165,6 +197,9 @@ export const restoreAccountValidator = [
     .withMessage("Email must be less than 100 characters"),
 ];
 
+// =========================================================
+// UPDATE PROFILE VALIDATOR
+// =========================================================
 export const updateProfileValidator = [
   body("name")
     .optional()
@@ -172,9 +207,7 @@ export const updateProfileValidator = [
     .notEmpty()
     .withMessage("Name cannot be empty")
     .isLength({ min: 2, max: 50 })
-    .withMessage("Name must be between 2 and 50 characters")
-    .matches(/^[a-zA-Z\s]+$/)
-    .withMessage("Name can only contain letters and spaces"),
+    .withMessage("Name must be between 2 and 50 characters"),
 
   body("phone")
     .optional()
@@ -192,6 +225,9 @@ export const updateProfileValidator = [
     .withMessage("Avatar URL must be less than 500 characters"),
 ];
 
+// =========================================================
+// CHANGE PASSWORD VALIDATOR
+// =========================================================
 export const changePasswordValidator = [
   body("currentPassword")
     .notEmpty()
@@ -202,22 +238,31 @@ export const changePasswordValidator = [
   body("newPassword")
     .notEmpty()
     .withMessage("New password is required")
-    .isLength({ min: 8 })
-    .withMessage("New password must be at least 8 characters")
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-    .withMessage(
-      "New password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
-    )
-    .isLength({ max: 128 })
-    .withMessage("New password must be less than 128 characters")
+    .isLength({ min: PASSWORD_REQUIREMENTS.MIN_LENGTH })
+    .withMessage(PASSWORD_REQUIREMENTS.ERROR_MESSAGE)
+    .isLength({ max: PASSWORD_REQUIREMENTS.MAX_LENGTH })
+    .withMessage(`New password must be less than ${PASSWORD_REQUIREMENTS.MAX_LENGTH} characters`)
     .custom((value, { req }) => {
       if (value === req.body.currentPassword) {
         throw new Error("New password must be different from current password");
       }
       return true;
     }),
+
+  body("confirmPassword")
+    .notEmpty()
+    .withMessage("Please confirm your new password")
+    .custom((value, { req }) => {
+      if (value !== req.body.newPassword) {
+        throw new Error("Passwords do not match");
+      }
+      return true;
+    }),
 ];
 
+// =========================================================
+// ARCHIVE ACCOUNT VALIDATOR
+// =========================================================
 export const archiveAccountValidator = [
   body("confirmation")
     .notEmpty()

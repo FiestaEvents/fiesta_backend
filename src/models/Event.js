@@ -2,53 +2,19 @@ import mongoose from "mongoose";
 
 const eventSchema = new mongoose.Schema(
   {
-    title: {
-      type: String,
-      required: [true, "Event title is required"],
-      trim: true,
-      maxlength: [200, "Title cannot exceed 200 characters"],
-    },
-    description: {
-      type: String,
-      maxlength: [1000, "Description cannot exceed 1000 characters"],
-    },
+    // --- Core Info ---
+    title: { type: String, required: true, trim: true, maxlength: 200 },
     type: {
       type: String,
       enum: ["wedding", "birthday", "corporate", "conference", "party", "other"],
-      required: [true, "Event type is required"],
-    },
-    clientId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Client",
-      required: [true, "Client is required"],
-    },
-    startDate: {
-      type: Date,
-      required: [true, "Start date is required"],
-    },
-    endDate: {
-      type: Date,
-      required: [true, "End date is required"],
-    },
-    startTime: {
-      type: String,
-      required: [true, "Start time is required"], // Ensure time is present for collision check
-    },
-    endTime: {
-      type: String,
-      required: [true, "End time is required"], // Ensure time is present for collision check
-    },
-    guestCount: {
-      type: Number,
-      min: [1, "Guest count must be at least 1"],
+      required: true,
     },
     status: {
       type: String,
       enum: ["pending", "confirmed", "in-progress", "completed", "cancelled"],
       default: "pending",
     },
-    
-    // Archive fields
+    notes: { type: String, maxlength: 2000 },
     isArchived: { 
       type: Boolean, 
       default: false 
@@ -61,52 +27,13 @@ const eventSchema = new mongoose.Schema(
       ref: "User",
     },
     
-    pricing: {
-      basePrice: {
-        type: Number,
-        default: 0,
-        min: [0, "Price cannot be negative"],
-      },
-      additionalServices: [
-        {
-          name: String,
-          price: Number,
-        },
-      ],
-      discount: {
-        type: Number,
-        default: 0,
-        min: [0, "Discount cannot be negative"],
-      },
-      discountType: {
-        type: String,
-        enum: ["fixed", "percentage"],
-        default: "fixed",
-      },
-      taxRate: {
-        type: Number,
-        default: 19,
-      },
-      totalAmount: {
-        type: Number,
-        default: 0,
-      },
-    },
-    payments: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Payment",
-      },
-    ],
-    paymentSummary: {
-      totalAmount: { type: Number, default: 0 },
-      paidAmount: { type: Number, default: 0 },
-      status: {
-        type: String,
-        enum: ["pending", "partial", "paid", "overdue"],
-        default: "pending",
-      },
-    },
+    // --- Relations ---
+    clientId: { type: mongoose.Schema.Types.ObjectId, ref: "Client", required: true },
+    venueId: { type: mongoose.Schema.Types.ObjectId, ref: "Venue", required: true },
+    venueSpaceId: { type: mongoose.Schema.Types.ObjectId, ref: "VenueSpace", required: true },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+
+    // ✅ ADD THIS: Partners Array
     partners: [
       {
         partner: {
@@ -114,195 +41,143 @@ const eventSchema = new mongoose.Schema(
           ref: "Partner",
         },
         service: String,
-        cost: Number,
-        hours: Number,
+        cost: { type: Number, default: 0, min: 0 },
+        hours: { type: Number, default: 0, min: 0 },
         status: {
           type: String,
-          enum: ["pending", "confirmed", "completed"],
+          enum: ["pending", "confirmed", "cancelled"],
           default: "pending",
         },
       },
     ],
-    requirements: {
-      setup: String,
-      catering: String,
-      decoration: String,
-      audioVisual: String,
-      other: String,
+
+    // --- Scheduling ---
+    startDate: { type: Date, required: true },
+    endDate: { type: Date, required: true },
+    startTime: { type: String, required: true }, // Format "HH:mm"
+    endTime: { type: String, required: true },   // Format "HH:mm"
+    guestCount: { type: Number, min: 1 },
+
+    // --- Financials (Requested Updates) ---
+    pricing: {
+      basePrice: { type: Number, default: 0, min: 0 },
+      additionalServices: [
+        {
+          name: String,
+          price: { type: Number, default: 0 },
+        },
+      ],
+      discount: { type: Number, default: 0, min: 0 },
+      taxRate: { type: Number, default: 19 }, // Percentage (e.g., 19 for 19%)
+      
+      // New Fields
+      totalPriceBeforeTax: { type: Number, default: 0 },
+      totalPriceAfterTax: { type: Number, default: 0 },
     },
-    notes: {
-      type: String,
-      maxlength: [1000, "Notes cannot exceed 1000 characters"],
+
+    // Simplified Payment Tracking
+    paymentInfo: {
+      paidAmount: { type: Number, default: 0 },
+      status: {
+        type: String,
+        enum: ["unpaid", "partial", "paid", "overdue"],
+        default: "unpaid",
+      },
+      transactions: [{ type: mongoose.Schema.Types.ObjectId, ref: "Payment" }],
     },
-    venueSpaceId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "VenueSpace",
-      required: true,
-    },
-    venueId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
-      required: true,
-    },
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
+
+    // --- Meta ---
+    isArchived: { type: Boolean, default: false },
+    archivedAt: Date,
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
 // ======================================================
-// 1. HELPER: Combine Date and Time String into Date Object
+// 1. HELPER: Date/Time Merger
 // ======================================================
 const createDateTime = (date, timeStr) => {
   if (!date || !timeStr) return null;
   const d = new Date(date);
-  const [hours, minutes] = timeStr.split(':');
+  const [hours, minutes] = timeStr.split(":");
   d.setHours(parseInt(hours), parseInt(minutes), 0, 0);
   return d;
 };
 
 // ======================================================
-// 2. MIDDLEWARE: Collision Detection
-// ======================================================
-eventSchema.pre("save", async function (next) {
-  // Only run check if scheduling fields are modified
-  if (
-    this.isModified("venueSpaceId") ||
-    this.isModified("startDate") ||
-    this.isModified("endDate") ||
-    this.isModified("startTime") ||
-    this.isModified("endTime") ||
-    this.isNew
-  ) {
-    
-    // Basic logical validation
-    const startDateTime = createDateTime(this.startDate, this.startTime);
-    const endDateTime = createDateTime(this.endDate, this.endTime);
-
-    if (startDateTime && endDateTime && endDateTime <= startDateTime) {
-      return next(new Error("End time must be after start time"));
-    }
-
-    // --- COLLISION CHECK ---
-    const Event = mongoose.model("Event");
-    
-    // Find potential conflicts in the SAME Venue Space
-    const potentialConflicts = await Event.find({
-      venueSpaceId: this.venueSpaceId, // Scope to specific space
-      status: { $ne: "cancelled" },    // Ignore cancelled events
-      isArchived: { $ne: true },       // Ignore archived events
-      _id: { $ne: this._id },          // Exclude current event (if editing)
-      // Optimization: Only look for events that overlap dates roughly first
-      $or: [
-        { startDate: { $lte: this.endDate }, endDate: { $gte: this.startDate } }
-      ]
-    });
-
-    // Precise Time Check
-    const hasConflict = potentialConflicts.some(existing => {
-      const existingStart = createDateTime(existing.startDate, existing.startTime);
-      const existingEnd = createDateTime(existing.endDate, existing.endTime);
-
-      // Overlap Logic: (StartA < EndB) and (EndA > StartB)
-      return startDateTime < existingEnd && endDateTime > existingStart;
-    });
-
-    if (hasConflict) {
-      return next(new Error("This time slot conflicts with another event in this venue space."));
-    }
-  }
-  next();
-});
-
-// ======================================================
-// 3. MIDDLEWARE: Price Calculations
+// 2. MIDDLEWARE: Automatic Price Calculation
 // ======================================================
 eventSchema.pre("save", function (next) {
   if (this.pricing) {
-    let total = this.pricing.basePrice || 0;
+    // 1. Calculate Services Total
+    const servicesTotal = (this.pricing.additionalServices || []).reduce(
+      (sum, item) => sum + (item.price || 0),
+      0
+    );
 
-    if (this.pricing.additionalServices && this.pricing.additionalServices.length > 0) {
-      total += this.pricing.additionalServices.reduce(
-        (sum, service) => sum + (service.price || 0),
-        0
-      );
+    // 2. Calculate Total Before Tax (Base + Services - Discount)
+    const subtotal = (this.pricing.basePrice || 0) + servicesTotal;
+    const beforeTax = Math.max(0, subtotal - (this.pricing.discount || 0));
+
+    // 3. Calculate Tax Amount
+    const taxAmount = beforeTax * ((this.pricing.taxRate || 0) / 100);
+
+    // 4. Set Final Values
+    this.pricing.totalPriceBeforeTax = Number(beforeTax.toFixed(2));
+    this.pricing.totalPriceAfterTax = Number((beforeTax + taxAmount).toFixed(2));
+    
+    // Auto-update payment status
+    if (this.paymentInfo.paidAmount >= this.pricing.totalPriceAfterTax && this.pricing.totalPriceAfterTax > 0) {
+      this.paymentInfo.status = "paid";
+    } else if (this.paymentInfo.paidAmount > 0) {
+      this.paymentInfo.status = "partial";
     }
-
-    total -= this.pricing.discount || 0;
-
-    // Recalculate totals if not explicitly set correctly
-    // Note: In your frontend you calculate tax, we should ideally store taxRate 
-    // and let backend verify, but for now we trust the totalAmount
-    this.pricing.totalAmount = Math.max(0, total);
-    this.paymentSummary.totalAmount = this.pricing.totalAmount;
   }
   next();
 });
 
 // ======================================================
-// 4. METHODS
+// 3. MIDDLEWARE: Collision Detection
 // ======================================================
-
-eventSchema.statics.archiveEvent = async function(eventId, archivedBy) {
-  return await this.findByIdAndUpdate(
-    eventId,
-    {
-      isArchived: true,
-      archivedAt: new Date(),
-      archivedBy: archivedBy
-    },
-    { new: true }
-  );
-};
-
-eventSchema.statics.restoreEvent = async function(eventId) {
-  return await this.findByIdAndUpdate(
-    eventId,
-    {
-      isArchived: false,
-      archivedAt: null,
-      archivedBy: null
-    },
-    { new: true }
-  );
-};
-
-eventSchema.statics.checkAvailability = async function(venueSpaceId, startDate, startTime, endDate, endTime, excludeEventId = null) {
-  const startDateTime = createDateTime(startDate, startTime);
-  const endDateTime = createDateTime(endDate, endTime);
-
-  const query = {
-    venueSpaceId: venueSpaceId,
-    status: { $ne: "cancelled" },
-    isArchived: { $ne: true },
-    $or: [
-      { startDate: { $lte: endDate }, endDate: { $gte: startDate } }
-    ]
-  };
-
-  if (excludeEventId) {
-    query._id = { $ne: excludeEventId };
+eventSchema.pre("save", async function (next) {
+  if (
+    !this.isModified("venueSpaceId") &&
+    !this.isModified("startDate") &&
+    !this.isModified("endDate") &&
+    !this.isModified("startTime") &&
+    !this.isModified("endTime")
+  ) {
+    return next();
   }
 
-  const potentialConflicts = await this.find(query);
+  const start = createDateTime(this.startDate, this.startTime);
+  const end = createDateTime(this.endDate, this.endTime);
 
-  const isConflict = potentialConflicts.some(existing => {
-    const existingStart = createDateTime(existing.startDate, existing.startTime);
-    const existingEnd = createDateTime(existing.endDate, existing.endTime);
-    return startDateTime < existingEnd && endDateTime > existingStart;
+  if (end <= start) return next(new Error("End time must be after start time"));
+
+  const Event = mongoose.model("Event");
+  const conflict = await Event.findOne({
+    venueSpaceId: this.venueSpaceId,
+    _id: { $ne: this._id },
+    status: { $ne: "cancelled" },
+    isArchived: false,
+    $or: [{ startDate: { $lte: this.endDate }, endDate: { $gte: this.startDate } }],
   });
 
-  return !isConflict;
-};
+  if (conflict) {
+    const existingStart = createDateTime(conflict.startDate, conflict.startTime);
+    const existingEnd = createDateTime(conflict.endDate, conflict.endTime);
+    
+    // Check for actual overlap
+    if (start < existingEnd && end > existingStart) {
+      return next(new Error("Time slot conflict detected for this venue space."));
+    }
+  }
+  next();
+});
 
-// Indexes for Performance
-eventSchema.index({ startDate: 1, endDate: 1 });
-eventSchema.index({ venueSpaceId: 1, startDate: 1 }); // Critical for collision check
-eventSchema.index({ venueId: 1, status: 1 });
+// Indexes
+eventSchema.index({ venueSpaceId: 1, startDate: 1, endDate: 1 });
 eventSchema.index({ clientId: 1 });
 
 export default mongoose.model("Event", eventSchema);
