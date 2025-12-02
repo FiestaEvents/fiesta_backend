@@ -37,9 +37,7 @@ export const getEvents = asyncHandler(async (req, res) => {
     query.title = { $regex: search, $options: "i" };
   }
 
-  if (includeArchived === "true" || includeArchived === true) {
-    // Include all events
-  } else {
+  if (includeArchived !== "true" && includeArchived !== true) {
     query.isArchived = { $ne: true };
   }
 
@@ -48,9 +46,9 @@ export const getEvents = asyncHandler(async (req, res) => {
   const [events, total] = await Promise.all([
     Event.find(query)
       .populate("clientId", "name email phone")
-      .populate("partners.partner", "name category")
       .populate("createdBy", "name email")
-      .populate("archivedBy", "name email")
+      .populate("venueSpaceId", "name")
+      .populate("partners.partner", "name email phone category") 
       .sort({ startDate: -1 })
       .skip(skip)
       .limit(parseInt(limit)),
@@ -84,43 +82,31 @@ export const getEventsByClient = asyncHandler(async (req, res) => {
     includeArchived = false,
   } = req.query;
 
-  const client = await Client.findOne({
-    _id: clientId,
-    venueId: req.user.venueId,
-  });
-
-  if (!client) {
-    throw new ApiError("Client not found", 404);
-  }
-
   const query = {
     clientId: clientId,
     venueId: req.user.venueId,
   };
 
   if (status) query.status = status;
-
-  if (includeArchived === "true" || includeArchived === true) {
-    // Include all events
-  } else {
+  if (includeArchived !== "true" && includeArchived !== true) {
     query.isArchived = { $ne: true };
   }
 
   const skip = (page - 1) * limit;
-  const sortOrder = order === "asc" ? 1 : -1;
-  const sortOptions = { [sortBy]: sortOrder };
+  const sortOptions = { [sortBy]: order === "asc" ? 1 : -1 };
 
   const [events, total] = await Promise.all([
     Event.find(query)
       .populate("clientId", "name email phone")
-      .populate("partners.partner", "name category")
       .populate("createdBy", "name email")
+      .populate("partners.partner", "name email phone category")
       .sort(sortOptions)
       .skip(skip)
       .limit(parseInt(limit)),
     Event.countDocuments(query),
   ]);
 
+  // Statistics Aggregation
   const statsQuery = { ...query, isArchived: { $ne: true } };
   const stats = await Event.aggregate([
     { $match: statsQuery },
@@ -128,12 +114,13 @@ export const getEventsByClient = asyncHandler(async (req, res) => {
       $group: {
         _id: null,
         totalEvents: { $sum: 1 },
-        totalRevenue: { $sum: "$pricing.totalAmount" },
-        totalPaid: { $sum: "$paymentSummary.paidAmount" },
+        // Updated to use new model fields
+        totalRevenue: { $sum: "$pricing.totalPriceAfterTax" },
+        totalPaid: { $sum: "$paymentInfo.paidAmount" },
         upcomingEvents: {
           $sum: {
             $cond: [
-              { 
+              {
                 $and: [
                   { $gt: ["$startDate", new Date()] },
                   { $ne: ["$status", "cancelled"] }
@@ -157,12 +144,6 @@ export const getEventsByClient = asyncHandler(async (req, res) => {
 
   new ApiResponse({
     events,
-    client: {
-      _id: client._id,
-      name: client.name,
-      email: client.email,
-      phone: client.phone,
-    },
     stats: {
       ...clientStats,
       pendingAmount: clientStats.totalRevenue - clientStats.totalPaid
@@ -187,16 +168,86 @@ export const getEvent = asyncHandler(async (req, res) => {
     venueId: req.user.venueId,
   })
     .populate("clientId")
-    .populate("partners.partner")
-    .populate("payments")
-    .populate("createdBy", "name email")
-    .populate("archivedBy", "name email");
+    .populate("venueSpaceId")
+    .populate("partners.partner", "name email phone category company") // ✅ Add this line
+    .populate("paymentInfo.transactions")
+    .populate("createdBy", "name email");
 
   if (!event) {
     throw new ApiError("Event not found", 404);
   }
 
   new ApiResponse({ event }).send(res);
+});
+
+/**
+ * @desc    Create new event
+ * @route   POST /api/v1/events
+ * @access  Private
+ */
+export const createEvent = asyncHandler(async (req, res) => {
+  const userVenueId = req.user.venueId._id ? req.user.venueId._id : req.user.venueId;
+
+  const eventData = {
+    ...req.body,
+    venueId: userVenueId,
+    createdBy: req.user._id,
+  };
+
+  // 1. Ensure Client Exists
+  const client = await Client.findOne({
+    _id: eventData.clientId,
+    venueId: userVenueId,
+  });
+  if (!client) throw new ApiError("Client not found", 404);
+
+  // 2. HELPER: Convert "Partners" (if sent) to "AdditionalServices"
+  // This allows the frontend to still send partner IDs, but we store them as simple services
+  if (eventData.partners && Array.isArray(eventData.partners) && eventData.partners.length > 0) {
+    const partnerIds = eventData.partners.map(p => p.partner);
+    const dbPartners = await Partner.find({ _id: { $in: partnerIds }, venueId: userVenueId });
+
+    // Ensure pricing object exists
+    if (!eventData.pricing) eventData.pricing = {};
+    if (!eventData.pricing.additionalServices) eventData.pricing.additionalServices = [];
+
+    eventData.partners.forEach(reqPartner => {
+      const fullPartner = dbPartners.find(p => p._id.toString() === reqPartner.partner.toString());
+      if (fullPartner) {
+        let price = 0;
+        const name = `${fullPartner.name} (${reqPartner.service || fullPartner.category})`;
+
+        if (fullPartner.priceType === "hourly") {
+          price = (reqPartner.hours || 1) * (fullPartner.hourlyRate || 0);
+        } else {
+          price = reqPartner.cost || fullPartner.fixedRate || 0;
+        }
+
+        // Add to services list
+        eventData.pricing.additionalServices.push({ name, price });
+      }
+    });
+  }
+
+  // 3. Create Event
+  // NOTE: collision check and tax calculation happen automatically in the Model's pre('save') hook.
+  try {
+    const event = new Event(eventData);
+    await event.save(); // This triggers the hooks
+
+    await event.populate([
+      { path: "clientId", select: "name email phone" },
+      { path: "venueSpaceId", select: "name" }
+    ]);
+
+    new ApiResponse({ event }, "Event created successfully", 201).send(res);
+  } catch (error) {
+    // Catch specific error messages from the Model Hook
+    if (error.message.includes("conflict") || error.message.includes("End time")) {
+      throw new ApiError(error.message, 400);
+    }
+    throw error;
+  }
 });
 
 /**
@@ -207,412 +258,120 @@ export const getEvent = asyncHandler(async (req, res) => {
 export const updateEvent = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const updateData = req.body;
+  const userVenueId = req.user.venueId._id ? req.user.venueId._id.toString() : req.user.venueId.toString();
 
-  // Find the event
+  // 1. Find Event
   let event = await Event.findById(id);
+  if (!event) throw new ApiError("Event not found", 404);
 
-  if (!event) {
-    throw new ApiError("Event not found", 404);
-  }
-
-  // ✅ FIX: Extract venueId correctly whether it's populated or not
-  const userVenueId = req.user.venueId._id 
-    ? req.user.venueId._id.toString() 
-    : req.user.venueId.toString();
-
-  const eventVenueId = event.venueId._id 
-    ? event.venueId._id.toString() 
-    : event.venueId.toString();
-
-  // Check if event belongs to user's venue
-  if (eventVenueId !== userVenueId) {
+  if (event.venueId.toString() !== userVenueId) {
     throw new ApiError("Not authorized to update this event", 403);
   }
 
-  // ✅ FIX: Preserve venueId if not provided
-  if (updateData.venueSpaceId && !updateData.venueId) {
-    updateData.venueId = event.venueId._id || event.venueId;
-  }
-
-  // Verify client if being updated
+  // 2. Handle Client Change
   if (updateData.clientId && updateData.clientId !== event.clientId.toString()) {
-    const client = await Client.findOne({
-      _id: updateData.clientId,
-      venueId: userVenueId,
-    });
-
-    if (!client) {
-      throw new ApiError("Client not found", 404);
-    }
+    const client = await Client.findOne({ _id: updateData.clientId, venueId: userVenueId });
+    if (!client) throw new ApiError("Client not found", 404);
+    event.clientId = updateData.clientId;
   }
 
-  // ✅ FIX: Fetch and enrich partner data with pricing details
+  // 3. Handle Partners -> Additional Services Conversion (Replaces old list if sent)
   if (updateData.partners && Array.isArray(updateData.partners)) {
     const partnerIds = updateData.partners.map(p => p.partner);
-    const partners = await Partner.find({ 
-      _id: { $in: partnerIds },
-      venueId: userVenueId 
-    });
-    
-    updateData.partners = updateData.partners.map(eventPartner => {
-      const fullPartner = partners.find(
-        p => p._id.toString() === eventPartner.partner.toString()
-      );
-      
-      if (!fullPartner) {
-        console.warn(`Partner ${eventPartner.partner} not found`);
-        return {
-          partner: eventPartner.partner,
-          service: eventPartner.service || "Unknown",
-          cost: eventPartner.cost || 0,
-          hours: eventPartner.hours || 0,
-          status: eventPartner.status || "pending",
-        };
-      }
+    const dbPartners = await Partner.find({ _id: { $in: partnerIds }, venueId: userVenueId });
 
-      let cost = 0;
-      let hours = 0;
-      
-      if (fullPartner.priceType === "hourly") {
-        hours = eventPartner.hours || 1;
-        cost = hours * (fullPartner.hourlyRate || 0);
+    const newServices = [];
+    
+    updateData.partners.forEach(reqPartner => {
+      const fullPartner = dbPartners.find(p => p._id.toString() === reqPartner.partner.toString());
+      if (fullPartner) {
+        let price = 0;
+        const name = `${fullPartner.name} (${reqPartner.service || fullPartner.category})`;
         
-        if (eventPartner.cost && eventPartner.hours) {
-          cost = eventPartner.cost;
+        if (fullPartner.priceType === "hourly") {
+          price = (reqPartner.hours || 1) * (fullPartner.hourlyRate || 0);
+        } else {
+          price = reqPartner.cost || fullPartner.fixedRate || 0;
         }
-      } else {
-        cost = eventPartner.cost || fullPartner.fixedRate || 0;
-        hours = 0;
+        newServices.push({ name, price });
       }
-
-      return {
-        partner: eventPartner.partner,
-        service: eventPartner.service || fullPartner.category,
-        cost: cost,
-        hours: hours,
-        status: eventPartner.status || "pending",
-      };
-    });
-  }
-
-  // ✅ FIX: Recalculate pricing totals
-  if (updateData.pricing) {
-    let total = updateData.pricing.basePrice || 0;
-
-    if (updateData.partners && updateData.partners.length > 0) {
-      const partnerCosts = updateData.partners.reduce(
-        (sum, p) => sum + (p.cost || 0),
-        0
-      );
-      total += partnerCosts;
-    }
-
-    let discountAmount = 0;
-    if (updateData.pricing.discount) {
-      if (updateData.pricing.discountType === "percentage") {
-        discountAmount = (total * updateData.pricing.discount) / 100;
-      } else {
-        discountAmount = updateData.pricing.discount;
-      }
-    }
-
-    total = Math.max(0, total - discountAmount);
-    updateData.pricing.totalAmount = total;
-
-    if (!updateData.paymentSummary) {
-      updateData.paymentSummary = event.paymentSummary || {};
-    }
-    updateData.paymentSummary.totalAmount = total;
-    
-    const paidAmount = updateData.paymentSummary.paidAmount || event.paymentSummary?.paidAmount || 0;
-    updateData.paymentSummary.amountDue = Math.max(0, total - paidAmount);
-    
-    if (paidAmount >= total) {
-      updateData.paymentSummary.status = "paid";
-    } else if (paidAmount > 0) {
-      updateData.paymentSummary.status = "partial";
-    } else {
-      updateData.paymentSummary.status = "pending";
-    }
-  }
-
-  // Check for date conflicts if dates being updated
-  if (updateData.startDate && updateData.endDate && updateData.venueSpaceId) {
-    const conflictingEvent = await Event.findOne({
-      _id: { $ne: id },
-      venueId: userVenueId,
-      venueSpaceId: updateData.venueSpaceId,
-      status: { $nin: ["cancelled", "completed"] },
-      isArchived: { $ne: true },
-      $or: [
-        {
-          startDate: {
-            $lte: new Date(updateData.endDate),
-          },
-          endDate: {
-            $gte: new Date(updateData.startDate),
-          },
-        },
-      ],
     });
 
-    if (conflictingEvent) {
-      throw new ApiError(
-        "This time slot conflicts with another event",
-        400
-      );
-    }
+    // Initialize pricing if missing
+    if (!event.pricing) event.pricing = {};
+    
+    // We append these to existing services or replace? 
+    // Assuming replace for simplicity if "partners" field is sent
+    if (!updateData.pricing) updateData.pricing = { ...event.pricing };
+    updateData.pricing.additionalServices = [
+      ...(updateData.pricing.additionalServices || []), // Keep manually added services
+      ...newServices // Add partner services
+    ];
   }
 
-  event = await Event.findByIdAndUpdate(id, updateData, {
-    new: true,
-    runValidators: true,
-  }).populate([
+  // 4. Apply Updates manually to trigger 'save' hooks
+  // We cannot use findByIdAndUpdate if we want the Tax/Total & Collision hooks to run
+  Object.keys(updateData).forEach((key) => {
+    // Skip partners field as we handled it above
+    if (key !== 'partners') {
+      event[key] = updateData[key];
+    }
+  });
+
+  // 5. Save (Triggers Model Hooks for Math & Collision)
+  try {
+    await event.save();
+  } catch (error) {
+    if (error.message.includes("conflict") || error.message.includes("End time")) {
+      throw new ApiError(error.message, 400);
+    }
+    throw error;
+  }
+
+  await event.populate([
     { path: "clientId", select: "name email phone" },
-    { path: "venueSpaceId", select: "name capacity basePrice" },
-    { path: "partners.partner", select: "name category priceType fixedRate hourlyRate" },
-    { path: "createdBy", select: "name email" }
+    { path: "venueSpaceId", select: "name" }
   ]);
 
   new ApiResponse({ event }, "Event updated successfully").send(res);
 });
 
 /**
- * @desc    Create new event
- * @route   POST /api/v1/events
- * @access  Private (events.create)
- */
-export const createEvent = asyncHandler(async (req, res) => {
-  // ✅ FIX: Extract venueId correctly whether it's populated or not
-  const userVenueId = req.user.venueId._id 
-    ? req.user.venueId._id 
-    : req.user.venueId;
-
-  const eventData = {
-    ...req.body,
-    venueId: userVenueId,
-    createdBy: req.user._id,
-  };
-
-  // ✅ FIX: Ensure venueId is set even if only venueSpaceId is provided
-  if (eventData.venueSpaceId && !eventData.venueId) {
-    eventData.venueId = userVenueId;
-  }
-
-  // Verify client exists and belongs to venue
-  const client = await Client.findOne({
-    _id: eventData.clientId,
-    venueId: userVenueId,
-  });
-
-  if (!client) {
-    throw new ApiError("Client not found", 404);
-  }
-
-  // ✅ FIX: Fetch and enrich partner data with pricing details
-  if (eventData.partners && Array.isArray(eventData.partners) && eventData.partners.length > 0) {
-    const partnerIds = eventData.partners.map(p => p.partner);
-    const partners = await Partner.find({ 
-      _id: { $in: partnerIds },
-      venueId: userVenueId 
-    });
-    
-    eventData.partners = eventData.partners.map(eventPartner => {
-      const fullPartner = partners.find(
-        p => p._id.toString() === eventPartner.partner.toString()
-      );
-      
-      if (!fullPartner) {
-        console.warn(`Partner ${eventPartner.partner} not found in venue partners`);
-        return {
-          partner: eventPartner.partner,
-          service: eventPartner.service || "Unknown",
-          cost: eventPartner.cost || 0,
-          hours: eventPartner.hours || 0,
-          status: eventPartner.status || "pending",
-        };
-      }
-
-      let cost = 0;
-      let hours = 0;
-      
-      if (fullPartner.priceType === "hourly") {
-        hours = eventPartner.hours || 1;
-        const hourlyRate = fullPartner.hourlyRate || 0;
-        cost = hours * hourlyRate;
-      } else {
-        cost = eventPartner.cost || fullPartner.fixedRate || 0;
-        hours = 0;
-      }
-
-      return {
-        partner: eventPartner.partner,
-        service: eventPartner.service || fullPartner.category,
-        cost: cost,
-        hours: hours,
-        status: eventPartner.status || "pending",
-      };
-    });
-  }
-
-  // ✅ FIX: Calculate pricing totals including partner costs
-  if (eventData.pricing) {
-    let total = eventData.pricing.basePrice || 0;
-
-    if (eventData.partners && eventData.partners.length > 0) {
-      const partnerCosts = eventData.partners.reduce(
-        (sum, p) => sum + (p.cost || 0),
-        0
-      );
-      total += partnerCosts;
-    }
-
-    let discountAmount = 0;
-    if (eventData.pricing.discount) {
-      if (eventData.pricing.discountType === "percentage") {
-        discountAmount = (total * eventData.pricing.discount) / 100;
-      } else {
-        discountAmount = eventData.pricing.discount;
-      }
-    }
-
-    total = Math.max(0, total - discountAmount);
-    eventData.pricing.totalAmount = total;
-
-    if (!eventData.paymentSummary) {
-      eventData.paymentSummary = {
-        totalAmount: total,
-        paidAmount: 0,
-        status: "pending"
-      };
-    } else {
-      eventData.paymentSummary.totalAmount = total;
-    }
-  }
-
-  // Check for date conflicts
-  if (eventData.startDate && eventData.endDate && eventData.venueSpaceId) {
-    const conflictingEvent = await Event.findOne({
-      venueId: userVenueId,
-      venueSpaceId: eventData.venueSpaceId,
-      status: { $nin: ["cancelled", "completed"] },
-      isArchived: { $ne: true },
-      $or: [
-        {
-          startDate: {
-            $lte: new Date(eventData.endDate),
-          },
-          endDate: {
-            $gte: new Date(eventData.startDate),
-          },
-        },
-      ],
-    });
-
-    if (conflictingEvent) {
-      throw new ApiError(
-        "This time slot conflicts with another event",
-        400
-      );
-    }
-  }
-
-  const event = await Event.create(eventData);
-
-  await event.populate([
-    { path: "clientId", select: "name email phone" },
-    { path: "venueSpaceId", select: "name capacity basePrice" },
-    { path: "partners.partner", select: "name category priceType fixedRate hourlyRate" }
-  ]);
-
-  new ApiResponse({ event }, "Event created successfully", 201).send(res);
-});
-/**
- * @desc    Archive event (soft delete)
+ * @desc    Archive event
  * @route   DELETE /api/v1/events/:id
- * @access  Private (events.delete.all)
+ * @access  Private
  */
 export const archiveEvent = asyncHandler(async (req, res) => {
-  const event = await Event.findOne({
-    _id: req.params.id,
-    venueId: req.user.venueId,
-    isArchived: { $ne: true }
-  });
+  const event = await Event.findOneAndUpdate(
+    { _id: req.params.id, venueId: req.user.venueId },
+    { 
+      isArchived: true, 
+      archivedAt: new Date(),
+      archivedBy: req.user._id // <--- Now we save the user ID
+    },
+    { new: true }
+  );
 
-  if (!event) {
-    throw new ApiError("Event not found", 404);
-  }
+  if (!event) throw new ApiError("Event not found", 404);
 
-  const archivedEvent = await Event.archiveEvent(req.params.id, req.user._id);
-
-  new ApiResponse({ event: archivedEvent }, "Event archived successfully").send(res);
+  new ApiResponse({ event }, "Event archived successfully").send(res);
 });
 
 /**
- * @desc    Restore archived event
+ * @desc    Restore event
  * @route   PATCH /api/v1/events/:id/restore
- * @access  Private (events.delete.all)
+ * @access  Private
  */
 export const restoreEvent = asyncHandler(async (req, res) => {
-  const event = await Event.findOne({
-    _id: req.params.id,
-    venueId: req.user.venueId,
-    isArchived: true
-  });
+  const event = await Event.findOneAndUpdate(
+    { _id: req.params.id, venueId: req.user.venueId },
+    { isArchived: false, archivedAt: null },
+    { new: true }
+  );
 
-  if (!event) {
-    throw new ApiError("Archived event not found", 404);
-  }
+  if (!event) throw new ApiError("Event not found", 404);
 
-  const restoredEvent = await Event.restoreEvent(req.params.id);
-
-  new ApiResponse({ event: restoredEvent }, "Event restored successfully").send(res);
-});
-
-/**
- * @desc    Get archived events
- * @route   GET /api/v1/events/archived
- * @access  Private (events.read.all)
- */
-export const getArchivedEvents = asyncHandler(async (req, res) => {
-  const {
-    page = 1,
-    limit = 10,
-    search,
-  } = req.query;
-
-  const query = { 
-    venueId: req.user.venueId,
-    isArchived: true 
-  };
-
-  if (search) {
-    query.title = { $regex: search, $options: "i" };
-  }
-
-  const skip = (page - 1) * limit;
-
-  const [events, total] = await Promise.all([
-    Event.find(query)
-      .populate("clientId", "name email phone")
-      .populate("partners.partner", "name category")
-      .populate("createdBy", "name email")
-      .populate("archivedBy", "name email")
-      .sort({ archivedAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit)),
-    Event.countDocuments(query),
-  ]);
-
-  new ApiResponse({
-    events,
-    pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      total,
-      pages: Math.ceil(total / limit),
-    },
-  }).send(res);
+  new ApiResponse({ event }, "Event restored successfully").send(res);
 });
 
 /**
@@ -629,7 +388,8 @@ export const getEventStats = asyncHandler(async (req, res) => {
       $group: {
         _id: "$status",
         count: { $sum: 1 },
-        totalRevenue: { $sum: "$pricing.totalAmount" },
+        // Updated field name
+        totalRevenue: { $sum: "$pricing.totalPriceAfterTax" },
       },
     },
   ]);

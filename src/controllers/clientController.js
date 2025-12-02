@@ -100,13 +100,13 @@ export const getClient = asyncHandler(async (req, res) => {
     throw new ApiError("Client not found", 404);
   }
 
-  // Get client's events with payment information (excluding archived events)
+  // ✅ Get client's events with payment information (excluding archived events)
   const events = await Event.find({ 
     clientId: client._id,
     isArchived: { $ne: true }
   })
-    .select("title type startDate endDate status pricing paymentSummary guestCount")
-    .populate("payments", "amount status method paidDate")
+    .select("title type startDate endDate status pricing paymentSummary guestCount paymentInfo")
+    .populate("paymentInfo.transactions", "amount status method paidDate createdAt")
     .sort({ startDate: -1 })
     .limit(50);
 
