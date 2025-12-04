@@ -16,6 +16,8 @@ import Invoice from "./Invoice.js";
 import InvoiceSettings from "./InvoiceSettings.js";
 import Contract from "./Contract.js";
 import ContractSettings from "./ContractSettings.js";
+import Supply from "./Supply.js";
+import SupplyCategory from "./SupplyCategory.js";
 
 export {
   User,
@@ -35,4 +37,6 @@ export {
   InvoiceSettings,
   Contract,
   ContractSettings,
+  Supply,
+  SupplyCategory,
 };

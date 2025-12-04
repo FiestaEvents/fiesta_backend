@@ -8,6 +8,9 @@ import {
   archiveEvent,
   restoreEvent,
   getEventStats,
+  allocateEventSupplies,
+  returnEventSupplies,
+  markSuppliesDelivered,
 } from "../controllers/eventController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
@@ -32,11 +35,7 @@ router.use(authenticate);
 // =============================================================================
 
 // 1. Statistics
-router.get(
-  "/stats", 
-  checkPermission("events.read.all"), 
-  getEventStats
-);
+router.get("/stats", checkPermission("events.read.all"), getEventStats);
 
 // 2. Events by Client
 router.get(
@@ -57,7 +56,8 @@ router.patch(
 // CRUD ROUTES
 // =============================================================================
 
-router.route("/")
+router
+  .route("/")
   /**
    * @route   GET /api/v1/events
    * @desc    Get all events (supports filtering & ?includeArchived=true)
@@ -68,7 +68,7 @@ router.route("/")
     validateRequest,
     getEvents
   )
-  
+
   /**
    * @route   POST /api/v1/events
    * @desc    Create a new event
@@ -80,7 +80,8 @@ router.route("/")
     createEvent
   );
 
-router.route("/:id")
+router
+  .route("/:id")
   /**
    * @route   GET /api/v1/events/:id
    * @desc    Get single event details
@@ -113,5 +114,8 @@ router.route("/:id")
     validateRequest,
     archiveEvent
   );
-
+//  Add supply management endpoints
+router.post("/:id/supplies/allocate", allocateEventSupplies);
+router.post("/:id/supplies/return", returnEventSupplies);
+router.patch("/:id/supplies/delivered", markSuppliesDelivered);
 export default router;

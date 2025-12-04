@@ -1,7 +1,7 @@
 import asyncHandler from "../middleware/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import { Event, Client, Partner } from "../models/index.js";
+import { Event, Client, Partner, Supply} from "../models/index.js";
 
 /**
  * @desc    Get all events
@@ -48,7 +48,7 @@ export const getEvents = asyncHandler(async (req, res) => {
       .populate("clientId", "name email phone")
       .populate("createdBy", "name email")
       .populate("venueSpaceId", "name")
-      .populate("partners.partner", "name email phone category") 
+      .populate("partners.partner", "name category company phone")
       .sort({ startDate: -1 })
       .skip(skip)
       .limit(parseInt(limit)),
@@ -169,10 +169,17 @@ export const getEvent = asyncHandler(async (req, res) => {
   })
     .populate("clientId")
     .populate("venueSpaceId")
-    .populate("partners.partner", "name email phone category company") // ✅ Add this line
+    .populate("partners.partner", "name email phone category company")
     .populate("paymentInfo.transactions")
-    .populate("createdBy", "name email");
-
+    .populate("createdBy", "name email")
+  .populate({
+      path: "supplies.supply",
+      select: "name unit currentStock minimumStock categoryId costPerUnit chargePerUnit pricingType",
+      populate: {
+        path: "categoryId",
+        select: "name nameAr nameFr color icon",
+      },
+    });
   if (!event) {
     throw new ApiError("Event not found", 404);
   }
@@ -424,4 +431,122 @@ export const getEventStats = asyncHandler(async (req, res) => {
       upcomingEvents
     }
   }).send(res);
+});
+
+/**
+ * @desc    Allocate supplies to event from inventory
+ * @route   POST /api/events/:id/supplies/allocate
+ * @access  Private
+ */
+export const allocateEventSupplies = asyncHandler(async (req, res) => {
+  const event = await Event.findOne({
+    _id: req.params.id,
+    venueId: req.user.venueId,
+  });
+
+  if (!event) {
+    res.status(404);
+    throw new Error("Event not found");
+  }
+
+  // Check if event already has allocated supplies
+  const hasAllocated = event.supplies?.some(
+    (s) => s.status === "allocated" || s.status === "delivered"
+  );
+
+  if (hasAllocated) {
+    res.status(400);
+    throw new Error("Supplies already allocated to this event");
+  }
+
+  try {
+    // Call the event method to allocate supplies
+    await event.allocateSupplies(req.user._id);
+
+    // Populate supply details for response
+    await event.populate("supplies.supply");
+
+    res.status(200).json({
+      success: true,
+      message: "Supplies allocated successfully",
+      data: event,
+    });
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message || "Failed to allocate supplies");
+  }
+});
+
+/**
+ * @desc    Return supplies back to inventory (e.g., on cancellation)
+ * @route   POST /api/events/:id/supplies/return
+ * @access  Private
+ */
+export const returnEventSupplies = asyncHandler(async (req, res) => {
+  const event = await Event.findOne({
+    _id: req.params.id,
+    venueId: req.user.venueId,
+  });
+
+  if (!event) {
+    res.status(404);
+    throw new Error("Event not found");
+  }
+
+  // Check if event has supplies to return
+  if (!event.supplies || event.supplies.length === 0) {
+    res.status(400);
+    throw new Error("No supplies to return");
+  }
+
+  try {
+    await event.returnSupplies(req.user._id);
+
+    res.status(200).json({
+      success: true,
+      message: "Supplies returned to inventory successfully",
+      data: event,
+    });
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message || "Failed to return supplies");
+  }
+});
+
+/**
+ * @desc    Mark supplies as delivered
+ * @route   PATCH /api/events/:id/supplies/delivered
+ * @access  Private
+ */
+export const markSuppliesDelivered = asyncHandler(async (req, res) => {
+  const event = await Event.findOne({
+    _id: req.params.id,
+    venueId: req.user.venueId,
+  });
+
+  if (!event) {
+    res.status(404);
+    throw new Error("Event not found");
+  }
+
+  // Check if event has allocated supplies
+  const hasAllocated = event.supplies?.some((s) => s.status === "allocated");
+
+  if (!hasAllocated) {
+    res.status(400);
+    throw new Error("No allocated supplies to mark as delivered");
+  }
+
+  try {
+    await event.markSuppliesDelivered(req.user._id);
+
+    res.status(200).json({
+      success: true,
+      message: "Supplies marked as delivered",
+      data: event,
+    });
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message || "Failed to mark supplies as delivered");
+  }
 });
