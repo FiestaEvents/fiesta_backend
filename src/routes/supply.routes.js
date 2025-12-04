@@ -1,6 +1,3 @@
-// ============================================
-// routes/supply.routes.js - ✅ FIXED ROUTE ORDER
-// ============================================
 import express from "express";
 import {
   createSupply,
@@ -16,22 +13,18 @@ import {
   getSupplyAnalytics,
   getSuppliesByCategory,
 } from "../controllers/supplyController.js";
-import { authenticate, authorize  } from "../middleware/auth.js";
+import { authenticate, authorize } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// All routes require authentication
+// Apply authentication to all routes
 router.use(authenticate);
 
-// ============================================
-// ⚠️ IMPORTANT: Specific routes MUST come BEFORE /:id
-// ============================================
-
-// Alerts & Analytics (BEFORE /:id)
+// Alerts & Analytics
 router.get("/alerts/low-stock", getLowStockSupplies);
 router.get("/analytics/summary", getSupplyAnalytics);
 
-// Category-based queries (BEFORE /:id)
+// Category-based queries
 router.get("/by-category/:categoryId", getSuppliesByCategory);
 
 // ============================================
@@ -39,20 +32,33 @@ router.get("/by-category/:categoryId", getSuppliesByCategory);
 // ============================================
 router.route("/")
   .get(getAllSupplies)
-  .post(authorize ("owner", "manager"), createSupply);
+  // Allow both "Owner" and "owner" to handle case sensitivity issues
+  .post(authorize("owner", "Owner", "manager", "Manager"), createSupply);
 
-// /:id routes come AFTER specific routes
 router.route("/:id")
   .get(getSupplyById)
-  .patch(authorize ("owner", "manager"), updateSupply)
-  .delete(authorize ("owner"), deleteSupply);
+  // ✅ FIX: Added "Owner" and "Manager" to allowed roles
+  .patch(authorize("owner", "Owner", "manager", "Manager"), updateSupply)
+  .delete(authorize("owner", "Owner"), deleteSupply);
 
-// Stock Management (specific actions on /:id)
-router.patch("/:id/stock", authorize ("owner", "manager", "staff"), updateStock);
+// Stock Management
+router.patch(
+  "/:id/stock",
+  authorize("owner", "Owner", "manager", "Manager", "staff", "Staff"),
+  updateStock
+);
 router.get("/:id/history", getStockHistory);
 
-// Archive Operations (specific actions on /:id)
-router.patch("/:id/archive", authorize ("owner", "manager"), archiveSupply);
-router.patch("/:id/restore", authorize ("owner"), restoreSupply);
+// Archive Operations
+router.patch(
+  "/:id/archive",
+  authorize("owner", "Owner", "manager", "Manager"),
+  archiveSupply
+);
+router.patch(
+  "/:id/restore",
+  authorize("owner", "Owner"),
+  restoreSupply
+);
 
 export default router;
