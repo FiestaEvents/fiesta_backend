@@ -4,7 +4,7 @@ import ApiResponse from "../utils/ApiResponse.js";
 import { Payment, Event, Client } from "../models/index.js";
 
 /**
- * @desc    Get all payments (non-archived by default)
+ * @desc    Get all payments (non-archived by default) with SEARCH support
  * @route   GET /api/v1/payments
  * @access  Private
  */
@@ -19,19 +19,47 @@ export const getPayments = asyncHandler(async (req, res) => {
     clientId,
     startDate,
     endDate,
-    includeArchived = false, // New parameter to include archived payments
+    search, // ✅ Extract search param
+    includeArchived = false,
   } = req.query;
 
   // Build query
   const query = { venueId: req.user.venueId };
+
+  // --- START SEARCH LOGIC ---
+  if (search) {
+    const searchRegex = new RegExp(search, "i"); // Case-insensitive regex
+
+    // 1. Find matching Clients (by name or email)
+    const matchingClients = await Client.find({
+      venueId: req.user.venueId,
+      $or: [{ name: searchRegex }, { email: searchRegex }],
+    }).select("_id");
+    const clientIds = matchingClients.map((c) => c._id);
+
+    // 2. Find matching Events (by title)
+    const matchingEvents = await Event.find({
+      venueId: req.user.venueId,
+      title: searchRegex,
+    }).select("_id");
+    const eventIds = matchingEvents.map((e) => e._id);
+
+    // 3. Apply $or condition to Payment query
+    query.$or = [
+      { description: searchRegex }, // Search inside Payment description
+      { reference: searchRegex },   // Search inside Payment reference
+      { client: { $in: clientIds } }, // Match payments belonging to found clients
+      { event: { $in: eventIds } },   // Match payments belonging to found events
+    ];
+  }
+  // --- END SEARCH LOGIC ---
 
   if (type) query.type = type;
   if (status) query.status = status;
   if (method) query.method = method;
   if (eventId) query.event = eventId;
   if (clientId) query.client = clientId;
-  
-  // Modified: Only fetch non-archived payments by default
+
   if (!includeArchived) {
     query.isArchived = false;
   }
@@ -460,10 +488,23 @@ const updateEventPaymentSummary = async (eventId) => {
   });
 
   const totalPaid = allPayments.reduce((sum, p) => sum + p.netAmount, 0);
+
+  // ✅ FIX: Initialize paymentSummary if it is missing
+  if (!event.paymentSummary) {
+    event.paymentSummary = {
+      paidAmount: 0,
+      status: 'pending'
+    };
+  }
+
+  // Now it is safe to assign
   event.paymentSummary.paidAmount = totalPaid;
 
+  // ✅ FIX: Safety check for pricing object as well
+  const totalEventCost = event.pricing ? event.pricing.totalAmount : 0;
+
   // Update payment status
-  if (totalPaid >= event.pricing.totalAmount) {
+  if (totalEventCost > 0 && totalPaid >= totalEventCost) {
     event.paymentSummary.status = "paid";
   } else if (totalPaid > 0) {
     event.paymentSummary.status = "partial";

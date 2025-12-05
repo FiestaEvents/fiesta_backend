@@ -1,5 +1,60 @@
 import mongoose from "mongoose";
 
+// ==========================================
+// 1. CONSTANTS (Pure Data)
+// ==========================================
+const DEFAULTS = {
+  branding: {
+    colors: {
+      primary: "#F18237",
+      secondary: "#374151",
+      text: "#1F2937",
+      background: "#FFFFFF",
+    },
+    fonts: { size: 10, body: "Helvetica" },
+    watermark: { enabled: false, url: "" },
+  },
+  layout: {
+    template: "modern",
+    density: "standard",
+    borderRadius: 4,
+    // The default order of blocks
+    sections: [
+      { id: "header", label: "En-tête", visible: true, order: 1 },
+      { id: "details", label: "Détails (De/À)", visible: true, order: 2 },
+      { id: "items", label: "Tableau Articles", visible: true, order: 3 },
+      { id: "totals", label: "Totaux", visible: true, order: 4 },
+      { id: "footer", label: "Pied de page", visible: true, order: 5 },
+    ],
+  },
+  table: {
+    headerColor: "#F18237",
+    striped: false,
+    rounded: true,
+    columns: {
+      description: true,
+      quantity: true,
+      rate: true,
+      discount: false,
+      tax: false,
+      total: true,
+    },
+  },
+  labels: {
+    invoiceTitle: "FACTURE",
+    from: "De",
+    to: "À",
+    item: "Description",
+    quantity: "Qté",
+    rate: "Prix",
+    total: "Total",
+    paymentInstructions: "Instructions de paiement",
+  },
+};
+
+// ==========================================
+// 2. SCHEMA DEFINITION
+// ==========================================
 const invoiceSettingsSchema = new mongoose.Schema(
   {
     venue: {
@@ -8,29 +63,47 @@ const invoiceSettingsSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
+
+    // --- BRANDING ---
     branding: {
       logo: { url: String, width: Number, height: Number },
       colors: {
-        primary: { type: String, default: "#F18237" },
-        secondary: { type: String, default: "#374151" },
-        text: { type: String, default: "#1F2937" },
-        background: { type: String, default: "#FFFFFF" },
+        primary: { type: String, default: DEFAULTS.branding.colors.primary },
+        secondary: { type: String, default: DEFAULTS.branding.colors.secondary },
+        text: { type: String, default: DEFAULTS.branding.colors.text },
+        background: { type: String, default: DEFAULTS.branding.colors.background },
       },
-      fonts: { size: { type: Number, default: 10 } },
-      watermark: { enabled: Boolean, url: String },
+      fonts: {
+        size: { type: Number, default: DEFAULTS.branding.fonts.size },
+        body: { type: String, default: DEFAULTS.branding.fonts.body },
+      },
+      watermark: {
+        enabled: { type: Boolean, default: false },
+        url: String,
+      },
     },
+
+    // --- LAYOUT & SECTIONS (For Drag & Drop) ---
     layout: {
-      template: { type: String, default: "modern" }, // modern, classic, minimal
-      density: { type: String, default: "standard" }, // compact, standard, spacious
+      template: { type: String, default: DEFAULTS.layout.template },
+      density: { type: String, enum: ["compact", "standard", "spacious"], default: "standard" },
       borderRadius: { type: Number, default: 4 },
       sections: [
-        { id: String, label: String, visible: Boolean, order: Number },
+        {
+          _id: false, // No ID needed for sub-object
+          id: { type: String, required: true }, // 'header', 'items', etc.
+          label: String,
+          visible: { type: Boolean, default: true },
+          order: { type: Number, required: true },
+        },
       ],
     },
+
+    // --- TABLE STYLING ---
     table: {
-      headerColor: String,
-      striped: { type: Boolean, default: false },
-      rounded: { type: Boolean, default: true },
+      headerColor: { type: String, default: DEFAULTS.table.headerColor },
+      striped: { type: Boolean, default: DEFAULTS.table.striped },
+      rounded: { type: Boolean, default: DEFAULTS.table.rounded },
       columns: {
         description: { type: Boolean, default: true },
         quantity: { type: Boolean, default: true },
@@ -40,36 +113,49 @@ const invoiceSettingsSchema = new mongoose.Schema(
         total: { type: Boolean, default: true },
       },
     },
+
+    // --- TEXT LABELS ---
     labels: {
-      invoiceTitle: { type: String, default: "INVOICE" },
-      from: { type: String, default: "From" },
-      to: { type: String, default: "Bill To" },
-      item: { type: String, default: "Description" },
-      quantity: { type: String, default: "Qty" },
-      rate: { type: String, default: "Price" },
-      total: { type: String, default: "Amount" },
+      invoiceTitle: { type: String, default: DEFAULTS.labels.invoiceTitle },
+      from: { type: String, default: DEFAULTS.labels.from },
+      to: { type: String, default: DEFAULTS.labels.to },
+      item: { type: String, default: DEFAULTS.labels.item },
+      quantity: { type: String, default: DEFAULTS.labels.quantity },
+      rate: { type: String, default: DEFAULTS.labels.rate },
+      total: { type: String, default: DEFAULTS.labels.total },
+      paymentInstructions: { type: String, default: DEFAULTS.labels.paymentInstructions },
     },
+
+    // --- PAYMENT INFO ---
     paymentTerms: {
       bankDetails: String,
+      terms: String,
     },
   },
   { timestamps: true }
 );
 
-// Helper to find or create settings for a venue
+// ==========================================
+// 3. METHODS
+// ==========================================
 invoiceSettingsSchema.statics.getOrCreate = async function (venueId) {
   let settings = await this.findOne({ venue: venueId });
+
   if (!settings) {
+    // Merge defaults
     settings = await this.create({
       venue: venueId,
-      "layout.sections": [
-        { id: "header", label: "Header", visible: true, order: 1 },
-        { id: "details", label: "Details", visible: true, order: 2 },
-        { id: "items", label: "Items", visible: true, order: 3 },
-        { id: "totals", label: "Totals", visible: true, order: 4 },
-        { id: "footer", label: "Footer", visible: true, order: 5 },
-      ],
+      branding: DEFAULTS.branding,
+      layout: DEFAULTS.layout,
+      table: DEFAULTS.table,
+      labels: DEFAULTS.labels,
     });
+  } else {
+    // Ensure sections exist if migrating from old version
+    if (!settings.layout.sections || settings.layout.sections.length === 0) {
+      settings.layout.sections = DEFAULTS.layout.sections;
+      await settings.save();
+    }
   }
   return settings;
 };
