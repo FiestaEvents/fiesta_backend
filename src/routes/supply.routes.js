@@ -13,7 +13,7 @@ import {
   getSupplyAnalytics,
   getSuppliesByCategory,
 } from "../controllers/supplyController.js";
-import { authenticate, authorize } from "../middleware/auth.js";
+import { authenticate } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -33,18 +33,17 @@ router.get("/by-category/:categoryId", getSuppliesByCategory);
 router.route("/")
   .get(getAllSupplies)
   // Allow both "Owner" and "owner" to handle case sensitivity issues
-  .post(authorize("owner", "Owner", "manager", "Manager"), createSupply);
+  .post(createSupply);
 
 router.route("/:id")
   .get(getSupplyById)
   // ✅ FIX: Added "Owner" and "Manager" to allowed roles
-  .patch(authorize("owner", "Owner", "manager", "Manager"), updateSupply)
-  .delete(authorize("owner", "Owner"), deleteSupply);
+  .patch(updateSupply)
+  .delete(deleteSupply);
 
 // Stock Management
 router.patch(
   "/:id/stock",
-  authorize("owner", "Owner", "manager", "Manager", "staff", "Staff"),
   updateStock
 );
 router.get("/:id/history", getStockHistory);
@@ -52,12 +51,10 @@ router.get("/:id/history", getStockHistory);
 // Archive Operations
 router.patch(
   "/:id/archive",
-  authorize("owner", "Owner", "manager", "Manager"),
   archiveSupply
 );
 router.patch(
   "/:id/restore",
-  authorize("owner", "Owner"),
   restoreSupply
 );
 

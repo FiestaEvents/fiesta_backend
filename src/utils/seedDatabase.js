@@ -643,8 +643,8 @@ const seedClients = async (venue, createdBy) => {
         zipCode: "1000",
         country: "Tunisia",
       },
-      notes: "Looking for premium wedding package. Allergies: nuts",
-      tags: ["wedding", "vip", "2025"],
+      notes: "Looking for premium wedding package. Bride allergic to nuts. Budget: 25,000 TND",
+      tags: ["wedding", "vip", "2025", "premium"],
       createdBy: createdBy._id,
     },
     {
@@ -660,8 +660,8 @@ const seedClients = async (venue, createdBy) => {
         zipCode: "1082",
         country: "Tunisia",
       },
-      notes: "Corporate client, annual gala event",
-      tags: ["corporate", "recurring", "tech"],
+      notes: "Corporate client, annual gala event. Recurring customer. CEO: Ahmed Mansour",
+      tags: ["corporate", "recurring", "tech", "vip"],
       createdBy: createdBy._id,
     },
     {
@@ -676,8 +676,8 @@ const seedClients = async (venue, createdBy) => {
         zipCode: "2078",
         country: "Tunisia",
       },
-      notes: "50th birthday celebration",
-      tags: ["birthday", "family"],
+      notes: "50th birthday celebration. Prefers garden setting.",
+      tags: ["birthday", "family", "garden"],
       createdBy: createdBy._id,
     },
     {
@@ -687,8 +687,62 @@ const seedClients = async (venue, createdBy) => {
       venueId: venue._id,
       status: "active",
       company: "Startup Hub",
-      notes: "Monthly networking events",
-      tags: ["corporate", "recurring", "networking"],
+      address: {
+        street: "Lac 2",
+        city: "Tunis",
+        zipCode: "1053",
+        country: "Tunisia",
+      },
+      notes: "Monthly networking events. Budget-conscious but consistent.",
+      tags: ["corporate", "recurring", "networking", "budget"],
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Amira & Youssef Engagement",
+      email: "amira.youssef@email.com",
+      phone: "+216 98 222 333",
+      venueId: venue._id,
+      status: "active",
+      address: {
+        street: "Sidi Bou Said",
+        city: "Tunis",
+        zipCode: "2026",
+        country: "Tunisia",
+      },
+      notes: "Traditional engagement party. 200 guests expected.",
+      tags: ["engagement", "traditional", "family"],
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Medical Conference Organizers",
+      email: "info@medconf.tn",
+      phone: "+216 71 444 555",
+      venueId: venue._id,
+      status: "active",
+      company: "Medical Conference TN",
+      notes: "Annual medical conference. Need AV equipment and catering.",
+      tags: ["corporate", "conference", "recurring"],
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Rania Graduation Party",
+      email: "rania.grad@email.com",
+      phone: "+216 98 666 777",
+      venueId: venue._id,
+      status: "active",
+      notes: "University graduation celebration. Young crowd, need DJ.",
+      tags: ["graduation", "young", "party"],
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Embassy of France",
+      email: "events@ambafrance-tn.org",
+      phone: "+216 71 888 999",
+      venueId: venue._id,
+      status: "active",
+      company: "French Embassy",
+      notes: "Diplomatic reception. High security requirements.",
+      tags: ["diplomatic", "vip", "security", "recurring"],
       createdBy: createdBy._id,
     },
   ]);
@@ -696,6 +750,7 @@ const seedClients = async (venue, createdBy) => {
   console.log(`✅ Created ${clients.length} clients`);
   return clients;
 };
+
 
 // =========================================================
 // SEED PARTNERS
@@ -705,6 +760,7 @@ const seedPartners = async (venue, createdBy) => {
   console.log("\n🤝 Seeding partners...");
 
   const partners = await Partner.create([
+    // Catering
     {
       name: "Elite Catering Services",
       email: "contact@elitecatering.tn",
@@ -717,11 +773,30 @@ const seedPartners = async (venue, createdBy) => {
       fixedRate: 45,
       rating: 4.8,
       totalJobs: 127,
-      specialties: "Tunisian & Mediterranean cuisine, Wedding menus",
+      specialties: "Tunisian & Mediterranean cuisine, Wedding menus, Halal certified",
       location: "Tunis",
-      notes: "Preferred vendor, excellent quality",
+      notes: "Preferred vendor, excellent quality. 10% discount for events over 200 guests",
       createdBy: createdBy._id,
     },
+    {
+      name: "Royal Feast Catering",
+      email: "info@royalfeast.tn",
+      phone: "+216 71 222 333",
+      venueId: venue._id,
+      category: "catering",
+      company: "Royal Feast",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 55,
+      rating: 4.9,
+      totalJobs: 84,
+      specialties: "Premium French cuisine, Molecular gastronomy, Vegan options",
+      location: "La Marsa",
+      notes: "High-end caterer for luxury events",
+      createdBy: createdBy._id,
+    },
+
+    // Photography
     {
       name: "Studio Lumière",
       email: "booking@studiolumiere.tn",
@@ -734,15 +809,33 @@ const seedPartners = async (venue, createdBy) => {
       hourlyRate: 150,
       rating: 4.9,
       totalJobs: 89,
-      specialties: "Wedding photography, Videography, Drone shots",
+      specialties: "Wedding photography, Videography, Drone shots, Same-day edits",
       location: "Carthage",
-      notes: "Award-winning photographer",
+      notes: "Award-winning photographer. Requires 50% deposit.",
       createdBy: createdBy._id,
     },
     {
+      name: "Moments Photography",
+      email: "info@moments.tn",
+      phone: "+216 98 333 444",
+      venueId: venue._id,
+      category: "photography",
+      company: "Moments Studio",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 1200,
+      rating: 4.7,
+      totalJobs: 156,
+      specialties: "Candid photography, Photo booths, Instant prints",
+      location: "Tunis",
+      createdBy: createdBy._id,
+    },
+
+    // Decoration
+    {
       name: "Décor Dreams",
       email: "info@decordreams.tn",
-      phone: "+216 98 333 444",
+      phone: "+216 98 444 555",
       venueId: venue._id,
       category: "decoration",
       company: "Décor Dreams",
@@ -751,14 +844,17 @@ const seedPartners = async (venue, createdBy) => {
       fixedRate: 2500,
       rating: 4.7,
       totalJobs: 156,
-      specialties: "Floral arrangements, Lighting design, Custom themes",
+      specialties: "Floral arrangements, Lighting design, Custom themes, Balloon art",
       location: "La Marsa",
+      notes: "Can source rare flowers with 2 weeks notice",
       createdBy: createdBy._id,
     },
+
+    // Music/DJ
     {
       name: "DJ Soundwaves",
       email: "dj@soundwaves.tn",
-      phone: "+216 98 444 555",
+      phone: "+216 98 555 666",
       venueId: venue._id,
       category: "music",
       company: "Soundwaves Entertainment",
@@ -767,10 +863,30 @@ const seedPartners = async (venue, createdBy) => {
       hourlyRate: 200,
       rating: 4.8,
       totalJobs: 203,
-      specialties: "Weddings, Corporate events, Live mixing",
+      specialties: "Weddings, Corporate events, Live mixing, MC services",
       location: "Tunis",
+      notes: "Owns premium sound equipment. Very popular on weekends.",
       createdBy: createdBy._id,
     },
+    {
+      name: "Live Music Ensemble",
+      email: "booking@livemusic.tn",
+      phone: "+216 98 666 777",
+      venueId: venue._id,
+      category: "music",
+      company: "Live Music TN",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 3000,
+      rating: 4.9,
+      totalJobs: 67,
+      specialties: "Live band, Jazz, Classical, Arabic traditional music",
+      location: "Sidi Bou Said",
+      notes: "5-piece band, requires stage space",
+      createdBy: createdBy._id,
+    },
+
+    // Security
     {
       name: "Safe & Secure",
       email: "ops@safeandsecure.tn",
@@ -783,8 +899,84 @@ const seedPartners = async (venue, createdBy) => {
       hourlyRate: 35,
       rating: 4.6,
       totalJobs: 94,
-      specialties: "Event security, Crowd management",
+      specialties: "Event security, Crowd management, VIP protection",
       location: "Tunis",
+      notes: "Licensed and insured. Minimum 4 guards per event.",
+      createdBy: createdBy._id,
+    },
+
+    // Drivers
+    {
+      name: "Premium Transport Services",
+      email: "bookings@premiumtransport.tn",
+      phone: "+216 71 666 777",
+      venueId: venue._id,
+      category: "driver",
+      company: "Premium Transport",
+      status: "active",
+      priceType: "hourly",
+      hourlyRate: 50,
+      rating: 4.8,
+      totalJobs: 145,
+      specialties: "Luxury vehicles, Wedding cars, Airport transfers",
+      location: "Tunis",
+      createdBy: createdBy._id,
+    },
+
+    // Bakery
+    {
+      name: "La Pâtisserie Royale",
+      email: "orders@patisserieroyale.tn",
+      phone: "+216 71 777 888",
+      venueId: venue._id,
+      category: "bakery",
+      company: "La Pâtisserie Royale",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 800,
+      rating: 4.9,
+      totalJobs: 234,
+      specialties: "Wedding cakes, French pastries, Custom designs, Gluten-free options",
+      location: "La Marsa",
+      notes: "Requires 2 weeks notice for custom cakes. Award-winning.",
+      createdBy: createdBy._id,
+    },
+
+    // Cleaning
+    {
+      name: "Sparkle Clean Pro",
+      email: "info@sparkleclean.tn",
+      phone: "+216 71 888 999",
+      venueId: venue._id,
+      category: "cleaning",
+      company: "Sparkle Clean",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 400,
+      rating: 4.5,
+      totalJobs: 312,
+      specialties: "Post-event cleaning, Deep cleaning, Carpet shampooing",
+      location: "Tunis",
+      notes: "Available 24/7 for emergency cleaning",
+      createdBy: createdBy._id,
+    },
+
+    // Hair & Makeup
+    {
+      name: "Glamour Beauty Studio",
+      email: "bookings@glamourbeauty.tn",
+      phone: "+216 98 777 888",
+      venueId: venue._id,
+      category: "hairstyling",
+      company: "Glamour Beauty",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 250,
+      rating: 4.8,
+      totalJobs: 178,
+      specialties: "Bridal makeup, Hairstyling, Airbrush makeup, Trial sessions",
+      location: "Tunis",
+      notes: "Can provide on-site services with advance booking",
       createdBy: createdBy._id,
     },
   ]);
@@ -792,7 +984,6 @@ const seedPartners = async (venue, createdBy) => {
   console.log(`✅ Created ${partners.length} partners`);
   return partners;
 };
-
 // =========================================================
 // SEED SUPPLY CATEGORIES & SUPPLIES
 // =========================================================
@@ -1537,80 +1728,413 @@ const seedTasks = async (venue, events, users, createdBy) => {
 // =========================================================
 // SEED REMINDERS
 // =========================================================
-
 const seedReminders = async (venue, events, users, createdBy) => {
   console.log("\n🔔 Seeding reminders...");
 
-  const [owner, manager] = users;
+  const [owner, manager, staff] = users;
+  const now = new Date();
+
+  // Helper to create date with specific time
+  const createDateTime = (daysOffset, hours, minutes) => {
+    const date = new Date();
+    date.setDate(date.getDate() + daysOffset);
+    date.setHours(hours, minutes, 0, 0);
+    return date;
+  };
+
+  // Helper to format time
+  const formatTime = (hours, minutes) => {
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  };
 
   const reminders = await Reminder.create([
+    // ==========================================
+    // OVERDUE REMINDERS (Testing urgent alerts)
+    // ==========================================
     {
-      title: "Follow up with Sarah & Karim",
-      description: "Check if they've finalized the wedding cake design",
-      type: "followup",
-      priority: "medium",
-      reminderDate: generateFutureDate(3),
-      reminderTime: "10:00",
-      status: "active",
-      notificationMethods: ["email", "in_app"],
-      relatedEvent: events[0]._id,
-      relatedClient: events[0].clientId,
-      assignedTo: [manager._id],
-      venueId: venue._id,
-      createdBy: createdBy._id,
-    },
-    {
-      title: "Send invoice to TechCorp",
-      description: "Generate and send final invoice 30 days before event",
+      title: "⚠️ URGENT: Final payment confirmation needed",
+      description: "Client hasn't confirmed final payment method. Event is in 2 days!",
       type: "payment",
-      priority: "high",
-      reminderDate: generateFutureDate(60),
-      reminderTime: "09:00",
+      priority: "urgent",
+      reminderDate: createDateTime(-2, 10, 0),
+      reminderTime: formatTime(10, 0),
       status: "active",
-      notificationMethods: ["email", "in_app"],
-      relatedEvent: events[1]._id,
-      relatedClient: events[1].clientId,
+      relatedEvent: events[0]._id,
       assignedTo: [manager._id, owner._id],
       venueId: venue._id,
       createdBy: createdBy._id,
     },
     {
-      title: "HVAC maintenance due",
-      description: "Quarterly HVAC system maintenance check",
+      title: "Follow up on catering menu changes",
+      description: "Client requested menu modifications 3 days ago. Need confirmation.",
+      type: "followup",
+      priority: "high",
+      reminderDate: createDateTime(-3, 14, 30),
+      reminderTime: formatTime(14, 30),
+      status: "active",
+      relatedEvent: events[0]._id,
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Confirm decoration delivery",
+      description: "Decorator needs to confirm delivery time for tomorrow's event",
+      type: "event",
+      priority: "high",
+      reminderDate: createDateTime(-1, 9, 0),
+      reminderTime: formatTime(9, 0),
+      status: "active",
+      relatedEvent: events[0]._id,
+      assignedTo: [staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // IMMINENT REMINDERS (Next hour - Critical)
+    // ==========================================
+    {
+      title: "🚨 Client arrival in 30 minutes",
+      description: "VIP client arriving for venue tour. Prepare welcome package.",
+      type: "other",
+      priority: "urgent",
+      reminderDate: now.toISOString().split('T')[0],
+      reminderTime: formatTime(now.getHours(), now.getMinutes() + 30),
+      status: "active",
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Team briefing for tonight's event",
+      description: "Pre-event meeting with all staff members",
+      type: "event",
+      priority: "high",
+      reminderDate: now.toISOString().split('T')[0],
+      reminderTime: formatTime(now.getHours() + 1, 0),
+      status: "active",
+      assignedTo: [manager._id, staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // TODAY REMINDERS (Next 24 hours)
+    // ==========================================
+    {
+      title: "Send invoice to TechCorp",
+      description: "Generate and email invoice for upcoming corporate event",
+      type: "payment",
+      priority: "high",
+      reminderDate: now.toISOString().split('T')[0],
+      reminderTime: formatTime(16, 0),
+      status: "active",
+      relatedEvent: events[1]._id,
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Check inventory for weekend events",
+      description: "Verify we have sufficient chairs, tables, and linens",
+      type: "task",
+      priority: "medium",
+      reminderDate: now.toISOString().split('T')[0],
+      reminderTime: formatTime(17, 30),
+      status: "active",
+      assignedTo: [staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Call photographer for final details",
+      description: "Confirm arrival time and special shot list with photographer",
+      type: "event",
+      priority: "medium",
+      reminderDate: now.toISOString().split('T')[0],
+      reminderTime: formatTime(19, 0),
+      status: "active",
+      relatedEvent: events[0]._id,
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // TOMORROW REMINDERS
+    // ==========================================
+    {
+      title: "Venue walkthrough with wedding couple",
+      description: "Final venue inspection with Sarah & Karim before the big day",
+      type: "event",
+      priority: "high",
+      reminderDate: createDateTime(1, 10, 0),
+      reminderTime: formatTime(10, 0),
+      status: "active",
+      relatedEvent: events[0]._id,
+      assignedTo: [manager._id, staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Submit monthly expense report",
+      description: "Compile and submit December expense report to accounting",
+      type: "other",
+      priority: "medium",
+      reminderDate: createDateTime(1, 14, 0),
+      reminderTime: formatTime(14, 0),
+      status: "active",
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Order fresh flowers for weekend events",
+      description: "Place order with florist for Saturday and Sunday events",
+      type: "task",
+      priority: "medium",
+      reminderDate: createDateTime(1, 11, 30),
+      reminderTime: formatTime(11, 30),
+      status: "active",
+      assignedTo: [staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // THIS WEEK REMINDERS (2-7 days)
+    // ==========================================
+    {
+      title: "Follow up with birthday party client",
+      description: "Check if Leila has finalized guest count and menu preferences",
+      type: "followup",
+      priority: "medium",
+      reminderDate: createDateTime(3, 10, 0),
+      reminderTime: formatTime(10, 0),
+      status: "active",
+      relatedEvent: events[2]._id,
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Quarterly HVAC maintenance",
+      description: "Schedule technician for air conditioning system inspection",
       type: "maintenance",
       priority: "medium",
-      reminderDate: generateFutureDate(15),
-      reminderTime: "08:00",
-      isRecurring: true,
-      recurrence: {
-        frequency: "monthly",
-        interval: 3,
-      },
+      reminderDate: createDateTime(4, 8, 0),
+      reminderTime: formatTime(8, 0),
       status: "active",
-      notificationMethods: ["in_app"],
       assignedTo: [owner._id],
       venueId: venue._id,
       createdBy: createdBy._id,
     },
     {
-      title: "Confirm photographer for wedding",
-      description: "Final confirmation call with Studio Lumière",
-      type: "event",
-      priority: "high",
-      reminderDate: generateFutureDate(10),
-      reminderTime: "14:00",
+      title: "Review and approve marketing materials",
+      description: "New promotional flyers ready for review",
+      type: "other",
+      priority: "low",
+      reminderDate: createDateTime(5, 15, 0),
+      reminderTime: formatTime(15, 0),
       status: "active",
-      notificationMethods: ["email", "sms", "in_app"],
+      assignedTo: [owner._id, manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Staff training session on new booking system",
+      description: "Mandatory training for all team members on updated software",
+      type: "other",
+      priority: "medium",
+      reminderDate: createDateTime(6, 9, 30),
+      reminderTime: formatTime(9, 30),
+      status: "active",
+      assignedTo: [manager._id, staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // NEXT WEEK REMINDERS (8-14 days)
+    // ==========================================
+    {
+      title: "Confirm DJ equipment setup for corporate gala",
+      description: "Verify sound system requirements and setup time with DJ Soundwaves",
+      type: "event",
+      priority: "medium",
+      reminderDate: createDateTime(10, 11, 0),
+      reminderTime: formatTime(11, 0),
+      status: "active",
+      relatedEvent: events[1]._id,
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Renew venue insurance policy",
+      description: "Annual insurance renewal deadline approaching",
+      type: "other",
+      priority: "high",
+      reminderDate: createDateTime(12, 10, 0),
+      reminderTime: formatTime(10, 0),
+      status: "active",
+      assignedTo: [owner._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Schedule deep cleaning of Grand Ballroom",
+      description: "Post-event deep clean and carpet shampooing needed",
+      type: "maintenance",
+      priority: "medium",
+      reminderDate: createDateTime(13, 8, 0),
+      reminderTime: formatTime(8, 0),
+      status: "active",
+      assignedTo: [staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // LATER THIS MONTH (15-30 days)
+    // ==========================================
+    {
+      title: "Prepare year-end financial report",
+      description: "Compile Q4 revenue, expenses, and profit/loss statements",
+      type: "other",
+      priority: "high",
+      reminderDate: createDateTime(20, 9, 0),
+      reminderTime: formatTime(9, 0),
+      status: "active",
+      assignedTo: [owner._id, manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Order supplies for holiday events",
+      description: "Stock up on decorations and supplies for New Year celebrations",
+      type: "task",
+      priority: "medium",
+      reminderDate: createDateTime(25, 10, 0),
+      reminderTime: formatTime(10, 0),
+      status: "active",
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Network maintenance window",
+      description: "IT vendor scheduled for router and network equipment updates",
+      type: "maintenance",
+      priority: "low",
+      reminderDate: createDateTime(28, 22, 0),
+      reminderTime: formatTime(22, 0),
+      status: "active",
+      assignedTo: [owner._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // COMPLETED REMINDERS (for testing history)
+    // ==========================================
+    {
+      title: "✅ Monthly safety inspection completed",
+      description: "Fire extinguishers checked, emergency exits cleared, first aid kits restocked",
+      type: "maintenance",
+      priority: "high",
+      reminderDate: createDateTime(-5, 8, 0),
+      reminderTime: formatTime(8, 0),
+      status: "completed",
+      assignedTo: [staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "✅ Sent contract to wedding clients",
+      description: "Wedding contract sent via email with electronic signature link",
+      type: "followup",
+      priority: "high",
+      reminderDate: createDateTime(-7, 14, 0),
+      reminderTime: formatTime(14, 0),
+      status: "completed",
       relatedEvent: events[0]._id,
       assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "✅ Updated website event gallery",
+      description: "Uploaded professional photos from last weekend's events",
+      type: "other",
+      priority: "medium",
+      reminderDate: createDateTime(-10, 16, 0),
+      reminderTime: formatTime(16, 0),
+      status: "completed",
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // SNOOZED REMINDERS (for testing snooze)
+    // ==========================================
+    {
+      title: "Review catering contract renewal",
+      description: "Negotiate new rates with Elite Catering for next year",
+      type: "other",
+      priority: "medium",
+      reminderDate: createDateTime(2, 13, 0),
+      reminderTime: formatTime(13, 0),
+      status: "active",
+      snoozeHistory: [
+        {
+          snoozedAt: createDateTime(-2, 13, 0),
+          snoozeMinutes: 2880, // 2 days
+          snoozedBy: manager._id,
+        },
+        {
+          snoozedAt: createDateTime(0, 13, 0),
+          snoozeMinutes: 2880, // 2 days
+          snoozedBy: manager._id,
+        },
+      ],
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // DISMISSED REMINDER (for testing dismiss)
+    // ==========================================
+    {
+      title: "Consider adding valet parking service",
+      description: "Research valet parking vendors for premium events",
+      type: "other",
+      priority: "low",
+      reminderDate: createDateTime(-1, 10, 0),
+      reminderTime: formatTime(10, 0),
+      status: "active",
+      dismissed: true,
+      dismissedAt: createDateTime(0, 11, 0),
+      dismissedBy: owner._id,
+      assignedTo: [owner._id],
       venueId: venue._id,
       createdBy: createdBy._id,
     },
   ]);
 
   console.log(`✅ Created ${reminders.length} reminders`);
+  console.log(`   • ${reminders.filter(r => r.status === 'active' && new Date(r.reminderDate) < now).length} Overdue`);
+  console.log(`   • ${reminders.filter(r => r.status === 'active' && new Date(r.reminderDate).toDateString() === now.toDateString()).length} Due Today`);
+  console.log(`   • ${reminders.filter(r => r.status === 'completed').length} Completed`);
+  console.log(`   • ${reminders.filter(r => r.snoozeHistory && r.snoozeHistory.length > 0).length} With Snooze History`);
+  console.log(`   • ${reminders.filter(r => r.dismissed).length} Dismissed`);
+  
   return reminders;
 };
+
 
 // =========================================================
 // SEED INVOICES

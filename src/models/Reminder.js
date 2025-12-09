@@ -63,6 +63,27 @@ const reminderSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+     dismissed: {
+    type: Boolean,
+    default: false,
+  },
+  dismissedAt: {
+    type: Date,
+  },
+  dismissedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
+  snoozeHistory: [
+    {
+      snoozedAt: { type: Date, default: Date.now },
+      snoozeMinutes: Number,
+      snoozedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    },
+  ],
 
     // Optional Relations
     relatedEvent: { type: mongoose.Schema.Types.ObjectId, ref: "Event" },
@@ -76,7 +97,15 @@ const reminderSchema = new mongoose.Schema(
 );
 
 // Indexes for common queries
-reminderSchema.index({ venueId: 1, isArchived: 1, status: 1 });
-reminderSchema.index({ reminderDate: 1 });
-
+reminderSchema.index({  venueId: 1, 
+  isArchived: 1, 
+  status: 1,
+  reminderDate: 1 
+ });
+reminderSchema.index({  reminderDate: 1, 
+  reminderTime: 1  });
+reminderSchema.index({ 
+  title: 'text', 
+  description: 'text' 
+});
 export default mongoose.model("Reminder", reminderSchema);

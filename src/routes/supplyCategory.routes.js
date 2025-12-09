@@ -11,7 +11,7 @@ import {
   archiveCategory,
   restoreCategory,
 } from "../controllers/supplyCategoryController.js";
-import { authenticate, authorize  } from "../middleware/auth.js";
+import { authenticate } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -19,27 +19,38 @@ const router = express.Router();
 router.use(authenticate);
 
 // ============================================
-// SPECIAL OPERATIONS (must be before /:id)
+// SPECIAL OPERATIONS
 // ============================================
-router.post("/initialize", authorize ("owner"), initializeDefaultCategories);
-router.patch("/reorder", authorize ("owner", "manager"), reorderCategories);
+router.post(
+  "/initialize",
+  initializeDefaultCategories
+);
+router.patch(
+  "/reorder",
+  reorderCategories
+);
 
 // ============================================
 // CRUD OPERATIONS
 // ============================================
-router.route("/")
+router
+  .route("/")
   .get(getAllCategories)
-  .post(authorize ("owner", "manager"), createCategory);
+  .post( createCategory);
 
-router.route("/:id")
+router
+  .route("/:id")
   .get(getCategoryById)
-  .patch(authorize ("owner", "manager"), updateCategory)
-  .delete(authorize ("owner"), deleteCategory);
+  .patch(updateCategory)
+  .delete(deleteCategory);
 
 // ============================================
 // ARCHIVE OPERATIONS
 // ============================================
-router.patch("/:id/archive", authorize ("owner", "manager"), archiveCategory);
-router.patch("/:id/restore", authorize ("owner"), restoreCategory);
+router.patch(
+  "/:id/archive",
+  archiveCategory
+);
+router.patch("/:id/restore", restoreCategory);
 
 export default router;
