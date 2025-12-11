@@ -5,6 +5,7 @@ import mongoSanitize from "express-mongo-sanitize";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 import morgan from "morgan";
+import hpp from "hpp";
 import path from "path";
 import { fileURLToPath } from "url";
 import config from "./config/env.js";
@@ -23,18 +24,17 @@ app.use(helmet({
 }));
 
 // =========================================================
-// 1. FIXED CORS CONFIGURATION (DO NOT REVERT THIS)
+// 1. FIXED CORS CONFIGURATION
 // =========================================================
 app.use(
   cors({
     origin: [
-      config.frontend.url,      // Your .env URL
-      "http://localhost:3000",  // React Default
-      "http://localhost:5173"   // Vite Default
+      config.frontend.url,      
+      "http://localhost:3000",  
+      "http://localhost:5173"   
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    // This allows the browser to send the data without blocking
     allowedHeaders: ["Content-Type", "Authorization", "x-venue-id"] 
   })
 );
@@ -45,6 +45,9 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Data sanitization against NoSQL injection
 app.use(mongoSanitize());
+
+// Prevent Parameter Pollution
+app.use(hpp());
 
 // Compression middleware
 app.use(compression());
@@ -57,7 +60,9 @@ if (config.env === "development") {
 }
 
 // Serve Static Files (Uploaded Images)
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+// Using process.cwd() is often safer than __dirname for root-relative folders
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
