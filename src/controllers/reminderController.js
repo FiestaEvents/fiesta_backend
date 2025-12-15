@@ -1,485 +1,428 @@
+// controllers/reminderController.js - IMPROVED VERSION
 import asyncHandler from "../middleware/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
-import ApiResponse from "../utils/ApiResponse.js";
-import { Reminder, Event, Client, Task, Payment, User } from "../models/index.js";
+import { Reminder } from "../models/index.js";
 
-/**
- * @desc    Get all reminders (non-archived by default)
- * @route   GET /api/v1/reminders
- * @access  Private
- */
+// ==========================================
+// @desc    Get reminders with filters and pagination
+// @route   GET /api/v1/reminders
+// @access  Private
+// ==========================================
 export const getReminders = asyncHandler(async (req, res) => {
   const {
     page = 1,
-    limit = 10,
+    limit = 20,
+    status, 
     type,
     priority,
-    status,
     startDate,
     endDate,
-    isArchived = false, // New parameter to include archived reminders
+    search
   } = req.query;
 
-  // Build query
-  const query = { 
+  // 1. Base Query
+  const query = {
     venueId: req.user.venueId,
-    isArchived: isArchived === "true", // Only show archived if explicitly requested
+    isArchived: false,
   };
 
-  if (type) query.type = type;
-  if (priority) query.priority = priority;
-  if (status) query.status = status;
+  // 2. Apply Filters
+  if (status && status !== "all") {
+    query.status = status;
+  }
 
-  // Date range filter
+  if (type && type !== "all") {
+    query.type = type;
+  }
+
+  if (priority && priority !== "all") {
+    query.priority = priority;
+  }
+
+  if (search) {
+    query.$or = [
+      { title: { $regex: search, $options: "i" } },
+      { description: { $regex: search, $options: "i" } }
+    ];
+  }
+
   if (startDate || endDate) {
     query.reminderDate = {};
     if (startDate) query.reminderDate.$gte = new Date(startDate);
     if (endDate) query.reminderDate.$lte = new Date(endDate);
   }
 
-  // Pagination
-  const skip = (page - 1) * limit;
+  // 3. Pagination Setup
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+  const skip = (pageNum - 1) * limitNum;
 
-  // Execute query
+  // 4. Execute Query
   const [reminders, total] = await Promise.all([
     Reminder.find(query)
-      .populate("assignedTo", "name email avatar")
-      .populate("relatedEvent", "title startDate")
-      .populate("relatedClient", "name email")
-      .populate("relatedTask", "title status")
-      .populate("relatedPayment", "amount status")
-      .populate("createdBy", "name email")
-      .populate("archivedBy", "name email")
-      .sort({ reminderDate: 1 })
+      .sort({ reminderDate: 1, reminderTime: 1 })
       .skip(skip)
-      .limit(parseInt(limit)),
+      .limit(limitNum)
+      .populate("relatedEvent", "title startDate")
+      .populate("relatedClient", "name company")
+      .populate("assignedTo", "name avatar")
+      .lean(), // ✅ Use lean for better performance
     Reminder.countDocuments(query),
   ]);
 
-  new ApiResponse({
-    reminders,
-    pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      total,
-      pages: Math.ceil(total / limit),
+  // 5. Response
+  res.status(200).json({
+    success: true,
+    data: {
+      reminders,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
     },
-  }).send(res);
+  });
 });
 
-/**
- * @desc    Get single reminder (including archived)
- * @route   GET /api/v1/reminders/:id
- * @access  Private
- */
+// ==========================================
+// @desc    Get single reminder
+// @route   GET /api/v1/reminders/:id
+// @access  Private
+// ==========================================
 export const getReminder = asyncHandler(async (req, res) => {
   const reminder = await Reminder.findOne({
     _id: req.params.id,
     venueId: req.user.venueId,
+    isArchived: false,
   })
-    .populate("assignedTo", "name email avatar")
-    .populate("relatedEvent")
-    .populate("relatedClient")
-    .populate("relatedTask")
-    .populate("relatedPayment")
-    .populate("createdBy", "name email")
-    .populate("archivedBy", "name email");
+    .populate("relatedEvent", "title startDate")
+    .populate("relatedClient", "name company")
+    .populate("assignedTo", "name avatar")
+    .populate("createdBy", "name");
 
   if (!reminder) {
     throw new ApiError("Reminder not found", 404);
   }
 
-  new ApiResponse({ reminder }).send(res);
+  res.status(200).json({
+    success: true,
+    data: { reminder },
+  });
 });
 
-/**
- * @desc    Create new reminder
- * @route   POST /api/v1/reminders
- * @access  Private (reminders.create)
- */
+// ==========================================
+// @desc    Create reminder
+// @route   POST /api/v1/reminders
+// @access  Private
+// ==========================================
 export const createReminder = asyncHandler(async (req, res) => {
-  const reminderData = {
+  const reminder = await Reminder.create({
     ...req.body,
     venueId: req.user.venueId,
     createdBy: req.user._id,
-    isArchived: false, // Ensure new reminders are not archived
-  };
+    status: "active",
+    isArchived: false,
+    dismissed: false
+  });
 
-  // Verify assigned users exist and belong to venue
-  if (reminderData.assignedTo && reminderData.assignedTo.length > 0) {
-    const users = await User.find({
-      _id: { $in: reminderData.assignedTo },
-      venueId: req.user.venueId,
-    });
-
-    if (users.length !== reminderData.assignedTo.length) {
-      throw new ApiError("Some assigned users not found", 404);
-    }
-  }
-
-  // Verify related resources if provided
-  if (reminderData.relatedEvent) {
-    const event = await Event.findOne({
-      _id: reminderData.relatedEvent,
-      venueId: req.user.venueId,
-    });
-    if (!event) throw new ApiError("Event not found", 404);
-  }
-
-  if (reminderData.relatedClient) {
-    const client = await Client.findOne({
-      _id: reminderData.relatedClient,
-      venueId: req.user.venueId,
-    });
-    if (!client) throw new ApiError("Client not found", 404);
-  }
-
-  if (reminderData.relatedTask) {
-    const task = await Task.findOne({
-      _id: reminderData.relatedTask,
-      venueId: req.user.venueId,
-    });
-    if (!task) throw new ApiError("Task not found", 404);
-  }
-
-  if (reminderData.relatedPayment) {
-    const payment = await Payment.findOne({
-      _id: reminderData.relatedPayment,
-      venueId: req.user.venueId,
-    });
-    if (!payment) throw new ApiError("Payment not found", 404);
-  }
-
-  const reminder = await Reminder.create(reminderData);
-
-  await reminder.populate([
-    { path: "assignedTo", select: "name email avatar" },
-    { path: "relatedEvent", select: "title startDate" },
-  ]);
-
-  new ApiResponse({ reminder }, "Reminder created successfully", 201).send(res);
+  res.status(201).json({
+    success: true,
+    message: "Reminder created successfully",
+    data: { reminder },
+  });
 });
 
-/**
- * @desc    Update reminder
- * @route   PUT /api/v1/reminders/:id
- * @access  Private (reminders.update.all)
- */
+// ==========================================
+// @desc    Update reminder
+// @route   PUT /api/v1/reminders/:id
+// @access  Private
+// ==========================================
 export const updateReminder = asyncHandler(async (req, res) => {
-  const reminder = await Reminder.findOne({
-    _id: req.params.id,
-    venueId: req.user.venueId,
-  });
+  const reminder = await Reminder.findOneAndUpdate(
+    { _id: req.params.id, venueId: req.user.venueId, isArchived: false },
+    req.body,
+    { new: true, runValidators: true }
+  );
 
   if (!reminder) {
     throw new ApiError("Reminder not found", 404);
   }
 
-  if (reminder.isArchived) {
-    throw new ApiError("Cannot update an archived reminder", 400);
-  }
-
-  // If status is being changed to completed, set completedAt and completedBy
-  if (req.body.status === "completed" && reminder.status !== "completed") {
-    req.body.completedAt = new Date();
-    req.body.completedBy = req.user._id;
-  }
-
-  Object.assign(reminder, req.body);
-  await reminder.save();
-
-  await reminder.populate([
-    { path: "assignedTo", select: "name email avatar" },
-    { path: "relatedEvent", select: "title startDate" },
-  ]);
-
-  new ApiResponse({ reminder }, "Reminder updated successfully").send(res);
+  res.status(200).json({
+    success: true,
+    message: "Reminder updated successfully",
+    data: { reminder },
+  });
 });
 
-/**
- * @desc    Archive reminder (soft delete)
- * @route   DELETE /api/v1/reminders/:id
- * @access  Private (reminders.delete.all)
- */
+// ==========================================
+// @desc    Delete (archive) reminder
+// @route   DELETE /api/v1/reminders/:id
+// @access  Private
+// ==========================================
 export const deleteReminder = asyncHandler(async (req, res) => {
+  const reminder = await Reminder.findOneAndUpdate(
+    { _id: req.params.id, venueId: req.user.venueId },
+    { isArchived: true, archivedAt: new Date() },
+    { new: true }
+  );
+
+  if (!reminder) {
+    throw new ApiError("Reminder not found", 404);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Reminder deleted successfully",
+  });
+});
+
+// ==========================================
+// @desc    Toggle completion status
+// @route   PATCH /api/v1/reminders/:id/toggle-complete
+// @access  Private
+// ==========================================
+export const toggleComplete = asyncHandler(async (req, res) => {
   const reminder = await Reminder.findOne({
     _id: req.params.id,
     venueId: req.user.venueId,
+    isArchived: false,
   });
 
   if (!reminder) {
     throw new ApiError("Reminder not found", 404);
   }
 
-  if (reminder.isArchived) {
-    throw new ApiError("Reminder is already archived", 400);
-  }
-
-  // Soft delete: Archive the reminder instead of deleting
-  reminder.isArchived = true;
-  reminder.archivedAt = new Date();
-  reminder.archivedBy = req.user._id;
+  reminder.status = reminder.status === "active" ? "completed" : "active";
   await reminder.save();
 
-  new ApiResponse(null, "Reminder archived successfully").send(res);
+  res.status(200).json({
+    success: true,
+    message: reminder.status === "completed" ? "Task completed" : "Task reactivated",
+    data: { reminder },
+  });
 });
 
-/**
- * @desc    Snooze reminder
- * @route   POST /api/v1/reminders/:id/snooze
- * @access  Private
- */
+// ==========================================
+// @desc    Snooze reminder
+// @route   POST /api/v1/reminders/:id/snooze
+// @access  Private
+// ==========================================
 export const snoozeReminder = asyncHandler(async (req, res) => {
-  const { snoozeUntil } = req.body;
+  const { minutes = 15 } = req.body;
+  const { id } = req.params;
+  
+  // ✅ Validate minutes
+  if (minutes < 5 || minutes > 1440) {
+    throw new ApiError('Snooze duration must be between 5 minutes and 24 hours', 400);
+  }
 
-  const reminder = await Reminder.findOne({
-    _id: req.params.id,
+  const reminder = await Reminder.findOne({ 
+    _id: id, 
     venueId: req.user.venueId,
+    isArchived: false
   });
-
+  
   if (!reminder) {
-    throw new ApiError("Reminder not found", 404);
+    throw new ApiError('Reminder not found', 404);
   }
 
-  if (reminder.isArchived) {
-    throw new ApiError("Cannot snooze an archived reminder", 400);
+  // ✅ Calculate new reminder time
+  const now = new Date();
+  const newReminderDateTime = new Date(now.getTime() + minutes * 60 * 1000);
+  
+  // ✅ Update reminder date and time
+  reminder.reminderDate = newReminderDateTime;
+  reminder.reminderTime = `${String(newReminderDateTime.getHours()).padStart(2, '0')}:${String(newReminderDateTime.getMinutes()).padStart(2, '0')}`;
+  
+  // ✅ Add to snooze history
+  if (!reminder.snoozeHistory) {
+    reminder.snoozeHistory = [];
   }
-
-  reminder.status = "snoozed";
-  reminder.snoozeUntil = new Date(snoozeUntil);
-
+  reminder.snoozeHistory.push({
+    snoozedAt: now,
+    snoozeMinutes: minutes,
+    snoozedBy: req.user._id
+  });
+  
   await reminder.save();
 
-  new ApiResponse({ reminder }, "Reminder snoozed successfully").send(res);
+  res.status(200).json({
+    success: true,
+    message: `Reminder snoozed for ${minutes} minutes`,
+    data: { reminder }
+  });
 });
 
-/**
- * @desc    Get upcoming reminders (non-archived only)
- * @route   GET /api/v1/reminders/upcoming
- * @access  Private
- */
+// ==========================================
+// @desc    Get upcoming reminders
+// @route   GET /api/v1/reminders/upcoming
+// @access  Private
+// ==========================================
 export const getUpcomingReminders = asyncHandler(async (req, res) => {
-  const { days = 7 } = req.query;
+  const hours = parseInt(req.query.hours) || 168; // Default 7 days
+  
+  // ✅ Validate hours parameter
+  if (hours < 0 || hours > 720) {
+    throw new ApiError('Hours parameter must be between 0 and 720', 400);
+  }
+  
+  const now = new Date();
+  const futureDate = new Date(now.getTime() + hours * 60 * 60 * 1000);
+  const pastDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24h ago
 
-  const endDate = new Date();
-  endDate.setDate(endDate.getDate() + parseInt(days));
-
+  // ✅ Query with proper fields
   const reminders = await Reminder.find({
     venueId: req.user.venueId,
-    status: "active",
-    isArchived: false, // Only non-archived reminders
+    isArchived: false,
+    dismissed: false, // ✅ Exclude dismissed reminders
+    status: 'active',
     reminderDate: {
-      $gte: new Date(),
-      $lte: endDate,
-    },
+      $gte: pastDate,
+      $lte: futureDate
+    }
   })
-    .populate("assignedTo", "name email avatar")
-    .populate("relatedEvent", "title startDate")
-    .sort({ reminderDate: 1 })
-    .limit(20);
+  .select('title description reminderDate reminderTime type priority relatedEvent relatedClient')
+  .populate('relatedEvent', 'title startDate')
+  .populate('relatedClient', 'name')
+  .sort({ reminderDate: 1, reminderTime: 1 })
+  .limit(100) // ✅ Increased limit
+  .lean(); // ✅ Use lean for better performance
 
-  new ApiResponse({ reminders }).send(res);
-});
-
-/**
- * @desc    Restore archived reminder
- * @route   PATCH /api/v1/reminders/:id/restore
- * @access  Private (reminders.update.all)
- */
-export const restoreReminder = asyncHandler(async (req, res) => {
-  const reminder = await Reminder.findOne({
-    _id: req.params.id,
-    venueId: req.user.venueId,
-  });
-
-  if (!reminder) {
-    throw new ApiError("Reminder not found", 404);
-  }
-
-  if (!reminder.isArchived) {
-    throw new ApiError("Reminder is not archived", 400);
-  }
-
-  reminder.isArchived = false;
-  reminder.archivedAt = undefined;
-  reminder.archivedBy = undefined;
-  await reminder.save();
-
-  await reminder.populate([
-    { path: "assignedTo", select: "name email avatar" },
-    { path: "relatedEvent", select: "title startDate" },
-  ]);
-
-  new ApiResponse({ reminder }, "Reminder restored successfully").send(res);
-});
-
-/**
- * @desc    Get archived reminders
- * @route   GET /api/v1/reminders/archived
- * @access  Private
- */
-export const getArchivedReminders = asyncHandler(async (req, res) => {
-  const {
-    page = 1,
-    limit = 10,
-    type,
-    sortBy = "archivedAt",
-    sortOrder = "desc",
-  } = req.query;
-
-  // Build query for archived reminders only
-  const query = { 
-    venueId: req.user.venueId,
-    isArchived: true 
+  // ✅ Pre-calculate stats
+  const stats = {
+    total: reminders.length,
+    overdue: 0,
+    today: 0,
+    upcoming: 0
   };
 
-  if (type) query.type = type;
+  const todayEnd = new Date(now);
+  todayEnd.setHours(23, 59, 59, 999);
 
-  // Pagination
-  const skip = (page - 1) * limit;
+  reminders.forEach(reminder => {
+    try {
+      const [year, month, day] = reminder.reminderDate.toISOString().split('T')[0].split('-').map(Number);
+      const [hours, minutes] = reminder.reminderTime.split(':').map(Number);
+      const reminderDateTime = new Date(year, month - 1, day, hours, minutes);
+      
+      if (reminderDateTime < now) {
+        stats.overdue++;
+      } else if (reminderDateTime <= todayEnd) {
+        stats.today++;
+      } else {
+        stats.upcoming++;
+      }
+    } catch (e) {
+      console.error('Error processing reminder date:', e);
+    }
+  });
 
-  // Sort configuration
-  const sortConfig = {};
-  sortConfig[sortBy] = sortOrder === "desc" ? -1 : 1;
+  res.status(200).json({
+    success: true,
+    data: {
+      reminders,
+      count: reminders.length,
+      stats,
+      fetchedAt: now.toISOString()
+    }
+  });
+});
 
-  const [reminders, total] = await Promise.all([
-    Reminder.find(query)
-      .populate("assignedTo", "name email avatar")
-      .populate("relatedEvent", "title startDate")
-      .populate("archivedBy", "name email")
-      .sort(sortConfig)
-      .skip(skip)
-      .limit(parseInt(limit)),
-    Reminder.countDocuments(query),
+// ==========================================
+// @desc    Dismiss a reminder
+// @route   POST /api/v1/reminders/:id/dismiss
+// @access  Private
+// ==========================================
+export const dismissReminder = asyncHandler(async (req, res) => {
+  const reminder = await Reminder.findOne({
+    _id: req.params.id,
+    venueId: req.user.venueId,
+    isArchived: false,
+  });
+
+  if (!reminder) {
+    throw new ApiError("Reminder not found", 404);
+  }
+
+  reminder.dismissed = true;
+  reminder.dismissedAt = new Date();
+  reminder.dismissedBy = req.user._id;
+
+  await reminder.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Reminder dismissed",
+    data: { reminder },
+  });
+});
+
+// ==========================================
+// @desc    Get reminder statistics
+// @route   GET /api/v1/reminders/stats
+// @access  Private
+// ==========================================
+export const getReminderStats = asyncHandler(async (req, res) => {
+  const venueId = req.user.venueId;
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(now);
+  todayEnd.setHours(23, 59, 59, 999);
+
+  const [overdue, today, upcoming, total] = await Promise.all([
+    // Overdue
+    Reminder.countDocuments({
+      venueId,
+      isArchived: false,
+      dismissed: false,
+      status: 'active',
+      reminderDate: { $lt: todayStart }
+    }),
+    
+    // Today
+    Reminder.countDocuments({
+      venueId,
+      isArchived: false,
+      dismissed: false,
+      status: 'active',
+      reminderDate: {
+        $gte: todayStart,
+        $lte: todayEnd
+      }
+    }),
+    
+    // Upcoming (next 7 days)
+    Reminder.countDocuments({
+      venueId,
+      isArchived: false,
+      dismissed: false,
+      status: 'active',
+      reminderDate: {
+        $gt: todayEnd,
+        $lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+      }
+    }),
+    
+    // Total active
+    Reminder.countDocuments({
+      venueId,
+      isArchived: false,
+      dismissed: false,
+      status: 'active'
+    })
   ]);
 
-  new ApiResponse({
-    reminders,
-    pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
+  res.status(200).json({
+    success: true,
+    data: {
+      overdue,
+      today,
+      upcoming,
       total,
-      pages: Math.ceil(total / limit),
-    },
-  }).send(res);
-});
-
-/**
- * @desc    Bulk archive reminders
- * @route   POST /api/v1/reminders/bulk-archive
- * @access  Private (reminders.delete.all)
- */
-export const bulkArchiveReminders = asyncHandler(async (req, res) => {
-  const { ids } = req.body;
-
-  if (!ids || !Array.isArray(ids) || ids.length === 0) {
-    throw new ApiError("Reminder IDs array is required", 400);
-  }
-
-  const result = await Reminder.updateMany(
-    {
-      _id: { $in: ids },
-      venueId: req.user.venueId,
-      isArchived: false,
-    },
-    {
-      $set: {
-        isArchived: true,
-        archivedAt: new Date(),
-        archivedBy: req.user._id,
-      },
+      fetchedAt: now.toISOString()
     }
-  );
-
-  new ApiResponse(
-    { archived: result.modifiedCount },
-    `${result.modifiedCount} reminder(s) archived successfully`
-  ).send(res);
-});
-
-/**
- * @desc    Bulk restore reminders
- * @route   POST /api/v1/reminders/bulk-restore
- * @access  Private (reminders.update.all)
- */
-export const bulkRestoreReminders = asyncHandler(async (req, res) => {
-  const { ids } = req.body;
-
-  if (!ids || !Array.isArray(ids) || ids.length === 0) {
-    throw new ApiError("Reminder IDs array is required", 400);
-  }
-
-  const result = await Reminder.updateMany(
-    {
-      _id: { $in: ids },
-      venueId: req.user.venueId,
-      isArchived: true,
-    },
-    {
-      $set: {
-        isArchived: false,
-        archivedAt: undefined,
-        archivedBy: undefined,
-      },
-    }
-  );
-
-  new ApiResponse(
-    { restored: result.modifiedCount },
-    `${result.modifiedCount} reminder(s) restored successfully`
-  ).send(res);
-});
-
-/**
- * @desc    Complete reminder
- * @route   POST /api/v1/reminders/:id/complete
- * @access  Private
- */
-export const completeReminder = asyncHandler(async (req, res) => {
-  const reminder = await Reminder.findOne({
-    _id: req.params.id,
-    venueId: req.user.venueId,
   });
-
-  if (!reminder) {
-    throw new ApiError("Reminder not found", 404);
-  }
-
-  if (reminder.isArchived) {
-    throw new ApiError("Cannot complete an archived reminder", 400);
-  }
-
-  reminder.status = "completed";
-  reminder.completedAt = new Date();
-  reminder.completedBy = req.user._id;
-
-  await reminder.save();
-  await reminder.populate("completedBy", "name email");
-
-  new ApiResponse({ reminder }, "Reminder completed successfully").send(res);
-});
-
-/**
- * @desc    Cancel reminder
- * @route   POST /api/v1/reminders/:id/cancel
- * @access  Private
- */
-export const cancelReminder = asyncHandler(async (req, res) => {
-  const reminder = await Reminder.findOne({
-    _id: req.params.id,
-    venueId: req.user.venueId,
-  });
-
-  if (!reminder) {
-    throw new ApiError("Reminder not found", 404);
-  }
-
-  if (reminder.isArchived) {
-    throw new ApiError("Cannot cancel an archived reminder", 400);
-  }
-
-  reminder.status = "cancelled";
-  await reminder.save();
-
-  new ApiResponse({ reminder }, "Reminder cancelled successfully").send(res);
 });

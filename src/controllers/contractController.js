@@ -138,7 +138,7 @@ export const getContractById = asyncHandler(async (req, res) => {
     .populate("event", "title startDate endDate type")
     .populate("createdBy", "name email");
 
-  if (!contract) throw new ApiError(404, "Contract not found");
+  if (!contract) throw new ApiError("Contract not found", 404); 
 
   res.status(200).json(new ApiResponse(200, { contract }));
 });
@@ -159,7 +159,8 @@ export const createContract = asyncHandler(async (req, res) => {
   } = req.body;
 
   if (!party || !party.name) {
-    throw new ApiError(400, "Party details are required");
+    // ✅ FIXED: Message first, Status Code second
+    throw new ApiError("Party details are required", 400);
   }
 
   const safeServices = Array.isArray(services) ? services : [];
@@ -213,9 +214,9 @@ export const updateContract = asyncHandler(async (req, res) => {
     venue: req.user.venueId,
   });
 
-  if (!contract) throw new ApiError(404, "Contract not found");
+  if (!contract) throw new ApiError("Contract not found", 404); 
   if (["signed", "cancelled", "expired"].includes(contract.status)) {
-    throw new ApiError(400, "Cannot edit a finalized contract.");
+    throw new ApiError("Cannot edit a finalized contract.", 400);
   }
 
   // Handle Services & Financials Update
@@ -282,9 +283,9 @@ export const deleteContract = asyncHandler(async (req, res) => {
     venue: req.user.venueId,
   });
 
-  if (!contract) throw new ApiError(404, "Contract not found");
+  if (!contract) throw new ApiError("Contract not found", 404); 
   if (contract.status === "signed")
-    throw new ApiError(400, "Cannot delete signed contract");
+    throw new ApiError("Cannot delete signed contract", 400); 
 
   await contract.deleteOne();
   res.status(200).json(new ApiResponse(200, null, "Contract deleted"));
@@ -303,7 +304,7 @@ export const archiveContract = asyncHandler(async (req, res) => {
     { new: true }
   );
 
-  if (!contract) throw new ApiError(404, "Contract not found");
+  if (!contract) throw new ApiError("Contract not found", 404); 
 
   res.status(200).json(new ApiResponse(200, { contract }, "Contract archived"));
 });
@@ -317,7 +318,7 @@ export const restoreContract = asyncHandler(async (req, res) => {
     { new: true }
   );
 
-  if (!contract) throw new ApiError(404, "Contract not found");
+  if (!contract) throw new ApiError("Contract not found", 404); 
 
   res.status(200).json(new ApiResponse(200, { contract }, "Contract restored"));
 });
@@ -333,7 +334,7 @@ export const sendContract = asyncHandler(async (req, res) => {
     _id: req.params.id,
     venue: req.user.venueId,
   });
-  if (!contract) throw new ApiError(404, "Contract not found");
+  if (!contract) throw new ApiError("Contract not found", 404);
 
   contract.status = "sent";
   await contract.save();
@@ -349,7 +350,7 @@ export const duplicateContract = asyncHandler(async (req, res) => {
     venue: req.user.venueId,
   }).lean();
 
-  if (!original) throw new ApiError(404, "Contract not found");
+  if (!original) throw new ApiError("Contract not found", 404); 
 
   delete original._id;
   delete original.contractNumber;
@@ -374,7 +375,7 @@ export const duplicateContract = asyncHandler(async (req, res) => {
 // @route   PATCH /api/contracts/:id/view
 export const markContractViewed = asyncHandler(async (req, res) => {
   const contract = await Contract.findById(req.params.id);
-  if (!contract) throw new ApiError(404, "Contract not found");
+  if (!contract) throw new ApiError("Contract not found", 404); 
 
   if (contract.status === "sent") {
     contract.status = "viewed";
@@ -390,7 +391,7 @@ export const signContract = asyncHandler(async (req, res) => {
   const { signatureData, signerIp } = req.body;
 
   const contract = await Contract.findById(req.params.id);
-  if (!contract) throw new ApiError(404, "Contract not found");
+  if (!contract) throw new ApiError("Contract not found", 404); 
 
   contract.signatures = {
     ...contract.signatures,
@@ -548,7 +549,7 @@ export const downloadContractPdf = asyncHandler(async (req, res) => {
     venue: req.user.venueId,
   });
 
-  if (!contract) throw new ApiError(404, "Contract not found");
+  if (!contract) throw new ApiError("Contract not found", 404);
 
   // 2. Fetch Settings (for styling)
   const settings = await ContractSettings.findOne({ venue: req.user.venueId });

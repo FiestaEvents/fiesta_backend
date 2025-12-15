@@ -1,15 +1,15 @@
 import mongoose from "mongoose";
 
 // =========================================================
-// DEFAULT SETTINGS CONSTANTS
+// 1. DEFAULT SETTINGS CONSTANTS (Pure Values Only)
 // =========================================================
 const DEFAULT_SETTINGS = {
   branding: {
     colors: {
-      primary: "#F18237", // Brand Orange
-      secondary: "#374151", // Slate 700
-      accent: "#3B82F6", // Blue 500
-      text: "#1F2937", // Gray 800
+      primary: "#F18237",
+      secondary: "#374151",
+      accent: "#3B82F6",
+      text: "#1F2937",
       background: "#FFFFFF",
     },
     fonts: {
@@ -26,6 +26,8 @@ const DEFAULT_SETTINGS = {
     footerHeight: 60,
     showPageNumbers: true,
     showDate: true,
+    // Just the array of strings here, not the schema definition
+    blockOrder: ["header", "parties", "scope", "financials", "clauses", "signatures", "footer"],
   },
   financialDefaults: {
     currency: "TND",
@@ -125,6 +127,9 @@ const DEFAULT_SETTINGS = {
   },
 };
 
+// =========================================================
+// 2. MONGOOSE SCHEMA DEFINITION
+// =========================================================
 const contractSettingsSchema = new mongoose.Schema(
   {
     venue: {
@@ -134,9 +139,7 @@ const contractSettingsSchema = new mongoose.Schema(
       unique: true,
     },
 
-    // =========================================================
-    // 1. BRANDING & STYLING
-    // =========================================================
+    // 1. BRANDING
     branding: {
       logo: { url: String, width: Number, height: Number },
       colors: {
@@ -154,9 +157,7 @@ const contractSettingsSchema = new mongoose.Schema(
       watermark: { enabled: Boolean, text: String, opacity: Number },
     },
 
-    // =========================================================
-    // 2. PDF LAYOUT SETTINGS
-    // =========================================================
+    // 2. LAYOUT
     layout: {
       template: { type: String, default: DEFAULT_SETTINGS.layout.template },
       paperSize: { type: String, default: DEFAULT_SETTINGS.layout.paperSize },
@@ -170,27 +171,28 @@ const contractSettingsSchema = new mongoose.Schema(
       footerHeight: { type: Number, default: DEFAULT_SETTINGS.layout.footerHeight },
       showPageNumbers: { type: Boolean, default: DEFAULT_SETTINGS.layout.showPageNumbers },
       showDate: { type: Boolean, default: DEFAULT_SETTINGS.layout.showDate },
+      // NEW: Block Order stored here
+      blockOrder: { 
+        type: [String], 
+        default: DEFAULT_SETTINGS.layout.blockOrder 
+      },
     },
 
-    // =========================================================
-    // 3. VENUE COMPANY INFO
-    // =========================================================
+    // 3. COMPANY INFO
     companyInfo: {
-      legalName: { type: String, required: true }, // Raison Sociale
-      displayName: String, // Enseigne
-      matriculeFiscale: { type: String, required: true }, // MF
+      legalName: { type: String, required: true },
+      displayName: String,
+      matriculeFiscale: { type: String, required: true },
       address: { type: String, required: true },
       phone: String,
       email: String,
       website: String,
-      rib: String, // Bank Account
+      rib: String,
       bankName: String,
-      legalRepresentative: String, // Gérant
+      legalRepresentative: String,
     },
 
-    // =========================================================
-    // 4. FINANCIAL DEFAULTS (Tunisian Context)
-    // =========================================================
+    // 4. FINANCIAL DEFAULTS
     financialDefaults: {
       currency: { type: String, default: DEFAULT_SETTINGS.financialDefaults.currency },
       defaultVatRate: { type: Number, default: DEFAULT_SETTINGS.financialDefaults.defaultVatRate },
@@ -205,9 +207,7 @@ const contractSettingsSchema = new mongoose.Schema(
       lateFeePercentage: { type: Number, default: DEFAULT_SETTINGS.financialDefaults.lateFeePercentage },
     },
 
-    // =========================================================
-    // 5. DEFAULT CLAUSES
-    // =========================================================
+    // 5. SECTIONS
     defaultSections: [
       {
         id: String,
@@ -223,9 +223,7 @@ const contractSettingsSchema = new mongoose.Schema(
       },
     ],
 
-    // =========================================================
-    // 6. LABELS (Frontend Mapping)
-    // =========================================================
+    // 6. LABELS
     labels: {
       contractTitle: { type: String, default: DEFAULT_SETTINGS.labels.contractTitle },
       partiesTitle: { type: String, default: DEFAULT_SETTINGS.labels.partiesTitle },
@@ -239,9 +237,7 @@ const contractSettingsSchema = new mongoose.Schema(
       signatureLabel: { type: String, default: DEFAULT_SETTINGS.labels.signatureLabel },
     },
 
-    // =========================================================
-    // 7. CANCELLATION & WORKFLOW
-    // =========================================================
+    // 7. CANCELLATION
     defaultCancellationPolicy: {
       enabled: { type: Boolean, default: DEFAULT_SETTINGS.cancellationPolicy.enabled },
       tiers: [
@@ -275,9 +271,7 @@ const contractSettingsSchema = new mongoose.Schema(
       },
     },
 
-    // =========================================================
-    // 8. DOCUMENT STRUCTURE (Serialization)
-    // =========================================================
+    // 8. STRUCTURE
     structure: {
       prefix: { type: String, default: DEFAULT_SETTINGS.structure.prefix },
       separator: { type: String, default: DEFAULT_SETTINGS.structure.separator },
@@ -302,8 +296,6 @@ contractSettingsSchema.statics.getOrCreate = async function (venueId) {
 
     settings = await this.create({
       venue: venueId,
-
-      // 1. Company Info (Pre-filled from Venue)
       companyInfo: {
         legalName: venue?.name || "Votre Raison Sociale",
         displayName: venue?.name || "Nom Commercial",
@@ -314,23 +306,11 @@ contractSettingsSchema.statics.getOrCreate = async function (venueId) {
         rib: "",
         legalRepresentative: "",
       },
-
-      // 2. Branding
       branding: DEFAULT_SETTINGS.branding,
-
-      // 3. Layout
       layout: DEFAULT_SETTINGS.layout,
-
-      // 4. Labels
       labels: DEFAULT_SETTINGS.labels,
-
-      // 5. Default Clauses
       defaultSections: DEFAULT_SETTINGS.defaultSections,
-
-      // 6. Cancellation Policy
       defaultCancellationPolicy: DEFAULT_SETTINGS.cancellationPolicy,
-
-      // 7. Structure
       structure: DEFAULT_SETTINGS.structure,
     });
   }

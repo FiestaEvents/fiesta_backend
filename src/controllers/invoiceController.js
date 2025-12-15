@@ -5,13 +5,47 @@ import Client from "../models/Client.js";
 import { generateInvoicePDF } from "../utils/generateInvoicePDF.js";
 import { sendInvoiceEmail } from "../utils/sendEmail.js";
 
-// --- READ ---
 export const getAllInvoices = async (req, res) => {
   try {
-    const { page = 1, limit = 10, invoiceType, status } = req.query;
+    const { 
+      page = 1, 
+      limit = 10, 
+      invoiceType, 
+      status, 
+      search // ✅ Extract search parameter
+    } = req.query;
+    
     const venueId = req.user.venueId;
 
     const query = { venue: venueId, isArchived: { $ne: true } };
+
+    // --- START SEARCH LOGIC ---
+    if (search) {
+      const searchRegex = new RegExp(search, "i"); // Case-insensitive
+
+      // 1. Find matching Clients (if searching for a name/company)
+      const matchingClients = await Client.find({
+        venueId: venueId,
+        $or: [
+          { name: searchRegex }, 
+          { company: searchRegex }, 
+          { email: searchRegex }
+        ]
+      }).select("_id");
+      
+      const clientIds = matchingClients.map(c => c._id);
+
+      // 2. Build the $or query for Invoices
+      query.$or = [
+        { invoiceNumber: searchRegex },        // Search Invoice #
+        { recipientName: searchRegex },        // Search Snapshot Name
+        { recipientCompany: searchRegex },     // Search Snapshot Company
+        { recipientEmail: searchRegex },       // Search Snapshot Email
+        { client: { $in: clientIds } }         // Search linked Client IDs
+      ];
+    }
+    // --- END SEARCH LOGIC ---
+
     if (invoiceType) query.invoiceType = invoiceType;
     if (status) query.status = status;
 
@@ -31,7 +65,11 @@ export const getAllInvoices = async (req, res) => {
     res.json({
       success: true,
       invoices,
-      pagination: { total, pages: Math.ceil(total / limit), current: parseInt(page) }
+      pagination: { 
+        total, 
+        pages: Math.ceil(total / limit), 
+        current: parseInt(page) 
+      }
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

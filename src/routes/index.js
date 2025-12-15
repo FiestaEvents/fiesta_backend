@@ -14,8 +14,10 @@ import venueRoutes from "./venue.routes.js";
 import userRoutes from "./user.routes.js";
 import uploadRoutes from "./uploadRoutes.js";
 import invoiceRoutes from "./invoices.routes.js";
+import invoiceSettingsRoutes from "./invoiceSettingsRoutes.js";
 import contractRoutes from "./contract.routes.js";
-
+import supplyRoutes from "./supply.routes.js";
+import supplyCategoryRoutes from "./supplyCategory.routes.js";
 const router = express.Router();
 
 router.use("/auth", authRoutes);
@@ -32,6 +34,8 @@ router.use("/venues", venueRoutes);
 router.use("/upload", uploadRoutes);
 router.use("/users", userRoutes);
 router.use("/invoices", invoiceRoutes);
+router.use("/invoices/settings", invoiceSettingsRoutes);
 router.use("/contracts", contractRoutes);
-
+router.use("/supplies", supplyRoutes);
+router.use("/supply-categories", supplyCategoryRoutes);
 export default router;

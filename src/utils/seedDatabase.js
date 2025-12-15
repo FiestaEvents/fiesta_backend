@@ -1,1228 +1,2466 @@
 import mongoose from "mongoose";
+import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
-import { 
-  Permission, 
-  Role, 
-  Venue, 
-  User, 
-  Client, 
-  Partner, 
-  Event, 
-  Payment, 
-  Finance, 
-  Task, 
-  Reminder 
+import {
+  User,
+  Venue,
+  Role,
+  Permission,
+  Client,
+  Partner,
+  Event,
+  Payment,
+  Finance,
+  Task,
+  Reminder,
+  VenueSpace,
+  Invoice,
+  InvoiceSettings,
+  Contract,
+  ContractSettings,
+  Supply,
+  SupplyCategory,
 } from "../models/index.js";
-import { PERMISSIONS } from "../config/permissions.js";
-import { DEFAULT_ROLES } from "../config/roles.js";
-import config from "../config/env.js";
-import connectDB from "../config/database.js";
 
-const DEFAULT_OWNER_PASSWORD = "password123";
-const SALT_ROUNDS = 10;
+dotenv.config();
 
-const seedDatabase = async () => {
+// =========================================================
+// UTILITY FUNCTIONS
+// =========================================================
+
+const generateRandomDate = (start, end) => {
+  return new Date(
+    start.getTime() + Math.random() * (end.getTime() - start.getTime())
+  );
+};
+
+const generateFutureDate = (daysFromNow) => {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromNow);
+  return date;
+};
+
+// =========================================================
+// CONNECT TO DATABASE
+// =========================================================
+
+const connectDB = async () => {
   try {
-    console.log("🔗 Connecting to database...");
-    await connectDB();
-    console.log("✅ Database connected successfully!\n");
-
-    console.log("🌱 Starting database seeding...\n");
-
-    // 1. Clear existing data
-    console.log("🧹 Clearing existing data...");
-    await Permission.deleteMany({});
-    await Role.deleteMany({});
-    await User.deleteMany({});
-    await Client.deleteMany({});
-    await Partner.deleteMany({});
-    await Event.deleteMany({});
-    await Payment.deleteMany({});
-    await Finance.deleteMany({});
-    await Task.deleteMany({});
-    await Reminder.deleteMany({});
-    await Venue.deleteMany({});
-    console.log("✅ Cleared all existing data\n");
-
-    // 2. Seed Permissions
-    console.log("📝 Seeding permissions...");
-    const permissionPromises = PERMISSIONS.map(async (perm) => {
-      return Permission.findOneAndUpdate(
-        { name: perm.name },
-        perm,
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
-    });
-
-    const createdPermissions = await Promise.all(permissionPromises);
-    console.log(`✅ Created ${createdPermissions.length} permissions\n`);
-
-    const permissionMap = {};
-    createdPermissions.forEach((p) => {
-      permissionMap[p.name] = p._id;
-    });
-
-    // 3. Create Demo Venue
-    console.log("📍 Creating demo venue...");
-    const demoVenue = await Venue.create({
-      name: "Fiesta Demo Venue",
-      description: "A beautiful event venue for all occasions - weddings, corporate events, birthdays and more!",
-      address: {
-        street: "123 Main Street",
-        city: "New York",
-        state: "NY",
-        zipCode: "10001",
-        country: "USA",
-      },
-      contact: {
-        phone: "+1234567890",
-        email: "demo@venue.com",
-      },
-      capacity: {
-        min: 50,
-        max: 500,
-      },
-      pricing: {
-        basePrice: 5000,
-      },
-      amenities: [
-        "WiFi",
-        "Parking",
-        "Audio/Visual Equipment",
-        "Kitchen",
-        "Bar",
-        "Stage",
-        "Dance Floor",
-        "Outdoor Space",
-      ],
-      operatingHours: {
-        monday: { open: "09:00", close: "22:00", closed: false },
-        tuesday: { open: "09:00", close: "22:00", closed: false },
-        wednesday: { open: "09:00", close: "22:00", closed: false },
-        thursday: { open: "09:00", close: "22:00", closed: false },
-        friday: { open: "09:00", close: "23:00", closed: false },
-        saturday: { open: "10:00", close: "23:00", closed: false },
-        sunday: { open: "10:00", close: "20:00", closed: false },
-      },
-      subscription: {
-        plan: "annual",
-        status: "active",
-        startDate: new Date(),
-        amount: 1200,
-      },
-      owner: new mongoose.Types.ObjectId(),
-      timeZone: "America/New_York",
-      isActive: true,
-    });
-    console.log("✅ Created demo venue\n");
-
-    // 4. Seed Roles
-    console.log("👥 Seeding roles...");
-    const roles = {};
-    for (const roleConfig of DEFAULT_ROLES) {
-      const permissionIds =
-        roleConfig.permissions === "ALL"
-          ? createdPermissions.map((p) => p._id)
-          : roleConfig.permissions.map((permName) => permissionMap[permName]).filter(Boolean);
-
-      const role = await Role.create({
-        ...roleConfig,
-        permissions: permissionIds,
-        venueId: demoVenue._id,
-      });
-      roles[roleConfig.name] = role;
-    }
-    console.log(`✅ Created roles for venue\n`);
-
-    // 5. Create Demo Users
-    console.log("👤 Creating demo users...");
-    
-    const demoOwner = await User.create({
-      name: "Demo Owner",
-      email: "owner@demo.com",
-      password: DEFAULT_OWNER_PASSWORD,
-      phone: "+1234567890",
-      roleId: roles.Owner._id,
-      roleType: "owner",
-      venueId: demoVenue._id,
-      isActive: true,
-    });
-
-    const demoManager = await User.create({
-      name: "John Manager",
-      email: "manager@demo.com",
-      password: DEFAULT_OWNER_PASSWORD,
-      phone: "+1234567891",
-      roleId: roles.Manager._id,
-      roleType: "manager",
-      venueId: demoVenue._id,
-      isActive: true,
-    });
-
-    const demoStaff = await User.create({
-      name: "Sarah Staff",
-      email: "staff@demo.com",
-      password: DEFAULT_OWNER_PASSWORD,
-      phone: "+1234567892",
-      roleId: roles.Staff._id,
-      roleType: "staff",
-      venueId: demoVenue._id,
-      isActive: true,
-    });
-
-    // Update venue owner
-    demoVenue.owner = demoOwner._id;
-    await demoVenue.save();
-
-    console.log("✅ Created demo users");
-    console.log(`   - Owner: ${demoOwner.email}`);
-    console.log(`   - Manager: ${demoManager.email}`);
-    console.log(`   - Staff: ${demoStaff.email}`);
-    console.log(`   - Password for all: ${DEFAULT_OWNER_PASSWORD}\n`);
-
-    // 6. Seed Clients
-    console.log("👥 Seeding clients...");
-    const clients = await Client.create([
-      {
-        name: "Sarah Johnson",
-        email: "sarah.johnson@email.com",
-        phone: "+1555-0101",
-        venueId: demoVenue._id,
-        status: "active",
-        company: "Tech Innovations Inc",
-        address: {
-          street: "456 Oak Avenue",
-          city: "New York",
-          state: "NY",
-          zipCode: "10002",
-          country: "USA",
-        },
-        notes: "Planning corporate event. Prefers modern setup.",
-        tags: ["corporate", "VIP", "repeat-client"],
-        createdBy: demoOwner._id,
-      },
-      {
-        name: "Michael Chen",
-        email: "michael.chen@email.com",
-        phone: "+1555-0102",
-        venueId: demoVenue._id,
-        status: "active",
-        company: null,
-        address: {
-          street: "789 Pine Street",
-          city: "Brooklyn",
-          state: "NY",
-          zipCode: "11201",
-          country: "USA",
-        },
-        notes: "Wedding client. Wants outdoor ceremony.",
-        tags: ["wedding", "summer"],
-        createdBy: demoOwner._id,
-      },
-      {
-        name: "Emily Rodriguez",
-        email: "emily.rodriguez@email.com",
-        phone: "+1555-0103",
-        venueId: demoVenue._id,
-        status: "active",
-        company: "Rodriguez Events",
-        notes: "Event planner. Books multiple events per year.",
-        tags: ["planner", "VIP"],
-        createdBy: demoManager._id,
-      },
-      {
-        name: "David Park",
-        email: "david.park@email.com",
-        phone: "+1555-0104",
-        venueId: demoVenue._id,
-        status: "active",
-        notes: "Birthday party for 50th celebration.",
-        tags: ["birthday"],
-        createdBy: demoStaff._id,
-      },
-      {
-        name: "Jennifer White",
-        email: "jennifer.white@email.com",
-        phone: "+1555-0105",
-        venueId: demoVenue._id,
-        status: "active",
-        company: "Global Corp",
-        notes: "Annual conference client.",
-        tags: ["corporate", "annual"],
-        createdBy: demoManager._id,
-      },
-    ]);
-    console.log(`✅ Created ${clients.length} clients\n`);
-
-    // 7. Seed Partners
-    console.log("🤝 Seeding partners...");
-    const partners = await Partner.create([
-      {
-        name: "Elegant Catering Co",
-        email: "info@elegantcatering.com",
-        phone: "+1555-0201",
-        venueId: demoVenue._id,
-        category: "catering",
-        company: "Elegant Catering Co",
-        status: "active",
-        location: "Manhattan, NY",
-        specialties: "Fine dining, custom menus, dietary accommodations",
-        hourlyRate: 150,
-        rating: 4.8,
-        totalJobs: 45,
-        address: {
-          city: "Manhattan",
-          state: "NY",
-          country: "USA",
-        },
-        notes: "Excellent for upscale events. Book 2 weeks in advance.",
-        createdBy: demoOwner._id,
-      },
-      {
-        name: "Perfect Decorations",
-        email: "contact@perfectdeco.com",
-        phone: "+1555-0202",
-        venueId: demoVenue._id,
-        category: "decoration",
-        company: "Perfect Decorations LLC",
-        status: "active",
-        specialties: "Wedding decor, floral arrangements, lighting",
-        hourlyRate: 100,
-        rating: 4.9,
-        totalJobs: 67,
-        notes: "Specializes in wedding decorations. Very creative.",
-        createdBy: demoOwner._id,
-      },
-      {
-        name: "Flash Photography Studio",
-        email: "bookings@flashphoto.com",
-        phone: "+1555-0203",
-        venueId: demoVenue._id,
-        category: "photography",
-        company: "Flash Photography Studio",
-        status: "active",
-        specialties: "Event photography, videography, drone shots",
-        hourlyRate: 200,
-        rating: 4.7,
-        totalJobs: 89,
-        notes: "Professional team. Includes editing.",
-        createdBy: demoManager._id,
-      },
-      {
-        name: "Sound Waves AV",
-        email: "info@soundwavesav.com",
-        phone: "+1555-0204",
-        venueId: demoVenue._id,
-        category: "audio_visual",
-        company: "Sound Waves AV",
-        status: "active",
-        specialties: "Sound systems, lighting, projectors, live streaming",
-        hourlyRate: 125,
-        rating: 4.6,
-        totalJobs: 34,
-        notes: "Great for corporate events and conferences.",
-        createdBy: demoStaff._id,
-      },
-    ]);
-    console.log(`✅ Created ${partners.length} partners\n`);
-
-    // 8. Seed Events
-    console.log("📅 Seeding events...");
-    const today = new Date();
-    const events = await Event.create([
-      {
-        title: "Smith-Johnson Wedding",
-        description: "Beautiful summer wedding with outdoor ceremony and indoor reception",
-        type: "wedding",
-        clientId: clients[1]._id,
-        startDate: new Date(today.getFullYear(), today.getMonth() + 1, 15),
-        endDate: new Date(today.getFullYear(), today.getMonth() + 1, 15),
-        startTime: "15:00",
-        endTime: "23:00",
-        guestCount: 150,
-        status: "confirmed",
-        pricing: {
-          basePrice: 8000,
-          additionalServices: [
-            { name: "Premium Catering Package", price: 4500 },
-            { name: "Floral Decorations", price: 2000 },
-            { name: "Photography & Videography", price: 3000 },
-          ],
-          discount: 500,
-          totalAmount: 17000,
-        },
-        paymentSummary: {
-          totalAmount: 17000,
-          paidAmount: 8500,
-          status: "partial",
-        },
-        partners: [
-          {
-            partner: partners[0]._id,
-            service: "Premium Catering",
-            cost: 4500,
-            status: "confirmed",
-          },
-          {
-            partner: partners[1]._id,
-            service: "Floral Decorations",
-            cost: 2000,
-            status: "confirmed",
-          },
-          {
-            partner: partners[2]._id,
-            service: "Photography & Videography",
-            cost: 3000,
-            status: "confirmed",
-          },
-        ],
-        requirements: {
-          setup: "Outdoor ceremony setup, indoor reception",
-          catering: "Buffet style dinner, open bar",
-          decoration: "White and blush pink theme, floral centerpieces",
-          audioVisual: "Microphone for ceremony, DJ setup for reception",
-          other: "Dedicated parking attendant needed",
-        },
-        notes: "Bride wants specific song for first dance. Coordinate with DJ.",
-        venueId: demoVenue._id,
-        createdBy: demoManager._id,
-      },
-      {
-        title: "Tech Innovations Annual Conference",
-        description: "Three-day corporate conference with keynote speakers and breakout sessions",
-        type: "conference",
-        clientId: clients[0]._id,
-        startDate: new Date(today.getFullYear(), today.getMonth() + 2, 5),
-        endDate: new Date(today.getFullYear(), today.getMonth() + 2, 7),
-        startTime: "08:00",
-        endTime: "18:00",
-        guestCount: 200,
-        status: "confirmed",
-        pricing: {
-          basePrice: 15000,
-          additionalServices: [
-            { name: "AV Equipment & Support", price: 5000 },
-            { name: "Catering (3 days)", price: 8000 },
-          ],
-          discount: 1000,
-          totalAmount: 27000,
-        },
-        paymentSummary: {
-          totalAmount: 27000,
-          paidAmount: 27000,
-          status: "paid",
-        },
-        partners: [
-          {
-            partner: partners[0]._id,
-            service: "Corporate Catering",
-            cost: 8000,
-            status: "confirmed",
-          },
-          {
-            partner: partners[3]._id,
-            service: "AV Equipment",
-            cost: 5000,
-            status: "confirmed",
-          },
-        ],
-        requirements: {
-          setup: "Theater-style main hall, classroom setup for breakouts",
-          catering: "Continental breakfast, lunch buffet, afternoon snacks",
-          audioVisual: "Projectors, screens, sound system, live streaming",
-          other: "WiFi for 200+ devices, charging stations",
-        },
-        notes: "Client is a repeat customer. Provide VIP service.",
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-      {
-        title: "David's 50th Birthday Bash",
-        description: "Surprise birthday party with live music and dancing",
-        type: "birthday",
-        clientId: clients[3]._id,
-        startDate: new Date(today.getFullYear(), today.getMonth(), 28),
-        endDate: new Date(today.getFullYear(), today.getMonth(), 28),
-        startTime: "19:00",
-        endTime: "23:00",
-        guestCount: 80,
-        status: "pending",
-        pricing: {
-          basePrice: 5000,
-          additionalServices: [
-            { name: "Catering Package", price: 2500 },
-            { name: "Birthday Decorations", price: 800 },
-          ],
-          discount: 0,
-          totalAmount: 8300,
-        },
-        paymentSummary: {
-          totalAmount: 8300,
-          paidAmount: 0,
-          status: "pending",
-        },
-        partners: [
-          {
-            partner: partners[0]._id,
-            service: "Catering",
-            cost: 2500,
-            status: "pending",
-          },
-          {
-            partner: partners[1]._id,
-            service: "Decorations",
-            cost: 800,
-            status: "pending",
-          },
-        ],
-        requirements: {
-          setup: "Dance floor in center, tables around perimeter",
-          catering: "Appetizers, main course, birthday cake",
-          decoration: "Gold and black theme, balloon arrangements",
-          other: "It's a surprise party - coordinate arrival time",
-        },
-        venueId: demoVenue._id,
-        createdBy: demoStaff._id,
-      },
-      {
-        title: "Summer Networking Mixer",
-        description: "Professional networking event for local businesses",
-        type: "corporate",
-        clientId: clients[2]._id,
-        startDate: new Date(today.getFullYear(), today.getMonth() + 1, 20),
-        endDate: new Date(today.getFullYear(), today.getMonth() + 1, 20),
-        startTime: "18:00",
-        endTime: "21:00",
-        guestCount: 120,
-        status: "confirmed",
-        pricing: {
-          basePrice: 4000,
-          additionalServices: [
-            { name: "Cocktail Catering", price: 3000 },
-          ],
-          discount: 200,
-          totalAmount: 6800,
-        },
-        paymentSummary: {
-          totalAmount: 6800,
-          paidAmount: 3400,
-          status: "partial",
-        },
-        partners: [
-          {
-            partner: partners[0]._id,
-            service: "Cocktail Hour Catering",
-            cost: 3000,
-            status: "confirmed",
-          },
-        ],
-        requirements: {
-          setup: "Cocktail tables, standing room, registration desk",
-          catering: "Passed appetizers, open bar",
-          decoration: "Professional signage, company branding",
-        },
-        venueId: demoVenue._id,
-        createdBy: demoManager._id,
-      },
-      {
-        title: "Global Corp End-of-Year Gala",
-        description: "Formal gala dinner with awards ceremony",
-        type: "corporate",
-        clientId: clients[4]._id,
-        startDate: new Date(today.getFullYear(), 11, 15),
-        endDate: new Date(today.getFullYear(), 11, 15),
-        startTime: "18:00",
-        endTime: "23:00",
-        guestCount: 180,
-        status: "pending",
-        pricing: {
-          basePrice: 10000,
-          additionalServices: [
-            { name: "Premium Catering", price: 5400 },
-            { name: "Formal Decorations", price: 2500 },
-            { name: "Photography", price: 2000 },
-          ],
-          discount: 0,
-          totalAmount: 19900,
-        },
-        paymentSummary: {
-          totalAmount: 19900,
-          paidAmount: 0,
-          status: "pending",
-        },
-        partners: [],
-        requirements: {
-          setup: "Formal dining setup, stage for awards",
-          catering: "Plated dinner service, premium wine selection",
-          decoration: "Elegant and formal theme",
-        },
-        notes: "Still finalizing details with client.",
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-    ]);
-    console.log(`✅ Created ${events.length} events\n`);
-
-    // 9. Seed Payments
-    console.log("💰 Seeding payments...");
-    const payments = await Payment.create([
-      {
-        event: events[0]._id,
-        client: clients[1]._id,
-        type: "income",
-        amount: 8500,
-        method: "bank_transfer",
-        status: "completed",
-        reference: "PAY-2024-001",
-        description: "Deposit payment for Smith-Johnson Wedding",
-        dueDate: new Date(today.getFullYear(), today.getMonth(), 1),
-        paidDate: new Date(today.getFullYear(), today.getMonth(), 3),
-        fees: {
-          processingFee: 85,
-          platformFee: 0,
-          otherFees: 0,
-        },
-        venueId: demoVenue._id,
-        processedBy: demoManager._id,
-      },
-      {
-        event: events[1]._id,
-        client: clients[0]._id,
-        type: "income",
-        amount: 27000,
-        method: "credit_card",
-        status: "completed",
-        reference: "PAY-2024-002",
-        description: "Full payment for Tech Innovations Conference",
-        dueDate: new Date(today.getFullYear(), today.getMonth(), 15),
-        paidDate: new Date(today.getFullYear(), today.getMonth(), 15),
-        fees: {
-          processingFee: 270,
-          platformFee: 100,
-          otherFees: 0,
-        },
-        venueId: demoVenue._id,
-        processedBy: demoOwner._id,
-      },
-      {
-        event: events[3]._id,
-        client: clients[2]._id,
-        type: "income",
-        amount: 3400,
-        method: "check",
-        status: "completed",
-        reference: "PAY-2024-003",
-        description: "Deposit for Summer Networking Mixer",
-        paidDate: new Date(today.getFullYear(), today.getMonth() - 1, 20),
-        fees: {
-          processingFee: 0,
-          platformFee: 0,
-          otherFees: 0,
-        },
-        venueId: demoVenue._id,
-        processedBy: demoStaff._id,
-      },
-      {
-        type: "expense",
-        amount: 1200,
-        method: "bank_transfer",
-        status: "completed",
-        reference: "EXP-2024-001",
-        description: "Monthly venue maintenance",
-        paidDate: new Date(today.getFullYear(), today.getMonth(), 5),
-        fees: {
-          processingFee: 0,
-          platformFee: 0,
-          otherFees: 0,
-        },
-        venueId: demoVenue._id,
-        processedBy: demoOwner._id,
-      },
-      {
-        event: events[2]._id,
-        client: clients[3]._id,
-        type: "income",
-        amount: 8300,
-        method: "cash",
-        status: "pending",
-        reference: "PAY-2024-004",
-        description: "Payment for David's 50th Birthday",
-        dueDate: new Date(today.getFullYear(), today.getMonth(), 25),
-        fees: {
-          processingFee: 0,
-          platformFee: 0,
-          otherFees: 0,
-        },
-        venueId: demoVenue._id,
-        processedBy: demoStaff._id,
-      },
-    ]);
-    console.log(`✅ Created ${payments.length} payments\n`);
-
-    // Update event payment references
-    events[0].payments = [payments[0]._id];
-    events[1].payments = [payments[1]._id];
-    events[3].payments = [payments[2]._id];
-    events[2].payments = [payments[4]._id];
-    
-    await Promise.all(events.map(e => e.save()));
-
-    // 10. Seed Finance Records
-    console.log("📊 Seeding finance records...");
-    const financeRecords = await Finance.create([
-      {
-        type: "income",
-        category: "event_revenue",
-        description: "Wedding event revenue - Smith-Johnson",
-        amount: 17000,
-        date: new Date(today.getFullYear(), today.getMonth(), 3),
-        paymentMethod: "bank_transfer",
-        reference: "REV-2024-001",
-        relatedEvent: events[0]._id,
-        status: "completed",
-        venueId: demoVenue._id,
-        createdBy: demoManager._id,
-      },
-      {
-        type: "income",
-        category: "event_revenue",
-        description: "Corporate conference revenue - Tech Innovations",
-        amount: 27000,
-        date: new Date(today.getFullYear(), today.getMonth(), 15),
-        paymentMethod: "card",
-        reference: "REV-2024-002",
-        relatedEvent: events[1]._id,
-        status: "completed",
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-      {
-        type: "expense",
-        category: "partner_payment",
-        description: "Catering payment - Elegant Catering Co",
-        amount: 4500,
-        date: new Date(today.getFullYear(), today.getMonth(), 10),
-        paymentMethod: "bank_transfer",
-        reference: "EXP-2024-002",
-        relatedPartner: partners[0]._id,
-        status: "completed",
-        venueId: demoVenue._id,
-        createdBy: demoManager._id,
-      },
-      {
-        type: "expense",
-        category: "utilities",
-        description: "Monthly electricity bill",
-        amount: 850,
-        date: new Date(today.getFullYear(), today.getMonth(), 1),
-        paymentMethod: "bank_transfer",
-        reference: "EXP-2024-003",
-        status: "completed",
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-      {
-        type: "expense",
-        category: "marketing",
-        description: "Social media advertising campaign",
-        amount: 500,
-        date: new Date(today.getFullYear(), today.getMonth(), 12),
-        paymentMethod: "card",
-        reference: "EXP-2024-004",
-        status: "completed",
-        venueId: demoVenue._id,
-        createdBy: demoManager._id,
-      },
-      {
-        type: "expense",
-        category: "maintenance",
-        description: "HVAC system maintenance",
-        amount: 1200,
-        date: new Date(today.getFullYear(), today.getMonth(), 5),
-        paymentMethod: "check",
-        reference: "EXP-2024-005",
-        status: "completed",
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-    ]);
-    console.log(`✅ Created ${financeRecords.length} finance records\n`);
-
-    // 11. Seed Tasks - ENHANCED VERSION
-    console.log("✅ Seeding enhanced tasks...");
-    const tasks = await Task.create([
-      {
-        title: "Confirm catering menu for Smith-Johnson Wedding",
-        description: "Review and finalize the catering menu with the couple. Check for dietary restrictions and confirm final guest count.",
-        priority: "high",
-        status: "in_progress",
-        category: "event_preparation",
-        dueDate: new Date(today.getFullYear(), today.getMonth() + 1, 5),
-        startDate: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 2),
-        reminderDate: new Date(today.getFullYear(), today.getMonth() + 1, 3),
-        estimatedHours: 3,
-        actualHours: 1.5,
-        progress: 60,
-        assignedTo: demoManager._id,
-        assignedBy: demoOwner._id,
-        assignedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
-        watchers: [demoOwner._id, demoStaff._id],
-        relatedEvent: events[0]._id,
-        relatedClient: clients[1]._id,
-        relatedPartner: partners[0]._id,
-        subtasks: [
-          { 
-            title: "Send menu options to client", 
-            description: "Email 3 menu options with pricing",
-            completed: true, 
-            completedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 5),
-            completedBy: demoManager._id,
-            order: 0,
-          },
-          { 
-            title: "Schedule tasting session", 
-            description: "Book tasting for next week",
-            completed: true, 
-            completedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 2),
-            completedBy: demoManager._id,
-            order: 1,
-          },
-          { 
-            title: "Finalize menu selection",
-            description: "Get final approval from couple", 
-            completed: false,
-            order: 2,
-          },
-          {
-            title: "Coordinate with caterer",
-            description: "Send final headcount to Elegant Catering",
-            completed: false,
-            order: 3,
-          },
-        ],
-        comments: [
-          {
-            text: "Client requested vegetarian and gluten-free options",
-            author: demoManager._id,
-            createdAt: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 3),
-          },
-          {
-            text: "Tasting went great! They loved option 2",
-            author: demoManager._id,
-            createdAt: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1),
-          },
-        ],
-        tags: ["wedding", "catering", "urgent"],
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-      {
-        title: "Setup AV equipment test for conference",
-        description: "Complete end-to-end testing of all audio-visual equipment before the Tech Innovations Conference. Test projectors, microphones, speakers, and live streaming setup.",
-        priority: "urgent",
-        status: "todo",
-        category: "event_preparation",
-        dueDate: new Date(today.getFullYear(), today.getMonth() + 2, 3),
-        startDate: new Date(today.getFullYear(), today.getMonth() + 2, 2),
-        estimatedHours: 4,
-        progress: 0,
-        assignedTo: demoStaff._id,
-        assignedBy: demoManager._id,
-        assignedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
-        watchers: [demoManager._id],
-        relatedEvent: events[1]._id,
-        relatedClient: clients[0]._id,
-        relatedPartner: partners[3]._id,
-        subtasks: [
-          { title: "Test projectors and screens", completed: false, order: 0 },
-          { title: "Test wireless microphones", completed: false, order: 1 },
-          { title: "Verify live streaming setup", completed: false, order: 2 },
-          { title: "Check backup equipment", completed: false, order: 3 },
-        ],
-        dependencies: [],
-        tags: ["conference", "av-equipment", "critical"],
-        venueId: demoVenue._id,
-        createdBy: demoManager._id,
-      },
-      {
-        title: "Follow up with David Park for birthday party deposit",
-        description: "Contact client to secure deposit payment for the birthday event. Send payment link and confirm final details.",
-        priority: "high",
-        status: "pending",
-        category: "client_followup",
-        dueDate: new Date(today.getFullYear(), today.getMonth(), 20),
-        estimatedHours: 1,
-        progress: 0,
-        assignedTo: demoStaff._id,
-        assignedBy: demoManager._id,
-        assignedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
-        relatedEvent: events[2]._id,
-        relatedClient: clients[3]._id,
-        tags: ["payment", "followup"],
-        venueId: demoVenue._id,
-        createdBy: demoManager._id,
-      },
-      {
-        title: "Coordinate with decorators for networking mixer",
-        description: "Meet with Perfect Decorations to plan setup for professional networking event. Review floor plan and signage placement.",
-        priority: "medium",
-        status: "todo",
-        category: "partner_coordination",
-        dueDate: new Date(today.getFullYear(), today.getMonth() + 1, 15),
-        startDate: new Date(today.getFullYear(), today.getMonth() + 1, 13),
-        estimatedHours: 2,
-        progress: 0,
-        assignedTo: demoManager._id,
-        assignedBy: demoOwner._id,
-        assignedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
-        watchers: [demoStaff._id],
-        relatedEvent: events[3]._id,
-        relatedClient: clients[2]._id,
-        relatedPartner: partners[1]._id,
-        subtasks: [
-          { title: "Share floor plan with decorator", completed: false, order: 0 },
-          { title: "Confirm delivery timeline", completed: false, order: 1 },
-        ],
-        tags: ["decorations", "networking"],
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-      {
-        title: "Monthly venue inspection",
-        description: "Conduct routine inspection of venue facilities, equipment, and safety features. Document any issues that need attention.",
-        priority: "medium",
-        status: "completed",
-        category: "maintenance",
-        dueDate: new Date(today.getFullYear(), today.getMonth(), 1),
-        startDate: new Date(today.getFullYear(), today.getMonth(), 1),
-        estimatedHours: 3,
-        actualHours: 2.5,
-        progress: 100,
-        assignedTo: demoStaff._id,
-        assignedBy: demoOwner._id,
-        assignedAt: new Date(today.getFullYear(), today.getMonth() - 1, 25),
-        completedAt: new Date(today.getFullYear(), today.getMonth(), 2),
-        completedBy: demoStaff._id,
-        subtasks: [
-          { 
-            title: "Check fire safety equipment", 
-            completed: true,
-            completedAt: new Date(today.getFullYear(), today.getMonth(), 1),
-            completedBy: demoStaff._id,
-            order: 0,
-          },
-          { 
-            title: "Inspect HVAC systems", 
-            completed: true,
-            completedAt: new Date(today.getFullYear(), today.getMonth(), 2),
-            completedBy: demoStaff._id,
-            order: 1,
-          },
-          { 
-            title: "Test emergency lighting", 
-            completed: true,
-            completedAt: new Date(today.getFullYear(), today.getMonth(), 2),
-            completedBy: demoStaff._id,
-            order: 2,
-          },
-        ],
-        comments: [
-          {
-            text: "All systems passed inspection. Minor HVAC filter replacement scheduled.",
-            author: demoStaff._id,
-            createdAt: new Date(today.getFullYear(), today.getMonth(), 2),
-          },
-        ],
-        tags: ["maintenance", "inspection", "safety"],
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-      {
-        title: "Update website with new event photos",
-        description: "Upload recent event photos to website gallery and social media. Ensure proper optimization and tagging.",
-        priority: "low",
-        status: "todo",
-        category: "marketing",
-        dueDate: new Date(today.getFullYear(), today.getMonth(), 25),
-        estimatedHours: 2,
-        progress: 0,
-        assignedTo: demoManager._id,
-        assignedBy: demoOwner._id,
-        assignedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
-        subtasks: [
-          { title: "Select best photos from last 3 events", completed: false, order: 0 },
-          { title: "Optimize images for web", completed: false, order: 1 },
-          { title: "Upload to website gallery", completed: false, order: 2 },
-          { title: "Post highlights on social media", completed: false, order: 3 },
-        ],
-        tags: ["marketing", "social-media", "website"],
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-      {
-        title: "Prepare contract for End-of-Year Gala",
-        description: "Draft and send service contract to Jennifer White for Global Corp's gala event. Include all terms and conditions.",
-        priority: "high",
-        status: "in_progress",
-        category: "administrative",
-        dueDate: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 5),
-        startDate: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
-        estimatedHours: 3,
-        actualHours: 1,
-        progress: 35,
-        assignedTo: demoOwner._id,
-        watchers: [demoManager._id],
-        relatedEvent: events[4]._id,
-        relatedClient: clients[4]._id,
-        subtasks: [
-          { 
-            title: "Draft contract terms",
-            description: "Include pricing, cancellation policy, and service details", 
-            completed: true,
-            completedAt: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
-            completedBy: demoOwner._id,
-            order: 0,
-          },
-          { 
-            title: "Review with manager", 
-            completed: false,
-            order: 1,
-          },
-          { 
-            title: "Send to client for review", 
-            completed: false,
-            order: 2,
-          },
-        ],
-        tags: ["contract", "gala", "corporate"],
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-      {
-        title: "Order supplies for upcoming events",
-        description: "Review inventory and order necessary supplies for next month's events including linens, disposables, and cleaning supplies.",
-        priority: "medium",
-        status: "blocked",
-        category: "administrative",
-        dueDate: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7),
-        estimatedHours: 2,
-        progress: 0,
-        assignedTo: demoStaff._id,
-        blockedReason: "Waiting for budget approval from owner",
-        subtasks: [
-          { title: "Check current inventory levels", completed: false, order: 0 },
-          { title: "Get quotes from suppliers", completed: false, order: 1 },
-          { title: "Submit budget request", completed: false, order: 2 },
-        ],
-        tags: ["supplies", "inventory"],
-        venueId: demoVenue._id,
-        createdBy: demoManager._id,
-      },
-      {
-        title: "Staff training session - Event Setup Best Practices",
-        description: "Conduct training session for all staff on proper event setup procedures and best practices.",
-        priority: "medium",
-        status: "pending",
-        category: "administrative",
-        dueDate: new Date(today.getFullYear(), today.getMonth() + 1, 1),
-        estimatedHours: 4,
-        progress: 0,
-        assignedTo: demoOwner._id,
-        watchers: [demoManager._id, demoStaff._id],
-        subtasks: [
-          { title: "Prepare training materials", completed: false, order: 0 },
-          { title: "Schedule training session", completed: false, order: 1 },
-          { title: "Send calendar invites to staff", completed: false, order: 2 },
-          { title: "Conduct training", completed: false, order: 3 },
-        ],
-        tags: ["training", "staff", "procedures"],
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-      {
-        title: "Update emergency contact list",
-        description: "Review and update emergency contact information for all partners, staff, and key vendors.",
-        priority: "low",
-        status: "todo",
-        category: "administrative",
-        dueDate: new Date(today.getFullYear(), today.getMonth(), 30),
-        estimatedHours: 1,
-        progress: 0,
-        assignedTo: demoManager._id,
-        tags: ["emergency", "contacts", "safety"],
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-    ]);
-    console.log(`✅ Created ${tasks.length} enhanced tasks\n`);
-
-    // Create task dependencies
-    console.log("🔗 Creating task dependencies...");
-    tasks[1].dependencies.push({
-      task: tasks[0]._id,
-      type: "relates_to",
-    });
-    await tasks[1].save();
-    console.log("✅ Created task dependencies\n");
-
-    // 12. Seed Reminders
-    console.log("🔔 Seeding reminders...");
-    const reminders = await Reminder.create([
-      {
-        title: "Final payment due - Smith-Johnson Wedding",
-        description: "Collect remaining balance of $8,500 from client",
-        type: "payment",
-        priority: "high",
-        reminderDate: new Date(today.getFullYear(), today.getMonth() + 1, 10),
-        reminderTime: "10:00",
-        isRecurring: false,
-        status: "active",
-        notificationMethods: ["email", "in_app"],
-        relatedEvent: events[0]._id,
-        relatedClient: clients[1]._id,
-        relatedPayment: payments[0]._id,
-        relatedTask: tasks[0]._id,
-        assignedTo: [demoManager._id],
-        venueId: demoVenue._id,
-        createdBy: demoManager._id,
-      },
-      {
-        title: "Tech Innovations Conference - Day 1",
-        description: "Conference starts today. Ensure all AV equipment is ready.",
-        type: "event",
-        priority: "urgent",
-        reminderDate: new Date(today.getFullYear(), today.getMonth() + 2, 5),
-        reminderTime: "07:00",
-        isRecurring: false,
-        status: "active",
-        notificationMethods: ["email", "sms", "in_app"],
-        relatedEvent: events[1]._id,
-        relatedTask: tasks[1]._id,
-        assignedTo: [demoOwner._id, demoManager._id, demoStaff._id],
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-      {
-        title: "Confirm decorations delivery",
-        description: "Call Perfect Decorations to confirm delivery time for birthday party",
-        type: "task",
-        priority: "medium",
-        reminderDate: new Date(today.getFullYear(), today.getMonth(), 26),
-        reminderTime: "14:00",
-        isRecurring: false,
-        status: "active",
-        notificationMethods: ["in_app"],
-        relatedEvent: events[2]._id,
-        relatedTask: tasks[3]._id,
-        assignedTo: [demoStaff._id],
-        venueId: demoVenue._id,
-        createdBy: demoStaff._id,
-      },
-      {
-        title: "Weekly staff meeting",
-        description: "Team meeting to review upcoming events and tasks",
-        type: "other",
-        priority: "medium",
-        reminderDate: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7),
-        reminderTime: "09:00",
-        isRecurring: true,
-        recurrence: {
-          frequency: "weekly",
-          interval: 1,
-          daysOfWeek: [1], // Monday
-        },
-        status: "active",
-        notificationMethods: ["email", "in_app"],
-        assignedTo: [demoOwner._id, demoManager._id, demoStaff._id],
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-      {
-        title: "Follow up on end-of-year gala details",
-        description: "Contact Jennifer White to finalize menu and decoration preferences",
-        type: "followup",
-        priority: "medium",
-        reminderDate: new Date(today.getFullYear(), today.getMonth() + 1, 1),
-        reminderTime: "11:00",
-        isRecurring: false,
-        status: "active",
-        notificationMethods: ["email", "in_app"],
-        relatedEvent: events[4]._id,
-        relatedClient: clients[4]._id,
-        relatedTask: tasks[6]._id,
-        assignedTo: [demoOwner._id],
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-      {
-        title: "Monthly maintenance check",
-        description: "Routine maintenance inspection of venue facilities",
-        type: "maintenance",
-        priority: "medium",
-        reminderDate: new Date(today.getFullYear(), today.getMonth() + 1, 1),
-        reminderTime: "08:00",
-        isRecurring: true,
-        recurrence: {
-          frequency: "monthly",
-          interval: 1,
-          dayOfMonth: 1,
-        },
-        status: "active",
-        notificationMethods: ["in_app"],
-        relatedTask: tasks[4]._id,
-        assignedTo: [demoStaff._id],
-        venueId: demoVenue._id,
-        createdBy: demoOwner._id,
-      },
-    ]);
-    console.log(`✅ Created ${reminders.length} reminders\n`);
-
-    // Summary
-    console.log("\n" + "=".repeat(60));
-    console.log("🎉 DATABASE SEEDING COMPLETED SUCCESSFULLY!");
-    console.log("=".repeat(60));
-    console.log("\n📊 Summary:");
-    console.log(`   ✅ ${createdPermissions.length} Permissions`);
-    console.log(`   ✅ ${Object.keys(roles).length} Roles`);
-    console.log(`   ✅ 1 Venue (Fiesta Demo Venue)`);
-    console.log(`   ✅ 3 Users (Owner, Manager, Staff)`);
-    console.log(`   ✅ ${clients.length} Clients`);
-    console.log(`   ✅ ${partners.length} Partners`);
-    console.log(`   ✅ ${events.length} Events`);
-    console.log(`   ✅ ${payments.length} Payments`);
-    console.log(`   ✅ ${financeRecords.length} Finance Records`);
-    console.log(`   ✅ ${tasks.length} Enhanced Tasks with:`);
-    console.log(`      - Subtasks with descriptions and order`);
-    console.log(`      - Comments and mentions`);
-    console.log(`      - Progress tracking`);
-    console.log(`      - Watchers and assignees`);
-    console.log(`      - Tags and dependencies`);
-    console.log(`      - Multiple statuses (pending, todo, in_progress, completed, blocked)`);
-    console.log(`   ✅ ${reminders.length} Reminders`);
-    console.log("\n🔐 Login Credentials:");
-    console.log("   Owner:   owner@demo.com   | password123");
-    console.log("   Manager: manager@demo.com | password123");
-    console.log("   Staff:   staff@demo.com   | password123");
-    console.log("\n✨ Your database is now populated with comprehensive demo data!");
-    console.log("   All enhanced task features are available:");
-    console.log("   • Task statuses, priorities, and categories");
-    console.log("   • Progress tracking and time logging");
-    console.log("   • Subtasks with completion tracking");
-    console.log("   • Comments and collaboration");
-    console.log("   • Watchers and assignments");
-    console.log("   • Tags and dependencies");
-    console.log("   • Blocked tasks with reasons");
-    console.log("   Start your server and explore the full task management system!\n");
-    
-    // Add a small delay to ensure all logs are printed
-    await new Promise(resolve => setTimeout(resolve, 500));
-    process.exit(0);
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log("✅ MongoDB Connected");
   } catch (error) {
-    console.error("❌ Error seeding database:", error);
-    console.error(error.stack);
+    console.error("❌ MongoDB Connection Error:", error);
     process.exit(1);
   }
 };
 
-// Always run the seed function - REMOVED THE CONDITIONAL CHECK
+// =========================================================
+// CLEAR DATABASE
+// =========================================================
+
+const clearDatabase = async () => {
+  console.log("\n🗑️  Clearing database...");
+
+  await User.deleteMany({});
+  await Venue.deleteMany({});
+  await Role.deleteMany({});
+  await Permission.deleteMany({});
+  await Client.deleteMany({});
+  await Partner.deleteMany({});
+  await Event.deleteMany({});
+  await Payment.deleteMany({});
+  await Finance.deleteMany({});
+  await Task.deleteMany({});
+  await Reminder.deleteMany({});
+  await VenueSpace.deleteMany({});
+  await Invoice.deleteMany({});
+  await InvoiceSettings.deleteMany({});
+  await Contract.deleteMany({});
+  await ContractSettings.deleteMany({});
+  await Supply.deleteMany({});
+  await SupplyCategory.deleteMany({});
+
+  console.log("✅ Database cleared");
+};
+
+// =========================================================
+// SEED PERMISSIONS
+// =========================================================
+
+const seedPermissions = async () => {
+  console.log("\n📋 Seeding permissions...");
+
+  const permissions = [
+    // Events
+    {
+      name: "events:create",
+      displayName: "Create Events",
+      module: "events",
+      action: "create",
+    },
+    {
+      name: "events:read",
+      displayName: "View Events",
+      module: "events",
+      action: "read",
+    },
+    {
+      name: "events:update",
+      displayName: "Update Events",
+      module: "events",
+      action: "update",
+    },
+    {
+      name: "events:delete",
+      displayName: "Delete Events",
+      module: "events",
+      action: "delete",
+    },
+
+    // Clients
+    {
+      name: "clients:create",
+      displayName: "Create Clients",
+      module: "clients",
+      action: "create",
+    },
+    {
+      name: "clients:read",
+      displayName: "View Clients",
+      module: "clients",
+      action: "read",
+    },
+    {
+      name: "clients:update",
+      displayName: "Update Clients",
+      module: "clients",
+      action: "update",
+    },
+    {
+      name: "clients:delete",
+      displayName: "Delete Clients",
+      module: "clients",
+      action: "delete",
+    },
+
+    // Partners
+    {
+      name: "partners:create",
+      displayName: "Create Partners",
+      module: "partners",
+      action: "create",
+    },
+    {
+      name: "partners:read",
+      displayName: "View Partners",
+      module: "partners",
+      action: "read",
+    },
+    {
+      name: "partners:update",
+      displayName: "Update Partners",
+      module: "partners",
+      action: "update",
+    },
+    {
+      name: "partners:delete",
+      displayName: "Delete Partners",
+      module: "partners",
+      action: "delete",
+    },
+
+    // Finance
+    {
+      name: "finance:create",
+      displayName: "Create Finance Records",
+      module: "finance",
+      action: "create",
+    },
+    {
+      name: "finance:read",
+      displayName: "View Finance",
+      module: "finance",
+      action: "read",
+    },
+    {
+      name: "finance:update",
+      displayName: "Update Finance",
+      module: "finance",
+      action: "update",
+    },
+    {
+      name: "finance:delete",
+      displayName: "Delete Finance",
+      module: "finance",
+      action: "delete",
+    },
+
+    // Payments
+    {
+      name: "payments:create",
+      displayName: "Create Payments",
+      module: "payments",
+      action: "create",
+    },
+    {
+      name: "payments:read",
+      displayName: "View Payments",
+      module: "payments",
+      action: "read",
+    },
+    {
+      name: "payments:update",
+      displayName: "Update Payments",
+      module: "payments",
+      action: "update",
+    },
+
+    // Tasks
+    {
+      name: "tasks:create",
+      displayName: "Create Tasks",
+      module: "tasks",
+      action: "create",
+    },
+    {
+      name: "tasks:read",
+      displayName: "View Tasks",
+      module: "tasks",
+      action: "read",
+    },
+    {
+      name: "tasks:update",
+      displayName: "Update Tasks",
+      module: "tasks",
+      action: "update",
+    },
+    {
+      name: "tasks:delete",
+      displayName: "Delete Tasks",
+      module: "tasks",
+      action: "delete",
+    },
+
+    // Reminders
+    {
+      name: "reminders:create",
+      displayName: "Create Reminders",
+      module: "reminders",
+      action: "create",
+    },
+    {
+      name: "reminders:read",
+      displayName: "View Reminders",
+      module: "reminders",
+      action: "read",
+    },
+    {
+      name: "reminders:update",
+      displayName: "Update Reminders",
+      module: "reminders",
+      action: "update",
+    },
+    {
+      name: "reminders:delete",
+      displayName: "Delete Reminders",
+      module: "reminders",
+      action: "delete",
+    },
+
+    // Users & Roles
+    {
+      name: "users:manage",
+      displayName: "Manage Users",
+      module: "users",
+      action: "manage",
+    },
+    {
+      name: "roles:manage",
+      displayName: "Manage Roles",
+      module: "roles",
+      action: "manage",
+    },
+
+    // Venue
+    {
+      name: "venue:manage",
+      displayName: "Manage Venue",
+      module: "venue",
+      action: "manage",
+    },
+
+    // Reports
+    {
+      name: "reports:view",
+      displayName: "View Reports",
+      module: "reports",
+      action: "read",
+    },
+    {
+      name: "reports:export",
+      displayName: "Export Reports",
+      module: "reports",
+      action: "export",
+    },
+
+    // Settings
+    {
+      name: "settings:manage",
+      displayName: "Manage Settings",
+      module: "settings",
+      action: "manage",
+    },
+  ];
+
+  const createdPermissions = await Permission.insertMany(permissions);
+  console.log(`✅ Created ${createdPermissions.length} permissions`);
+
+  return createdPermissions;
+};
+
+// =========================================================
+// SEED VENUES
+// =========================================================
+
+const seedVenues = async () => {
+  console.log("\n🏛️  Seeding venues...");
+
+  const venues = await Venue.create([
+    {
+      name: "Grand Palace Events",
+      description:
+        "Luxurious event venue in the heart of Tunis with state-of-the-art facilities",
+      address: {
+        street: "Avenue Habib Bourguiba",
+        city: "Tunis",
+        state: "Tunis",
+        zipCode: "1000",
+        country: "Tunisia",
+      },
+      contact: {
+        phone: "+216 71 123 456",
+        email: "contact@grandpalace.tn",
+      },
+      capacity: { min: 50, max: 500 },
+      pricing: { basePrice: 5000 },
+      amenities: [
+        "Parking",
+        "AC",
+        "WiFi",
+        "Kitchen",
+        "Sound System",
+        "Projector",
+      ],
+      operatingHours: {
+        monday: { open: "09:00", close: "23:00", closed: false },
+        tuesday: { open: "09:00", close: "23:00", closed: false },
+        wednesday: { open: "09:00", close: "23:00", closed: false },
+        thursday: { open: "09:00", close: "23:00", closed: false },
+        friday: { open: "09:00", close: "00:00", closed: false },
+        saturday: { open: "09:00", close: "00:00", closed: false },
+        sunday: { open: "10:00", close: "22:00", closed: false },
+      },
+      subscription: {
+        plan: "annual",
+        status: "active",
+        startDate: new Date("2024-01-01"),
+        endDate: new Date("2025-12-31"),
+        amount: 5000,
+      },
+      isActive: true,
+      timeZone: "Africa/Tunis",
+    },
+    {
+      name: "Villa Rosa",
+      description:
+        "Elegant villa perfect for intimate weddings and celebrations",
+      address: {
+        street: "Rue de la Marsa",
+        city: "La Marsa",
+        state: "Tunis",
+        zipCode: "2078",
+        country: "Tunisia",
+      },
+      contact: {
+        phone: "+216 71 789 012",
+        email: "info@villarosa.tn",
+      },
+      capacity: { min: 20, max: 150 },
+      pricing: { basePrice: 3500 },
+      amenities: ["Garden", "Parking", "AC", "WiFi", "Catering Kitchen"],
+      operatingHours: {
+        monday: { open: "10:00", close: "22:00", closed: false },
+        tuesday: { open: "10:00", close: "22:00", closed: false },
+        wednesday: { open: "10:00", close: "22:00", closed: false },
+        thursday: { open: "10:00", close: "22:00", closed: false },
+        friday: { open: "10:00", close: "23:00", closed: false },
+        saturday: { open: "10:00", close: "23:00", closed: false },
+        sunday: { open: "10:00", close: "22:00", closed: false },
+      },
+      subscription: {
+        plan: "monthly",
+        status: "active",
+        startDate: new Date("2024-06-01"),
+        endDate: new Date("2025-06-01"),
+        amount: 500,
+      },
+      isActive: true,
+      timeZone: "Africa/Tunis",
+    },
+  ]);
+
+  console.log(`✅ Created ${venues.length} venues`);
+  return venues;
+};
+
+// =========================================================
+// SEED ROLES
+// =========================================================
+
+const seedRoles = async (venue, permissions) => {
+  console.log("\n👥 Seeding roles...");
+
+  const allPermissionIds = permissions.map((p) => p._id);
+
+  const managerPermissions = permissions
+    .filter((p) => !p.name.includes("manage") && !p.name.includes("delete"))
+    .map((p) => p._id);
+
+  const staffPermissions = permissions
+    .filter(
+      (p) =>
+        p.action === "read" || p.action === "create" || p.name.includes("tasks")
+    )
+    .map((p) => p._id);
+
+  const roles = await Role.create([
+    {
+      name: "Owner",
+      description: "Full access to all features",
+      venueId: venue._id,
+      isSystemRole: true,
+      permissions: allPermissionIds,
+      level: 100,
+    },
+    {
+      name: "Manager",
+      description: "Can manage events, clients, and day-to-day operations",
+      venueId: venue._id,
+      isSystemRole: true,
+      permissions: managerPermissions,
+      level: 75,
+    },
+    {
+      name: "Staff",
+      description: "Can view and create basic records",
+      venueId: venue._id,
+      isSystemRole: true,
+      permissions: staffPermissions,
+      level: 50,
+    },
+    {
+      name: "Viewer",
+      description: "Read-only access",
+      venueId: venue._id,
+      isSystemRole: true,
+      permissions: permissions
+        .filter((p) => p.action === "read")
+        .map((p) => p._id),
+      level: 25,
+    },
+  ]);
+
+  console.log(`✅ Created ${roles.length} roles`);
+  return roles;
+};
+
+// =========================================================
+// SEED USERS
+// =========================================================
+
+const seedUsers = async (venue, roles) => {
+  console.log("\n👤 Seeding users...");
+
+  const ownerRole = roles.find((r) => r.name === "Owner");
+  const managerRole = roles.find((r) => r.name === "Manager");
+  const staffRole = roles.find((r) => r.name === "Staff");
+
+  const users = await User.create([
+    {
+      name: "Ahmed Slayem",
+      email: "owner@demo.com",
+      password: "password123",
+      phone: "+216 98 123 456",
+      roleId: ownerRole._id,
+      roleType: "owner",
+      venueId: venue._id,
+      isActive: true,
+    },
+    {
+      name: "Fatima Ben Ali",
+      email: "manager@demo.com",
+      password: "password123",
+      phone: "+216 98 234 567",
+      roleId: managerRole._id,
+      roleType: "manager",
+      venueId: venue._id,
+      isActive: true,
+    },
+    {
+      name: "Mohamed Trabelsi",
+      email: "staff@demo.com",
+      password: "password123",
+      phone: "+216 98 345 678",
+      roleId: staffRole._id,
+      roleType: "staff",
+      venueId: venue._id,
+      isActive: true,
+    },
+  ]);
+
+  // Update venue owner
+  venue.owner = users[0]._id;
+  await venue.save();
+
+  console.log(`✅ Created ${users.length} users`);
+  console.log(`📧 Demo accounts:`);
+  console.log(`   Owner: owner@demo.com / password123`);
+  console.log(`   Manager: manager@demo.com / password123`);
+  console.log(`   Staff: staff@demo.com / password123`);
+
+  return users;
+};
+
+// =========================================================
+// SEED VENUE SPACES
+// =========================================================
+
+const seedVenueSpaces = async (venue, owner) => {
+  console.log("\n🏢 Seeding venue spaces...");
+
+  const spaces = await VenueSpace.create([
+    {
+      name: "Grand Ballroom",
+      description:
+        "Our largest and most elegant space, perfect for weddings and large events",
+      capacity: { min: 100, max: 500 },
+      basePrice: 8000,
+      turnoverTime: 120,
+      amenities: [
+        "Chandelier",
+        "Stage",
+        "Dance Floor",
+        "Premium Sound System",
+        "LED Lighting",
+      ],
+      operatingHours: {
+        monday: { open: "09:00", close: "23:00", closed: false },
+        tuesday: { open: "09:00", close: "23:00", closed: false },
+        wednesday: { open: "09:00", close: "23:00", closed: false },
+        thursday: { open: "09:00", close: "23:00", closed: false },
+        friday: { open: "09:00", close: "00:00", closed: false },
+        saturday: { open: "09:00", close: "00:00", closed: false },
+        sunday: { open: "10:00", close: "22:00", closed: false },
+      },
+      venueId: venue._id,
+      owner: owner._id,
+      isActive: true,
+      timeZone: "Africa/Tunis",
+    },
+    {
+      name: "Garden Terrace",
+      description: "Beautiful outdoor space with panoramic views",
+      capacity: { min: 50, max: 200 },
+      basePrice: 5000,
+      turnoverTime: 90,
+      amenities: [
+        "Outdoor Setting",
+        "Garden",
+        "Fountain",
+        "String Lights",
+        "Covered Area",
+      ],
+      operatingHours: {
+        monday: { open: "10:00", close: "22:00", closed: false },
+        tuesday: { open: "10:00", close: "22:00", closed: false },
+        wednesday: { open: "10:00", close: "22:00", closed: false },
+        thursday: { open: "10:00", close: "22:00", closed: false },
+        friday: { open: "10:00", close: "23:00", closed: false },
+        saturday: { open: "10:00", close: "23:00", closed: false },
+        sunday: { open: "10:00", close: "22:00", closed: false },
+      },
+      venueId: venue._id,
+      owner: owner._id,
+      isActive: true,
+      timeZone: "Africa/Tunis",
+    },
+    {
+      name: "Intimate Salon",
+      description:
+        "Cozy space ideal for small gatherings and corporate meetings",
+      capacity: { min: 20, max: 80 },
+      basePrice: 2500,
+      turnoverTime: 60,
+      amenities: ["AC", "Projector", "Whiteboard", "Coffee Station", "WiFi"],
+      operatingHours: {
+        monday: { open: "08:00", close: "20:00", closed: false },
+        tuesday: { open: "08:00", close: "20:00", closed: false },
+        wednesday: { open: "08:00", close: "20:00", closed: false },
+        thursday: { open: "08:00", close: "20:00", closed: false },
+        friday: { open: "08:00", close: "20:00", closed: false },
+        saturday: { open: "10:00", close: "18:00", closed: false },
+        sunday: { open: "10:00", close: "18:00", closed: true },
+      },
+      venueId: venue._id,
+      owner: owner._id,
+      isActive: true,
+      timeZone: "Africa/Tunis",
+    },
+  ]);
+
+  console.log(`✅ Created ${spaces.length} venue spaces`);
+  return spaces;
+};
+
+// =========================================================
+// SEED CLIENTS
+// =========================================================
+
+const seedClients = async (venue, createdBy) => {
+  console.log("\n👥 Seeding clients...");
+
+  const clients = await Client.create([
+    {
+      name: "Sarah & Karim Wedding",
+      email: "sarah.karim@email.com",
+      phone: "+216 98 111 222",
+      venueId: venue._id,
+      status: "active",
+      company: "Personal",
+      address: {
+        street: "15 Rue de Carthage",
+        city: "Tunis",
+        zipCode: "1000",
+        country: "Tunisia",
+      },
+      notes: "Looking for premium wedding package. Bride allergic to nuts. Budget: 25,000 TND",
+      tags: ["wedding", "vip", "2025", "premium"],
+      createdBy: createdBy._id,
+    },
+    {
+      name: "TechCorp Tunisia",
+      email: "events@techcorp.tn",
+      phone: "+216 71 333 444",
+      venueId: venue._id,
+      status: "active",
+      company: "TechCorp Tunisia",
+      address: {
+        street: "Centre Urbain Nord",
+        city: "Tunis",
+        zipCode: "1082",
+        country: "Tunisia",
+      },
+      notes: "Corporate client, annual gala event. Recurring customer. CEO: Ahmed Mansour",
+      tags: ["corporate", "recurring", "tech", "vip"],
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Leila Ben Mahmoud",
+      email: "leila.benmahmoud@email.com",
+      phone: "+216 98 555 666",
+      venueId: venue._id,
+      status: "active",
+      address: {
+        street: "La Marsa",
+        city: "Tunis",
+        zipCode: "2078",
+        country: "Tunisia",
+      },
+      notes: "50th birthday celebration. Prefers garden setting.",
+      tags: ["birthday", "family", "garden"],
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Startup Hub",
+      email: "contact@startuphub.tn",
+      phone: "+216 71 777 888",
+      venueId: venue._id,
+      status: "active",
+      company: "Startup Hub",
+      address: {
+        street: "Lac 2",
+        city: "Tunis",
+        zipCode: "1053",
+        country: "Tunisia",
+      },
+      notes: "Monthly networking events. Budget-conscious but consistent.",
+      tags: ["corporate", "recurring", "networking", "budget"],
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Amira & Youssef Engagement",
+      email: "amira.youssef@email.com",
+      phone: "+216 98 222 333",
+      venueId: venue._id,
+      status: "active",
+      address: {
+        street: "Sidi Bou Said",
+        city: "Tunis",
+        zipCode: "2026",
+        country: "Tunisia",
+      },
+      notes: "Traditional engagement party. 200 guests expected.",
+      tags: ["engagement", "traditional", "family"],
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Medical Conference Organizers",
+      email: "info@medconf.tn",
+      phone: "+216 71 444 555",
+      venueId: venue._id,
+      status: "active",
+      company: "Medical Conference TN",
+      notes: "Annual medical conference. Need AV equipment and catering.",
+      tags: ["corporate", "conference", "recurring"],
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Rania Graduation Party",
+      email: "rania.grad@email.com",
+      phone: "+216 98 666 777",
+      venueId: venue._id,
+      status: "active",
+      notes: "University graduation celebration. Young crowd, need DJ.",
+      tags: ["graduation", "young", "party"],
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Embassy of France",
+      email: "events@ambafrance-tn.org",
+      phone: "+216 71 888 999",
+      venueId: venue._id,
+      status: "active",
+      company: "French Embassy",
+      notes: "Diplomatic reception. High security requirements.",
+      tags: ["diplomatic", "vip", "security", "recurring"],
+      createdBy: createdBy._id,
+    },
+  ]);
+
+  console.log(`✅ Created ${clients.length} clients`);
+  return clients;
+};
+
+
+// =========================================================
+// SEED PARTNERS
+// =========================================================
+
+const seedPartners = async (venue, createdBy) => {
+  console.log("\n🤝 Seeding partners...");
+
+  const partners = await Partner.create([
+    // Catering
+    {
+      name: "Elite Catering Services",
+      email: "contact@elitecatering.tn",
+      phone: "+216 71 111 222",
+      venueId: venue._id,
+      category: "catering",
+      company: "Elite Catering SARL",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 45,
+      rating: 4.8,
+      totalJobs: 127,
+      specialties: "Tunisian & Mediterranean cuisine, Wedding menus, Halal certified",
+      location: "Tunis",
+      notes: "Preferred vendor, excellent quality. 10% discount for events over 200 guests",
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Royal Feast Catering",
+      email: "info@royalfeast.tn",
+      phone: "+216 71 222 333",
+      venueId: venue._id,
+      category: "catering",
+      company: "Royal Feast",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 55,
+      rating: 4.9,
+      totalJobs: 84,
+      specialties: "Premium French cuisine, Molecular gastronomy, Vegan options",
+      location: "La Marsa",
+      notes: "High-end caterer for luxury events",
+      createdBy: createdBy._id,
+    },
+
+    // Photography
+    {
+      name: "Studio Lumière",
+      email: "booking@studiolumiere.tn",
+      phone: "+216 98 222 333",
+      venueId: venue._id,
+      category: "photography",
+      company: "Studio Lumière",
+      status: "active",
+      priceType: "hourly",
+      hourlyRate: 150,
+      rating: 4.9,
+      totalJobs: 89,
+      specialties: "Wedding photography, Videography, Drone shots, Same-day edits",
+      location: "Carthage",
+      notes: "Award-winning photographer. Requires 50% deposit.",
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Moments Photography",
+      email: "info@moments.tn",
+      phone: "+216 98 333 444",
+      venueId: venue._id,
+      category: "photography",
+      company: "Moments Studio",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 1200,
+      rating: 4.7,
+      totalJobs: 156,
+      specialties: "Candid photography, Photo booths, Instant prints",
+      location: "Tunis",
+      createdBy: createdBy._id,
+    },
+
+    // Decoration
+    {
+      name: "Décor Dreams",
+      email: "info@decordreams.tn",
+      phone: "+216 98 444 555",
+      venueId: venue._id,
+      category: "decoration",
+      company: "Décor Dreams",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 2500,
+      rating: 4.7,
+      totalJobs: 156,
+      specialties: "Floral arrangements, Lighting design, Custom themes, Balloon art",
+      location: "La Marsa",
+      notes: "Can source rare flowers with 2 weeks notice",
+      createdBy: createdBy._id,
+    },
+
+    // Music/DJ
+    {
+      name: "DJ Soundwaves",
+      email: "dj@soundwaves.tn",
+      phone: "+216 98 555 666",
+      venueId: venue._id,
+      category: "music",
+      company: "Soundwaves Entertainment",
+      status: "active",
+      priceType: "hourly",
+      hourlyRate: 200,
+      rating: 4.8,
+      totalJobs: 203,
+      specialties: "Weddings, Corporate events, Live mixing, MC services",
+      location: "Tunis",
+      notes: "Owns premium sound equipment. Very popular on weekends.",
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Live Music Ensemble",
+      email: "booking@livemusic.tn",
+      phone: "+216 98 666 777",
+      venueId: venue._id,
+      category: "music",
+      company: "Live Music TN",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 3000,
+      rating: 4.9,
+      totalJobs: 67,
+      specialties: "Live band, Jazz, Classical, Arabic traditional music",
+      location: "Sidi Bou Said",
+      notes: "5-piece band, requires stage space",
+      createdBy: createdBy._id,
+    },
+
+    // Security
+    {
+      name: "Safe & Secure",
+      email: "ops@safeandsecure.tn",
+      phone: "+216 71 555 666",
+      venueId: venue._id,
+      category: "security",
+      company: "Safe & Secure SARL",
+      status: "active",
+      priceType: "hourly",
+      hourlyRate: 35,
+      rating: 4.6,
+      totalJobs: 94,
+      specialties: "Event security, Crowd management, VIP protection",
+      location: "Tunis",
+      notes: "Licensed and insured. Minimum 4 guards per event.",
+      createdBy: createdBy._id,
+    },
+
+    // Drivers
+    {
+      name: "Premium Transport Services",
+      email: "bookings@premiumtransport.tn",
+      phone: "+216 71 666 777",
+      venueId: venue._id,
+      category: "driver",
+      company: "Premium Transport",
+      status: "active",
+      priceType: "hourly",
+      hourlyRate: 50,
+      rating: 4.8,
+      totalJobs: 145,
+      specialties: "Luxury vehicles, Wedding cars, Airport transfers",
+      location: "Tunis",
+      createdBy: createdBy._id,
+    },
+
+    // Bakery
+    {
+      name: "La Pâtisserie Royale",
+      email: "orders@patisserieroyale.tn",
+      phone: "+216 71 777 888",
+      venueId: venue._id,
+      category: "bakery",
+      company: "La Pâtisserie Royale",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 800,
+      rating: 4.9,
+      totalJobs: 234,
+      specialties: "Wedding cakes, French pastries, Custom designs, Gluten-free options",
+      location: "La Marsa",
+      notes: "Requires 2 weeks notice for custom cakes. Award-winning.",
+      createdBy: createdBy._id,
+    },
+
+    // Cleaning
+    {
+      name: "Sparkle Clean Pro",
+      email: "info@sparkleclean.tn",
+      phone: "+216 71 888 999",
+      venueId: venue._id,
+      category: "cleaning",
+      company: "Sparkle Clean",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 400,
+      rating: 4.5,
+      totalJobs: 312,
+      specialties: "Post-event cleaning, Deep cleaning, Carpet shampooing",
+      location: "Tunis",
+      notes: "Available 24/7 for emergency cleaning",
+      createdBy: createdBy._id,
+    },
+
+    // Hair & Makeup
+    {
+      name: "Glamour Beauty Studio",
+      email: "bookings@glamourbeauty.tn",
+      phone: "+216 98 777 888",
+      venueId: venue._id,
+      category: "hairstyling",
+      company: "Glamour Beauty",
+      status: "active",
+      priceType: "fixed",
+      fixedRate: 250,
+      rating: 4.8,
+      totalJobs: 178,
+      specialties: "Bridal makeup, Hairstyling, Airbrush makeup, Trial sessions",
+      location: "Tunis",
+      notes: "Can provide on-site services with advance booking",
+      createdBy: createdBy._id,
+    },
+  ]);
+
+  console.log(`✅ Created ${partners.length} partners`);
+  return partners;
+};
+// =========================================================
+// SEED SUPPLY CATEGORIES & SUPPLIES
+// =========================================================
+
+const seedSupplies = async (venue, createdBy) => {
+  console.log("\n📦 Seeding supply categories and supplies...");
+
+  // Initialize default categories
+  const categories = await SupplyCategory.initializeDefaults(
+    venue._id,
+    createdBy._id
+  );
+  console.log(`✅ Created ${categories.length} supply categories`);
+
+  // Get specific categories
+  const beveragesCat = categories.find((c) => c.name === "Beverages");
+  const snacksCat = categories.find((c) => c.name === "Snacks");
+  const foodCat = categories.find((c) => c.name === "Food");
+  const decorCat = categories.find((c) => c.name === "Decoration");
+  const tablewareCat = categories.find((c) => c.name === "Tableware");
+  const linenCat = categories.find((c) => c.name === "Linen");
+  const equipmentCat = categories.find((c) => c.name === "Equipment");
+
+  // Create supplies
+  const supplies = await Supply.create([
+    // Beverages
+    {
+      name: "Orange Juice (1L)",
+      categoryId: beveragesCat._id,
+      unit: "bottle",
+      currentStock: 150,
+      minimumStock: 30,
+      maximumStock: 300,
+      costPerUnit: 4.5,
+      pricingType: "included",
+      chargePerUnit: 0,
+      supplier: {
+        name: "Fresh Juice Co.",
+        phone: "+216 71 111 111",
+        leadTimeDays: 3,
+      },
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Mineral Water (1.5L)",
+      categoryId: beveragesCat._id,
+      unit: "bottle",
+      currentStock: 200,
+      minimumStock: 50,
+      maximumStock: 500,
+      costPerUnit: 1.2,
+      pricingType: "included",
+      chargePerUnit: 0,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Soft Drinks (330ml)",
+      categoryId: beveragesCat._id,
+      unit: "can",
+      currentStock: 180,
+      minimumStock: 50,
+      maximumStock: 400,
+      costPerUnit: 1.8,
+      pricingType: "chargeable",
+      chargePerUnit: 3.5,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // Snacks
+    {
+      name: "Mixed Nuts Premium",
+      categoryId: snacksCat._id,
+      unit: "kg",
+      currentStock: 25,
+      minimumStock: 10,
+      maximumStock: 100,
+      costPerUnit: 35,
+      pricingType: "included",
+      chargePerUnit: 0,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Gourmet Cookies",
+      categoryId: snacksCat._id,
+      unit: "pack",
+      currentStock: 40,
+      minimumStock: 15,
+      maximumStock: 120,
+      costPerUnit: 12,
+      pricingType: "chargeable",
+      chargePerUnit: 25,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // Food
+    {
+      name: "Canapés Assortment",
+      categoryId: foodCat._id,
+      unit: "serving",
+      currentStock: 0,
+      minimumStock: 0,
+      maximumStock: 1000,
+      costPerUnit: 8,
+      pricingType: "chargeable",
+      chargePerUnit: 15,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+      notes: "Order fresh per event",
+    },
+
+    // Decoration
+    {
+      name: "Rose Centerpieces",
+      categoryId: decorCat._id,
+      unit: "piece",
+      currentStock: 30,
+      minimumStock: 10,
+      maximumStock: 80,
+      costPerUnit: 25,
+      pricingType: "chargeable",
+      chargePerUnit: 50,
+      storage: {
+        location: "Refrigerator",
+        requiresRefrigeration: true,
+        expiryTracking: true,
+        shelfLife: 3,
+      },
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      name: "LED String Lights (10m)",
+      categoryId: decorCat._id,
+      unit: "set",
+      currentStock: 15,
+      minimumStock: 5,
+      maximumStock: 30,
+      costPerUnit: 45,
+      pricingType: "included",
+      chargePerUnit: 0,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Balloons (Pack of 50)",
+      categoryId: decorCat._id,
+      unit: "pack",
+      currentStock: 20,
+      minimumStock: 10,
+      maximumStock: 60,
+      costPerUnit: 15,
+      pricingType: "chargeable",
+      chargePerUnit: 30,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // Tableware
+    {
+      name: "Porcelain Dinner Plates",
+      categoryId: tablewareCat._id,
+      unit: "piece",
+      currentStock: 500,
+      minimumStock: 200,
+      maximumStock: 800,
+      costPerUnit: 3.5,
+      pricingType: "included",
+      chargePerUnit: 0,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Crystal Wine Glasses",
+      categoryId: tablewareCat._id,
+      unit: "piece",
+      currentStock: 400,
+      minimumStock: 150,
+      maximumStock: 600,
+      costPerUnit: 4.2,
+      pricingType: "included",
+      chargePerUnit: 0,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Premium Napkins",
+      categoryId: tablewareCat._id,
+      unit: "pack",
+      currentStock: 80,
+      minimumStock: 30,
+      maximumStock: 200,
+      costPerUnit: 8,
+      pricingType: "included",
+      chargePerUnit: 0,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // Linen
+    {
+      name: "White Tablecloths (3m)",
+      categoryId: linenCat._id,
+      unit: "piece",
+      currentStock: 100,
+      minimumStock: 40,
+      maximumStock: 200,
+      costPerUnit: 15,
+      pricingType: "included",
+      chargePerUnit: 0,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Satin Chair Covers",
+      categoryId: linenCat._id,
+      unit: "piece",
+      currentStock: 250,
+      minimumStock: 100,
+      maximumStock: 500,
+      costPerUnit: 5,
+      pricingType: "chargeable",
+      chargePerUnit: 12,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // Equipment
+    {
+      name: "Banquet Chairs",
+      categoryId: equipmentCat._id,
+      unit: "piece",
+      currentStock: 300,
+      minimumStock: 200,
+      maximumStock: 500,
+      costPerUnit: 0,
+      pricingType: "included",
+      chargePerUnit: 0,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      name: "Round Tables (8 seater)",
+      categoryId: equipmentCat._id,
+      unit: "piece",
+      currentStock: 50,
+      minimumStock: 30,
+      maximumStock: 80,
+      costPerUnit: 0,
+      pricingType: "included",
+      chargePerUnit: 0,
+      status: "active",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+  ]);
+
+  console.log(`✅ Created ${supplies.length} supplies`);
+  return { categories, supplies };
+};
+
+// =========================================================
+// SEED EVENTS
+// =========================================================
+
+const seedEvents = async (
+  venue,
+  spaces,
+  clients,
+  partners,
+  supplies,
+  createdBy
+) => {
+  console.log("\n🎉 Seeding events...");
+
+  const [ballroom, garden, salon] = spaces;
+  const [weddingClient, corpClient, birthdayClient, startupClient] = clients;
+  const [catering, photography, decoration, dj, security] = partners;
+
+  // Get specific supplies for allocation
+  const orangeJuice = supplies.find((s) => s.name.includes("Orange Juice"));
+  const water = supplies.find((s) => s.name.includes("Mineral Water"));
+  const plates = supplies.find((s) => s.name.includes("Dinner Plates"));
+  const glasses = supplies.find((s) => s.name.includes("Wine Glasses"));
+  const tablecloths = supplies.find((s) => s.name.includes("Tablecloths"));
+  const chairs = supplies.find((s) => s.name.includes("Banquet Chairs"));
+  const tables = supplies.find((s) => s.name.includes("Round Tables"));
+  const centerpieces = supplies.find((s) =>
+    s.name.includes("Rose Centerpieces")
+  );
+
+  const events = await Event.create([
+    {
+      title: "Sarah & Karim Wedding Reception",
+      type: "wedding",
+      status: "confirmed",
+      clientId: weddingClient._id,
+      venueId: venue._id,
+      venueSpaceId: ballroom._id,
+      startDate: generateFutureDate(45),
+      endDate: generateFutureDate(45),
+      startTime: "18:00",
+      endTime: "23:30",
+      guestCount: 350,
+      notes: "Premium wedding package. Bride allergic to nuts.",
+      partners: [
+        {
+          partner: catering._id,
+          service: "Full catering service with premium menu",
+          cost: 15750,
+          status: "confirmed",
+        },
+        {
+          partner: photography._id,
+          service: "Photography & Videography (8 hours)",
+          cost: 1200,
+          hours: 8,
+          status: "confirmed",
+        },
+        {
+          partner: decoration._id,
+          service: "Premium floral decoration & lighting",
+          cost: 3500,
+          status: "confirmed",
+        },
+        {
+          partner: dj._id,
+          service: "DJ & Sound system (6 hours)",
+          cost: 1200,
+          hours: 6,
+          status: "confirmed",
+        },
+      ],
+      pricing: {
+        basePrice: 8000,
+        additionalServices: [
+          { name: "Premium Sound System", price: 500 },
+          { name: "Extended Hours", price: 1000 },
+        ],
+        discount: 0,
+        taxRate: 19,
+      },
+      supplies: [
+        {
+          supply: orangeJuice._id,
+          supplyName: orangeJuice.name,
+          supplyCategoryId: orangeJuice.categoryId,
+          supplyUnit: orangeJuice.unit,
+          quantityRequested: 80,
+          quantityAllocated: 80,
+          costPerUnit: orangeJuice.costPerUnit,
+          chargePerUnit: orangeJuice.chargePerUnit,
+          pricingType: orangeJuice.pricingType,
+          totalCost: 80 * orangeJuice.costPerUnit,
+          totalCharge: 0,
+          status: "allocated",
+          allocatedAt: new Date(),
+        },
+        {
+          supply: water._id,
+          supplyName: water.name,
+          supplyCategoryId: water.categoryId,
+          supplyUnit: water.unit,
+          quantityRequested: 100,
+          quantityAllocated: 100,
+          costPerUnit: water.costPerUnit,
+          chargePerUnit: water.chargePerUnit,
+          pricingType: water.pricingType,
+          totalCost: 100 * water.costPerUnit,
+          totalCharge: 0,
+          status: "allocated",
+          allocatedAt: new Date(),
+        },
+        {
+          supply: plates._id,
+          supplyName: plates.name,
+          supplyCategoryId: plates.categoryId,
+          supplyUnit: plates.unit,
+          quantityRequested: 350,
+          quantityAllocated: 350,
+          costPerUnit: plates.costPerUnit,
+          chargePerUnit: plates.chargePerUnit,
+          pricingType: plates.pricingType,
+          totalCost: 350 * plates.costPerUnit,
+          totalCharge: 0,
+          status: "allocated",
+          allocatedAt: new Date(),
+        },
+        {
+          supply: centerpieces._id,
+          supplyName: centerpieces.name,
+          supplyCategoryId: centerpieces.categoryId,
+          supplyUnit: centerpieces.unit,
+          quantityRequested: 25,
+          quantityAllocated: 25,
+          costPerUnit: centerpieces.costPerUnit,
+          chargePerUnit: centerpieces.chargePerUnit,
+          pricingType: centerpieces.pricingType,
+          totalCost: 25 * centerpieces.costPerUnit,
+          totalCharge: 25 * centerpieces.chargePerUnit,
+          status: "allocated",
+          allocatedAt: new Date(),
+        },
+      ],
+      createdBy: createdBy._id,
+    },
+    {
+      title: "TechCorp Annual Gala 2025",
+      type: "corporate",
+      status: "confirmed",
+      clientId: corpClient._id,
+      venueId: venue._id,
+      venueSpaceId: ballroom._id,
+      startDate: generateFutureDate(90),
+      endDate: generateFutureDate(90),
+      startTime: "19:00",
+      endTime: "23:00",
+      guestCount: 250,
+      notes: "Corporate gala event. Need invoice for company",
+      partners: [
+        {
+          partner: catering._id,
+          service: "Corporate buffet menu",
+          cost: 11250,
+          status: "confirmed",
+        },
+        {
+          partner: dj._id,
+          service: "Background music & presentation support",
+          cost: 800,
+          hours: 4,
+          status: "confirmed",
+        },
+      ],
+      pricing: {
+        basePrice: 8000,
+        additionalServices: [
+          { name: "Projector & Screen", price: 300 },
+          { name: "Stage Setup", price: 500 },
+        ],
+        discount: 800,
+        taxRate: 19,
+      },
+      supplies: [
+        {
+          supply: water._id,
+          supplyName: water.name,
+          supplyCategoryId: water.categoryId,
+          supplyUnit: water.unit,
+          quantityRequested: 80,
+          quantityAllocated: 80,
+          costPerUnit: water.costPerUnit,
+          chargePerUnit: water.chargePerUnit,
+          pricingType: water.pricingType,
+          totalCost: 80 * water.costPerUnit,
+          totalCharge: 0,
+          status: "allocated",
+          allocatedAt: new Date(),
+        },
+      ],
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Leila's 50th Birthday Celebration",
+      type: "birthday",
+      status: "pending",
+      clientId: birthdayClient._id,
+      venueId: venue._id,
+      venueSpaceId: garden._id,
+      startDate: generateFutureDate(30),
+      endDate: generateFutureDate(30),
+      startTime: "17:00",
+      endTime: "22:00",
+      guestCount: 120,
+      notes: "Outdoor garden party theme",
+      partners: [
+        {
+          partner: catering._id,
+          service: "Cocktail party catering",
+          cost: 5400,
+          status: "pending",
+        },
+        {
+          partner: decoration._id,
+          service: "Garden party decoration",
+          cost: 1800,
+          status: "pending",
+        },
+      ],
+      pricing: {
+        basePrice: 5000,
+        additionalServices: [{ name: "Birthday Cake Display", price: 150 }],
+        discount: 0,
+        taxRate: 19,
+      },
+      supplies: [],
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Startup Networking Night",
+      type: "corporate",
+      status: "confirmed",
+      clientId: startupClient._id,
+      venueId: venue._id,
+      venueSpaceId: salon._id,
+      startDate: generateFutureDate(15),
+      endDate: generateFutureDate(15),
+      startTime: "18:30",
+      endTime: "21:30",
+      guestCount: 65,
+      notes: "Monthly recurring event",
+      partners: [],
+      pricing: {
+        basePrice: 2500,
+        additionalServices: [{ name: "Coffee & Snacks", price: 400 }],
+        discount: 200,
+        taxRate: 19,
+      },
+      supplies: [],
+      createdBy: createdBy._id,
+    },
+  ]);
+
+  console.log(`✅ Created ${events.length} events`);
+  return events;
+};
+
+// =========================================================
+// SEED PAYMENTS
+// =========================================================
+
+const seedPayments = async (venue, events, clients, createdBy) => {
+  console.log("\n💰 Seeding payments...");
+
+  const payments = await Payment.create([
+    {
+      event: events[0]._id,
+      client: events[0].clientId,
+      type: "income",
+      amount: 5000,
+      method: "bank_transfer",
+      status: "completed",
+      reference: "DEP-2025-001",
+      description: "Wedding deposit - 50%",
+      paidDate: new Date(),
+      venueId: venue._id,
+      processedBy: createdBy._id,
+    },
+    {
+      event: events[1]._id,
+      client: events[1].clientId,
+      type: "income",
+      amount: 8000,
+      method: "bank_transfer",
+      status: "completed",
+      reference: "INV-CORP-2025",
+      description: "Corporate gala full payment",
+      paidDate: new Date(),
+      venueId: venue._id,
+      processedBy: createdBy._id,
+    },
+    {
+      event: events[2]._id,
+      client: events[2].clientId,
+      type: "income",
+      amount: 2000,
+      method: "cash",
+      status: "completed",
+      reference: "DEP-BDAY-001",
+      description: "Birthday party deposit",
+      paidDate: new Date(),
+      venueId: venue._id,
+      processedBy: createdBy._id,
+    },
+  ]);
+
+  console.log(`✅ Created ${payments.length} payments`);
+  return payments;
+};
+
+// =========================================================
+// SEED FINANCE RECORDS
+// =========================================================
+
+const seedFinance = async (venue, events, partners, createdBy) => {
+  console.log("\n💵 Seeding finance records...");
+
+  const finance = await Finance.create([
+    {
+      type: "income",
+      category: "event_revenue",
+      description: "Wedding reception booking - Sarah & Karim",
+      amount: 5000,
+      date: new Date(),
+      paymentMethod: "bank_transfer",
+      reference: "DEP-2025-001",
+      relatedEvent: events[0]._id,
+      status: "completed",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      type: "expense",
+      category: "utilities",
+      description: "Monthly electricity bill - December",
+      amount: 850,
+      date: new Date(),
+      paymentMethod: "bank_transfer",
+      reference: "ELEC-12-2024",
+      status: "completed",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      type: "expense",
+      category: "maintenance",
+      description: "HVAC system maintenance",
+      amount: 450,
+      date: generateRandomDate(new Date(2024, 11, 1), new Date()),
+      paymentMethod: "cash",
+      status: "completed",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      type: "expense",
+      category: "marketing",
+      description: "Facebook Ads campaign - December",
+      amount: 300,
+      date: new Date(),
+      paymentMethod: "card",
+      reference: "META-ADS-DEC",
+      status: "completed",
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+  ]);
+
+  console.log(`✅ Created ${finance.length} finance records`);
+  return finance;
+};
+
+// =========================================================
+// SEED TASKS
+// =========================================================
+
+const seedTasks = async (venue, events, users, createdBy) => {
+  console.log("\n✅ Seeding tasks...");
+
+  const [owner, manager, staff] = users;
+
+  const tasks = await Task.create([
+    {
+      title: "Confirm catering menu with Elite Catering",
+      description:
+        "Review and finalize the menu for Sarah & Karim's wedding. Confirm nut-free options.",
+      status: "in_progress",
+      priority: "high",
+      category: "event_preparation",
+      dueDate: generateFutureDate(7),
+      assignedTo: manager._id,
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Setup stage for TechCorp gala",
+      description: "Install stage, projector, and presentation equipment",
+      status: "todo",
+      priority: "medium",
+      category: "setup",
+      dueDate: generateFutureDate(88),
+      assignedTo: staff._id,
+      subtasks: [
+        { title: "Position stage platform", completed: false },
+        { title: "Connect projector and test", completed: false },
+        { title: "Setup microphone system", completed: false },
+        { title: "Run cable management", completed: false },
+      ],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Order additional chairs for wedding",
+      description: "Current inventory might not be sufficient for 350 guests",
+      status: "pending",
+      priority: "urgent",
+      category: "event_preparation",
+      dueDate: generateFutureDate(5),
+      assignedTo: manager._id,
+      tags: ["urgent", "inventory"],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Update venue photos on website",
+      description: "New professional photos need to be uploaded",
+      status: "todo",
+      priority: "low",
+      category: "marketing",
+      dueDate: generateFutureDate(20),
+      assignedTo: manager._id,
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Monthly safety inspection",
+      description:
+        "Check fire extinguishers, emergency exits, and first aid kits",
+      status: "completed",
+      priority: "high",
+      category: "maintenance",
+      dueDate: new Date(),
+      assignedTo: staff._id,
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+  ]);
+
+  console.log(`✅ Created ${tasks.length} tasks`);
+  return tasks;
+};
+
+// =========================================================
+// SEED REMINDERS
+// =========================================================
+const seedReminders = async (venue, events, users, createdBy) => {
+  console.log("\n🔔 Seeding reminders...");
+
+  const [owner, manager, staff] = users;
+  const now = new Date();
+
+  // Helper to create date with specific time
+  const createDateTime = (daysOffset, hours, minutes) => {
+    const date = new Date();
+    date.setDate(date.getDate() + daysOffset);
+    date.setHours(hours, minutes, 0, 0);
+    return date;
+  };
+
+  // Helper to format time
+  const formatTime = (hours, minutes) => {
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  };
+
+  const reminders = await Reminder.create([
+    // ==========================================
+    // OVERDUE REMINDERS (Testing urgent alerts)
+    // ==========================================
+    {
+      title: "⚠️ URGENT: Final payment confirmation needed",
+      description: "Client hasn't confirmed final payment method. Event is in 2 days!",
+      type: "payment",
+      priority: "urgent",
+      reminderDate: createDateTime(-2, 10, 0),
+      reminderTime: formatTime(10, 0),
+      status: "active",
+      relatedEvent: events[0]._id,
+      assignedTo: [manager._id, owner._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Follow up on catering menu changes",
+      description: "Client requested menu modifications 3 days ago. Need confirmation.",
+      type: "followup",
+      priority: "high",
+      reminderDate: createDateTime(-3, 14, 30),
+      reminderTime: formatTime(14, 30),
+      status: "active",
+      relatedEvent: events[0]._id,
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Confirm decoration delivery",
+      description: "Decorator needs to confirm delivery time for tomorrow's event",
+      type: "event",
+      priority: "high",
+      reminderDate: createDateTime(-1, 9, 0),
+      reminderTime: formatTime(9, 0),
+      status: "active",
+      relatedEvent: events[0]._id,
+      assignedTo: [staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // IMMINENT REMINDERS (Next hour - Critical)
+    // ==========================================
+    {
+      title: "🚨 Client arrival in 30 minutes",
+      description: "VIP client arriving for venue tour. Prepare welcome package.",
+      type: "other",
+      priority: "urgent",
+      reminderDate: now.toISOString().split('T')[0],
+      reminderTime: formatTime(now.getHours(), now.getMinutes() + 30),
+      status: "active",
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Team briefing for tonight's event",
+      description: "Pre-event meeting with all staff members",
+      type: "event",
+      priority: "high",
+      reminderDate: now.toISOString().split('T')[0],
+      reminderTime: formatTime(now.getHours() + 1, 0),
+      status: "active",
+      assignedTo: [manager._id, staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // TODAY REMINDERS (Next 24 hours)
+    // ==========================================
+    {
+      title: "Send invoice to TechCorp",
+      description: "Generate and email invoice for upcoming corporate event",
+      type: "payment",
+      priority: "high",
+      reminderDate: now.toISOString().split('T')[0],
+      reminderTime: formatTime(16, 0),
+      status: "active",
+      relatedEvent: events[1]._id,
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Check inventory for weekend events",
+      description: "Verify we have sufficient chairs, tables, and linens",
+      type: "task",
+      priority: "medium",
+      reminderDate: now.toISOString().split('T')[0],
+      reminderTime: formatTime(17, 30),
+      status: "active",
+      assignedTo: [staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Call photographer for final details",
+      description: "Confirm arrival time and special shot list with photographer",
+      type: "event",
+      priority: "medium",
+      reminderDate: now.toISOString().split('T')[0],
+      reminderTime: formatTime(19, 0),
+      status: "active",
+      relatedEvent: events[0]._id,
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // TOMORROW REMINDERS
+    // ==========================================
+    {
+      title: "Venue walkthrough with wedding couple",
+      description: "Final venue inspection with Sarah & Karim before the big day",
+      type: "event",
+      priority: "high",
+      reminderDate: createDateTime(1, 10, 0),
+      reminderTime: formatTime(10, 0),
+      status: "active",
+      relatedEvent: events[0]._id,
+      assignedTo: [manager._id, staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Submit monthly expense report",
+      description: "Compile and submit December expense report to accounting",
+      type: "other",
+      priority: "medium",
+      reminderDate: createDateTime(1, 14, 0),
+      reminderTime: formatTime(14, 0),
+      status: "active",
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Order fresh flowers for weekend events",
+      description: "Place order with florist for Saturday and Sunday events",
+      type: "task",
+      priority: "medium",
+      reminderDate: createDateTime(1, 11, 30),
+      reminderTime: formatTime(11, 30),
+      status: "active",
+      assignedTo: [staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // THIS WEEK REMINDERS (2-7 days)
+    // ==========================================
+    {
+      title: "Follow up with birthday party client",
+      description: "Check if Leila has finalized guest count and menu preferences",
+      type: "followup",
+      priority: "medium",
+      reminderDate: createDateTime(3, 10, 0),
+      reminderTime: formatTime(10, 0),
+      status: "active",
+      relatedEvent: events[2]._id,
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Quarterly HVAC maintenance",
+      description: "Schedule technician for air conditioning system inspection",
+      type: "maintenance",
+      priority: "medium",
+      reminderDate: createDateTime(4, 8, 0),
+      reminderTime: formatTime(8, 0),
+      status: "active",
+      assignedTo: [owner._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Review and approve marketing materials",
+      description: "New promotional flyers ready for review",
+      type: "other",
+      priority: "low",
+      reminderDate: createDateTime(5, 15, 0),
+      reminderTime: formatTime(15, 0),
+      status: "active",
+      assignedTo: [owner._id, manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Staff training session on new booking system",
+      description: "Mandatory training for all team members on updated software",
+      type: "other",
+      priority: "medium",
+      reminderDate: createDateTime(6, 9, 30),
+      reminderTime: formatTime(9, 30),
+      status: "active",
+      assignedTo: [manager._id, staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // NEXT WEEK REMINDERS (8-14 days)
+    // ==========================================
+    {
+      title: "Confirm DJ equipment setup for corporate gala",
+      description: "Verify sound system requirements and setup time with DJ Soundwaves",
+      type: "event",
+      priority: "medium",
+      reminderDate: createDateTime(10, 11, 0),
+      reminderTime: formatTime(11, 0),
+      status: "active",
+      relatedEvent: events[1]._id,
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Renew venue insurance policy",
+      description: "Annual insurance renewal deadline approaching",
+      type: "other",
+      priority: "high",
+      reminderDate: createDateTime(12, 10, 0),
+      reminderTime: formatTime(10, 0),
+      status: "active",
+      assignedTo: [owner._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Schedule deep cleaning of Grand Ballroom",
+      description: "Post-event deep clean and carpet shampooing needed",
+      type: "maintenance",
+      priority: "medium",
+      reminderDate: createDateTime(13, 8, 0),
+      reminderTime: formatTime(8, 0),
+      status: "active",
+      assignedTo: [staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // LATER THIS MONTH (15-30 days)
+    // ==========================================
+    {
+      title: "Prepare year-end financial report",
+      description: "Compile Q4 revenue, expenses, and profit/loss statements",
+      type: "other",
+      priority: "high",
+      reminderDate: createDateTime(20, 9, 0),
+      reminderTime: formatTime(9, 0),
+      status: "active",
+      assignedTo: [owner._id, manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Order supplies for holiday events",
+      description: "Stock up on decorations and supplies for New Year celebrations",
+      type: "task",
+      priority: "medium",
+      reminderDate: createDateTime(25, 10, 0),
+      reminderTime: formatTime(10, 0),
+      status: "active",
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "Network maintenance window",
+      description: "IT vendor scheduled for router and network equipment updates",
+      type: "maintenance",
+      priority: "low",
+      reminderDate: createDateTime(28, 22, 0),
+      reminderTime: formatTime(22, 0),
+      status: "active",
+      assignedTo: [owner._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // COMPLETED REMINDERS (for testing history)
+    // ==========================================
+    {
+      title: "✅ Monthly safety inspection completed",
+      description: "Fire extinguishers checked, emergency exits cleared, first aid kits restocked",
+      type: "maintenance",
+      priority: "high",
+      reminderDate: createDateTime(-5, 8, 0),
+      reminderTime: formatTime(8, 0),
+      status: "completed",
+      assignedTo: [staff._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "✅ Sent contract to wedding clients",
+      description: "Wedding contract sent via email with electronic signature link",
+      type: "followup",
+      priority: "high",
+      reminderDate: createDateTime(-7, 14, 0),
+      reminderTime: formatTime(14, 0),
+      status: "completed",
+      relatedEvent: events[0]._id,
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+    {
+      title: "✅ Updated website event gallery",
+      description: "Uploaded professional photos from last weekend's events",
+      type: "other",
+      priority: "medium",
+      reminderDate: createDateTime(-10, 16, 0),
+      reminderTime: formatTime(16, 0),
+      status: "completed",
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // SNOOZED REMINDERS (for testing snooze)
+    // ==========================================
+    {
+      title: "Review catering contract renewal",
+      description: "Negotiate new rates with Elite Catering for next year",
+      type: "other",
+      priority: "medium",
+      reminderDate: createDateTime(2, 13, 0),
+      reminderTime: formatTime(13, 0),
+      status: "active",
+      snoozeHistory: [
+        {
+          snoozedAt: createDateTime(-2, 13, 0),
+          snoozeMinutes: 2880, // 2 days
+          snoozedBy: manager._id,
+        },
+        {
+          snoozedAt: createDateTime(0, 13, 0),
+          snoozeMinutes: 2880, // 2 days
+          snoozedBy: manager._id,
+        },
+      ],
+      assignedTo: [manager._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+
+    // ==========================================
+    // DISMISSED REMINDER (for testing dismiss)
+    // ==========================================
+    {
+      title: "Consider adding valet parking service",
+      description: "Research valet parking vendors for premium events",
+      type: "other",
+      priority: "low",
+      reminderDate: createDateTime(-1, 10, 0),
+      reminderTime: formatTime(10, 0),
+      status: "active",
+      dismissed: true,
+      dismissedAt: createDateTime(0, 11, 0),
+      dismissedBy: owner._id,
+      assignedTo: [owner._id],
+      venueId: venue._id,
+      createdBy: createdBy._id,
+    },
+  ]);
+
+  console.log(`✅ Created ${reminders.length} reminders`);
+  console.log(`   • ${reminders.filter(r => r.status === 'active' && new Date(r.reminderDate) < now).length} Overdue`);
+  console.log(`   • ${reminders.filter(r => r.status === 'active' && new Date(r.reminderDate).toDateString() === now.toDateString()).length} Due Today`);
+  console.log(`   • ${reminders.filter(r => r.status === 'completed').length} Completed`);
+  console.log(`   • ${reminders.filter(r => r.snoozeHistory && r.snoozeHistory.length > 0).length} With Snooze History`);
+  console.log(`   • ${reminders.filter(r => r.dismissed).length} Dismissed`);
+  
+  return reminders;
+};
+
+
+// =========================================================
+// SEED INVOICES
+// =========================================================
+
+const seedInvoices = async (venue, events, clients, createdBy) => {
+  console.log("\n📄 Seeding invoices...");
+
+  // Create invoice settings first
+  const invoiceSettings = await InvoiceSettings.getOrCreate(venue._id);
+
+  // Define the data array first
+  const invoiceData = [
+    {
+      venue: venue._id,
+      invoiceType: "client",
+      status: "sent",
+      client: events[0].clientId,
+      event: events[0]._id,
+      recipientName: "Sarah & Karim",
+      recipientEmail: "sarah.karim@email.com",
+      recipientPhone: "+216 98 111 222",
+      issueDate: new Date(),
+      dueDate: generateFutureDate(30),
+      currency: "TND",
+      items: [
+        {
+          description: "Grand Ballroom Rental",
+          quantity: 1,
+          rate: 8000,
+          amount: 8000,
+        },
+        {
+          description: "Premium Sound System",
+          quantity: 1,
+          rate: 500,
+          amount: 500,
+        },
+        {
+          description: "Extended Hours (2 hours)",
+          quantity: 2,
+          rate: 500,
+          amount: 1000,
+        },
+      ],
+      subtotal: 9500,
+      taxRate: 19,
+      taxAmount: 1805,
+      discount: 0,
+      totalAmount: 11305,
+      paymentStatus: {
+        amountPaid: 5000,
+        amountDue: 6305,
+      },
+      notes: "Thank you for choosing Grand Palace Events for your special day!",
+      terms:
+        "Payment due 30 days before event date. 50% deposit required to confirm booking.",
+      createdBy: createdBy._id,
+      sentAt: new Date(),
+    },
+    {
+      venue: venue._id,
+      invoiceType: "client",
+      status: "paid",
+      client: events[1].clientId,
+      event: events[1]._id,
+      recipientName: "TechCorp Tunisia",
+      recipientEmail: "events@techcorp.tn",
+      recipientPhone: "+216 71 333 444",
+      recipientCompany: "TechCorp Tunisia",
+      issueDate: new Date(),
+      dueDate: generateFutureDate(60),
+      currency: "TND",
+      items: [
+        {
+          description: "Grand Ballroom Rental - Corporate Event",
+          quantity: 1,
+          rate: 8000,
+          amount: 8000,
+        },
+        {
+          description: "Projector & Screen Setup",
+          quantity: 1,
+          rate: 300,
+          amount: 300,
+        },
+        {
+          description: "Stage Setup",
+          quantity: 1,
+          rate: 500,
+          amount: 500,
+        },
+      ],
+      subtotal: 8800,
+      taxRate: 19,
+      taxAmount: 1672,
+      discount: 800,
+      totalAmount: 9672,
+      paymentStatus: {
+        amountPaid: 9672,
+        amountDue: 0,
+        lastPaymentDate: new Date(),
+      },
+      notes: "Thank you for your business!",
+      terms: "Net 30 days. Bank transfer preferred.",
+      createdBy: createdBy._id,
+      sentAt: new Date(),
+    },
+  ];
+
+  // Create invoices sequentially to ensure correct invoiceNumber generation
+  const invoices = [];
+  for (const data of invoiceData) {
+    const invoice = await Invoice.create(data);
+    invoices.push(invoice);
+  }
+
+  console.log(`✅ Created ${invoices.length} invoices`);
+  return invoices;
+};
+
+// =========================================================
+// SEED CONTRACTS
+// =========================================================
+
+const seedContracts = async (venue, events, createdBy) => {
+  console.log("\n📑 Seeding contracts...");
+
+  // Create contract settings first
+  const contractSettings = await ContractSettings.getOrCreate(venue._id);
+
+  // Define data first
+  const contractData = [
+    {
+      title: "Contrat de Location - Mariage Sarah & Karim",
+      contractType: "client",
+      status: "sent",
+      version: 1,
+      venue: venue._id,
+      event: events[0]._id,
+      createdBy: createdBy._id,
+      party: {
+        type: "individual",
+        name: "Sarah Ben Ali & Karim Trabelsi",
+        identifier: "12345678",
+        address: "15 Rue de Carthage, Tunis 1000",
+        phone: "+216 98 111 222",
+        email: "sarah.karim@email.com",
+      },
+      logistics: {
+        startDate: events[0].startDate,
+        endDate: events[0].endDate,
+        checkInTime: "16:00",
+        checkOutTime: "00:00",
+      },
+      financials: {
+        currency: "TND",
+        amountHT: 9500,
+        vatRate: 19,
+        taxAmount: 1805,
+        stampDuty: 1.0,
+        totalTTC: 11305,
+      },
+      paymentTerms: {
+        depositAmount: 5000,
+        securityDeposit: 1000,
+        dueDate: generateFutureDate(30),
+        isWithholdingTaxApplicable: false,
+      },
+      legal: {
+        cancellationPolicy: "standard",
+        jurisdiction: "Tribunal de Tunis",
+        specialConditions:
+          "Client agrees to vacate premises by midnight. Additional hour charges apply for overtime.",
+      },
+    },
+    {
+      title: "Contrat de Prestation - TechCorp Annual Gala",
+      contractType: "client",
+      status: "signed",
+      version: 1,
+      venue: venue._id,
+      event: events[1]._id,
+      createdBy: createdBy._id,
+      party: {
+        type: "company",
+        name: "TechCorp Tunisia SARL",
+        identifier: "1234567/A/M/000",
+        representative: "Mr. Ahmed Mansour, Gérant",
+        address: "Centre Urbain Nord, Tunis 1082",
+        phone: "+216 71 333 444",
+        email: "events@techcorp.tn",
+      },
+      logistics: {
+        startDate: events[1].startDate,
+        endDate: events[1].endDate,
+        checkInTime: "14:00",
+        checkOutTime: "23:30",
+      },
+      financials: {
+        currency: "TND",
+        amountHT: 8000,
+        vatRate: 19,
+        taxAmount: 1520,
+        stampDuty: 1.0,
+        totalTTC: 9520,
+      },
+      paymentTerms: {
+        depositAmount: 0,
+        securityDeposit: 0,
+        dueDate: generateFutureDate(85),
+        isWithholdingTaxApplicable: true,
+      },
+      legal: {
+        cancellationPolicy: "flexible",
+        jurisdiction: "Tribunal de Tunis",
+        specialConditions:
+          "Retenue à la source applicable (1.5%). Company will provide certificate.",
+      },
+      signatures: {
+        venueSignedAt: new Date(),
+        venueSignerIp: "192.168.1.1",
+        clientSignedAt: new Date(),
+        clientSignerIp: "192.168.1.100",
+      },
+    },
+  ];
+
+  // Loop through and create sequentially to ensure contractNumber generates correctly
+  const contracts = [];
+  for (const data of contractData) {
+    const contract = await Contract.create(data);
+    contracts.push(contract);
+  }
+
+  console.log(`✅ Created ${contracts.length} contracts`);
+  return contracts;
+};
+// =========================================================
+// MAIN SEED FUNCTION
+// =========================================================
+
+const seedDatabase = async () => {
+  try {
+    console.log("\n🌱 Starting database seed...\n");
+    console.log("═".repeat(60));
+
+    await connectDB();
+    await clearDatabase();
+
+    // Seed in order
+    const permissions = await seedPermissions();
+    const venues = await seedVenues();
+    const primaryVenue = venues[0];
+
+    const roles = await seedRoles(primaryVenue, permissions);
+    const users = await seedUsers(primaryVenue, roles);
+    const owner = users[0];
+
+    const spaces = await seedVenueSpaces(primaryVenue, owner);
+    const clients = await seedClients(primaryVenue, owner);
+    const partners = await seedPartners(primaryVenue, owner);
+
+    const { categories, supplies } = await seedSupplies(primaryVenue, owner);
+
+    const events = await seedEvents(
+      primaryVenue,
+      spaces,
+      clients,
+      partners,
+      supplies,
+      owner
+    );
+
+    // Update supply stock to reflect allocated supplies
+    console.log("\n📦 Updating supply inventory...");
+    supplies.find((s) => s.name.includes("Orange Juice")).currentStock -= 80;
+    supplies.find((s) => s.name.includes("Mineral Water")).currentStock -= 180;
+    supplies.find((s) => s.name.includes("Dinner Plates")).currentStock -= 350;
+    supplies.find((s) =>
+      s.name.includes("Rose Centerpieces")
+    ).currentStock -= 25;
+
+    await Promise.all(supplies.map((s) => s.save()));
+    console.log("✅ Supply inventory updated");
+
+    const payments = await seedPayments(primaryVenue, events, clients, owner);
+    const finance = await seedFinance(primaryVenue, events, partners, owner);
+    const tasks = await seedTasks(primaryVenue, events, users, owner);
+    const reminders = await seedReminders(primaryVenue, events, users, owner);
+    const invoices = await seedInvoices(primaryVenue, events, clients, owner);
+    const contracts = await seedContracts(primaryVenue, events, owner);
+
+    console.log("\n" + "═".repeat(60));
+    console.log("\n✅ DATABASE SEEDED SUCCESSFULLY!\n");
+    console.log("📊 Summary:");
+    console.log(`   • ${venues.length} Venues`);
+    console.log(`   • ${spaces.length} Venue Spaces`);
+    console.log(`   • ${users.length} Users`);
+    console.log(`   • ${roles.length} Roles`);
+    console.log(`   • ${permissions.length} Permissions`);
+    console.log(`   • ${clients.length} Clients`);
+    console.log(`   • ${partners.length} Partners`);
+    console.log(`   • ${categories.length} Supply Categories`);
+    console.log(`   • ${supplies.length} Supplies`);
+    console.log(`   • ${events.length} Events`);
+    console.log(`   • ${payments.length} Payments`);
+    console.log(`   • ${finance.length} Finance Records`);
+    console.log(`   • ${tasks.length} Tasks`);
+    console.log(`   • ${reminders.length} Reminders`);
+    console.log(`   • ${invoices.length} Invoices`);
+    console.log(`   • ${contracts.length} Contracts`);
+
+    console.log("\n🔐 Demo Accounts:");
+    console.log("   Owner:   owner@demo.com / password123");
+    console.log("   Manager: manager@demo.com / password123");
+    console.log("   Staff:   staff@demo.com / password123");
+
+    console.log("\n" + "═".repeat(60) + "\n");
+
+    process.exit(0);
+  } catch (error) {
+    console.error("\n❌ Error seeding database:", error);
+    process.exit(1);
+  }
+};
+
+// Run the seed
 seedDatabase();

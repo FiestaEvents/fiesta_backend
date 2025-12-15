@@ -1,3 +1,4 @@
+// middleware/auth.js - FIXED VERSION WITH DEBUGGING
 import jwt from "jsonwebtoken";
 import asyncHandler from "./asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
@@ -5,6 +6,8 @@ import { User } from "../models/index.js";
 import config from "../config/env.js";
 
 export const authenticate = asyncHandler(async (req, res, next) => {
+  console.log('🔒 [AUTH] Starting authentication...');
+  
   let token;
   
   // Get token from header
@@ -13,34 +16,58 @@ export const authenticate = asyncHandler(async (req, res, next) => {
     req.headers.authorization.startsWith("Bearer")
   ) {
     token = req.headers.authorization.split(" ")[1];
+    console.log('✅ [AUTH] Token found:', token ? 'YES' : 'NO');
+  } else {
+    console.log('❌ [AUTH] No authorization header or wrong format');
+    console.log('Headers:', req.headers.authorization);
   }
   
   // Check if token exists
   if (!token) {
+    console.log('❌ [AUTH] Token missing - throwing 401');
     throw new ApiError("Not authorized to access this route", 401);
   }
   
   try {
     // Verify token
+    console.log('🔍 [AUTH] Verifying token...');
     const decoded = jwt.verify(token, config.jwt.secret);
+    console.log('✅ [AUTH] Token verified, userId:', decoded.id);
     
     // Get user from token
-    // ✅ FIXED: Removed .populate("venueId") to keep it as ObjectId
+    console.log('👤 [AUTH] Fetching user from database...');
     req.user = await User.findById(decoded.id)
-      .populate("roleId");
-      // venueId will remain as ObjectId, not populated
+      .populate("roleId")
+      .select("-password"); // Don't send password
     
     if (!req.user) {
+      console.log('❌ [AUTH] User not found in database');
       throw new ApiError("User not found", 404);
     }
     
+    console.log('✅ [AUTH] User found:', req.user._id);
+    console.log('✅ [AUTH] VenueId:', req.user.venueId);
+    
     if (!req.user.isActive) {
+      console.log('❌ [AUTH] User account is inactive');
       throw new ApiError("User account is inactive", 403);
     }
     
+    console.log('✅ [AUTH] Authentication successful!');
     next();
   } catch (error) {
-    throw new ApiError("Not authorized to access this route", 401);
+    console.error('❌ [AUTH] Error:', error.message);
+    
+    // Provide more specific error messages
+    if (error.name === 'JsonWebTokenError') {
+      throw new ApiError("Invalid token", 401);
+    } else if (error.name === 'TokenExpiredError') {
+      throw new ApiError("Token expired", 401);
+    } else if (error instanceof ApiError) {
+      throw error;
+    } else {
+      throw new ApiError("Not authorized to access this route", 401);
+    }
   }
 });
 
@@ -104,14 +131,8 @@ export const checkPermission = (permission) => {
 };
 
 // Attach venue to request
-// ✅ UPDATED: Now fetches venue when needed instead of using populated data
 export const attachVenue = asyncHandler(async (req, res, next) => {
   if (req.user && req.user.venueId) {
-    // If you need the full venue object somewhere, fetch it here
-    // const Venue = mongoose.model('Venue');
-    // req.venue = await Venue.findById(req.user.venueId);
-    
-    // For now, just attach the venueId
     req.venue = req.user.venueId;
   }
   next();

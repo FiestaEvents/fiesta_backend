@@ -1,6 +1,5 @@
 import mongoose from "mongoose";
 
-// The specific list you requested
 const PARTNER_CATEGORIES = [
   "driver", "bakery", "catering", "decoration", "photography", 
   "music", "security", "cleaning", "audio_visual", "floral", 
@@ -33,19 +32,16 @@ const contractSchema = new mongoose.Schema(
     party: {
       type: { type: String, enum: ["individual", "company"], default: "individual" },
       name: { type: String, required: true },
-      identifier: { type: String, required: true }, // MF or CIN
+      identifier: { type: String, required: true },
       representative: String,
       address: { type: String, required: true },
       phone: String,
       email: String,
-      
-      // ✅ NEW: Strict Category List
       category: { 
         type: String, 
         enum: PARTNER_CATEGORIES,
         default: "other"
       },
-      // ✅ NEW: Price structure for partners
       priceType: { type: String, enum: ["fixed", "hourly"], default: "fixed" }
     },
 
@@ -59,24 +55,19 @@ const contractSchema = new mongoose.Schema(
     services: [{
       description: String,
       quantity: { type: Number, default: 1 },
-      rate: { type: Number, default: 0 }, // If Client: Selling Price. If Partner: Cost.
+      rate: { type: Number, default: 0 },
       amount: Number,
     }],
 
     financials: {
       currency: { type: String, default: "TND" },
       amountHT: { type: Number, required: true }, 
-      
-      // Client specific
       vatRate: { type: Number, default: 19 },
       taxAmount: { type: Number, default: 0 },
       stampDuty: { type: Number, default: 1.000 },
-      
-      // Partner specific (Withholding tax / Retenue à la source)
       withholdingTaxRate: { type: Number, default: 0 }, 
       withholdingAmount: { type: Number, default: 0 },
-
-      totalTTC: { type: Number, required: true }, // Final amount to Pay/Receive
+      totalTTC: { type: Number, required: true },
     },
 
     paymentTerms: {
@@ -99,5 +90,16 @@ const contractSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Auto-generate Contract Number (CNT-YY-0001)
+contractSchema.pre("validate", async function (next) {
+  if (this.isNew && !this.contractNumber) {
+    const count = await this.constructor.countDocuments({ venue: this.venue });
+    const year = new Date().getFullYear().toString().slice(-2);
+    // Format: CNT-25-0001
+    this.contractNumber = `CNT-${year}-${(count + 1).toString().padStart(4, "0")}`;
+  }
+  next();
+});
 
 export default mongoose.model("Contract", contractSchema);
