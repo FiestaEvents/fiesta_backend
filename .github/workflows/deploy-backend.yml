@@ -35,10 +35,9 @@ jobs:
             npm ci --production
 
             # Define PM2 Path
-            PM2_PATH=/root/.nvm/versions/node/v22.21.1/bin/pm2
+            PM2_PATH=/home/ubuntu/.nvm/versions/node/v22.21.1/bin/pm2
 
             # Start/Reload using the PROD Ecosystem file
-            # (Assumes you named the prod file ecosystem.config.cjs)
-            $PM2_PATH startOrReload ecosystem.prod.config.cjs --update-env
+            $PM2_PATH startOrReload ecosystem.config.cjs --update-env
 
             $PM2_PATH save
