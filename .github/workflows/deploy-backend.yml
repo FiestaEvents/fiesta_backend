@@ -32,12 +32,10 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             cd /var/www/fiesta/server
+
+            # Install dependencies using the system link we created
             npm ci --production
 
-            # Define PM2 Path
-            PM2_PATH=/home/ubuntu/.nvm/versions/node/v22.21.1/bin/pm2
-
-            # Start/Reload using the PROD Ecosystem file
-            $PM2_PATH startOrReload ecosystem.config.cjs --update-env
-
-            $PM2_PATH save
+            # Reload using system 'pm2' directly (No more hardcoded paths!)
+            pm2 startOrReload ecosystem.config.cjs --update-env
+            pm2 save
