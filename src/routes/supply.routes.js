@@ -47,9 +47,6 @@ router.get(
 router.get(
   "/by-category/:categoryId",
   checkPermission("supplies.read.all"),
-  // Assuming categoryId needs validation if it's a MongoId
-  // categoryIdValidator, 
-  // validateRequest,
   getSuppliesByCategory
 );
 
@@ -93,7 +90,7 @@ router.patch(
 
 // ============================================
 // MAIN CRUD ROUTES
-// ==========================================
+// ============================================
 
 router
   .route("/")
@@ -119,6 +116,12 @@ router
   .put(
     checkPermission("supplies.update.all"),
     updateSupplyValidator,
+    validateRequest,
+    updateSupply
+  )
+  .patch(
+    checkPermission("supplies.update.all"),
+    updateSupplyValidator, 
     validateRequest,
     updateSupply
   )

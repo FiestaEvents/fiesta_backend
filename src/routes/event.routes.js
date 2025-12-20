@@ -1,3 +1,4 @@
+//src/routes/event.routes.js
 import express from "express";
 import {
   getEvents,

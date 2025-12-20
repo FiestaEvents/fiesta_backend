@@ -1,3 +1,4 @@
+//src/validators/eventValidator.js
 import { body, param, query } from "express-validator";
 
 export const createEventValidator = [

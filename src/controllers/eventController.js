@@ -1,8 +1,128 @@
+// src/controllers/eventController.js
 import asyncHandler from "../middleware/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { Event, Client, Partner, Supply} from "../models/index.js";
 
+// ==========================================
+// 1. HELPER FUNCTIONS
+// ==========================================
+
+// Helper: Fetch Supply Costs & Charges
+const processEventSupplies = async (suppliesInput, venueId) => {
+  if (!suppliesInput || !Array.isArray(suppliesInput) || suppliesInput.length === 0) {
+    return [];
+  }
+
+  const supplyIds = suppliesInput.map((s) => s.supply);
+  const dbSupplies = await Supply.find({
+    _id: { $in: supplyIds },
+    venueId: venueId,
+  }).populate("categoryId", "name"); // Populate category name if needed
+
+  return suppliesInput
+    .map((reqItem) => {
+      const dbItem = dbSupplies.find(
+        (s) => s._id.toString() === reqItem.supply.toString()
+      );
+
+      if (!dbItem) return null;
+
+      let finalCharge = 0;
+      if (dbItem.pricingType === "chargeable") {
+        finalCharge =
+          reqItem.chargePerUnit !== undefined
+            ? Number(reqItem.chargePerUnit)
+            : dbItem.chargePerUnit;
+      }
+
+      return {
+        supply: dbItem._id,
+        // ✅ FIX: Explicitly include the name here to satisfy the Schema validator
+        supplyName: dbItem.name, 
+        
+        // Optional: Include category snapshot if your model needs it
+        supplyCategory: dbItem.categoryId ? dbItem.categoryId.name : "Uncategorized",
+
+        quantityRequested: Number(reqItem.quantityRequested) || Number(reqItem.quantity) || 1,
+        quantityAllocated: 0,
+        
+        costPerUnit: Number(dbItem.costPerUnit) || 0,
+        chargePerUnit: Number(finalCharge),
+        
+        pricingType: dbItem.pricingType,
+        unit: dbItem.unit,
+        status: reqItem.status || "pending",
+      };
+    })
+    .filter(Boolean);
+};
+
+// Helper: Fetch Partner Services
+const processEventPartners = async (partnersInput, venueId) => {
+  if (!partnersInput || !Array.isArray(partnersInput) || partnersInput.length === 0) return [];
+
+  const partnerIds = partnersInput.map((p) => p.partner);
+  const dbPartners = await Partner.find({ _id: { $in: partnerIds }, venueId });
+
+  const processedServices = [];
+  partnersInput.forEach((reqPartner) => {
+    const fullPartner = dbPartners.find((p) => p._id.toString() === reqPartner.partner.toString());
+    if (fullPartner) {
+      let price = 0;
+      const name = `${fullPartner.name} (${reqPartner.service || fullPartner.category})`;
+      if (fullPartner.priceType === "hourly") {
+        price = (Number(reqPartner.hours) || 1) * (fullPartner.hourlyRate || 0);
+      } else {
+        price = Number(reqPartner.cost) || fullPartner.fixedRate || 0;
+      }
+      processedServices.push({ name, price, partnerId: fullPartner._id, type: "partner_service" });
+    }
+  });
+  return processedServices;
+};
+
+// 🔥 NEW HELPER: Force Calculation
+const calculateTotals = (event) => {
+  // 1. Base Price
+  const basePrice = event.pricing?.basePrice || 0;
+
+  // 2. Services (Partners + Extras)
+  const servicesTotal = event.pricing?.additionalServices?.reduce((sum, s) => sum + (s.price || 0), 0) || 0;
+
+  // 3. Supplies (The missing part!)
+  const suppliesTotal = event.supplies?.reduce((sum, s) => {
+    if (s.pricingType === "chargeable") {
+      return sum + (s.quantityRequested * s.chargePerUnit);
+    }
+    return sum;
+  }, 0) || 0;
+
+  // 4. Subtotal
+  const subtotal = basePrice + servicesTotal + suppliesTotal;
+
+  // 5. Discount
+  let discountAmount = 0;
+  if (event.pricing?.discountType === "percent") {
+    discountAmount = subtotal * ((event.pricing.discountAmount || 0) / 100);
+  } else {
+    discountAmount = event.pricing?.discountAmount || 0;
+  }
+
+  // 6. Tax
+  const taxableAmount = Math.max(0, subtotal - discountAmount);
+  const taxAmount = taxableAmount * ((event.pricing?.taxRate || 0) / 100);
+
+  // 7. Final Total
+  const total = taxableAmount + taxAmount;
+
+  // Update the Event Object directly
+  if (!event.pricing) event.pricing = {};
+  event.pricing.totalPriceBeforeTax = subtotal;
+  event.pricing.totalPriceAfterTax = total; // This is what shows on the card
+  
+  return event;
+};
 /**
  * @desc    Get all events
  * @route   GET /api/v1/events
@@ -193,70 +313,42 @@ export const getEvent = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const createEvent = asyncHandler(async (req, res) => {
-  const userVenueId = req.user.venueId._id ? req.user.venueId._id : req.user.venueId;
+  const userVenueId = req.user.venueId._id || req.user.venueId;
+  const eventData = { ...req.body, venueId: userVenueId, createdBy: req.user._id };
 
-  const eventData = {
-    ...req.body,
-    venueId: userVenueId,
-    createdBy: req.user._id,
-  };
-
-  // 1. Ensure Client Exists
-  const client = await Client.findOne({
-    _id: eventData.clientId,
-    venueId: userVenueId,
-  });
+  const client = await Client.findOne({ _id: eventData.clientId, venueId: userVenueId });
   if (!client) throw new ApiError("Client not found", 404);
 
-  // 2. HELPER: Convert "Partners" (if sent) to "AdditionalServices"
-  // This allows the frontend to still send partner IDs, but we store them as simple services
-  if (eventData.partners && Array.isArray(eventData.partners) && eventData.partners.length > 0) {
-    const partnerIds = eventData.partners.map(p => p.partner);
-    const dbPartners = await Partner.find({ _id: { $in: partnerIds }, venueId: userVenueId });
-
-    // Ensure pricing object exists
-    if (!eventData.pricing) eventData.pricing = {};
-    if (!eventData.pricing.additionalServices) eventData.pricing.additionalServices = [];
-
-    eventData.partners.forEach(reqPartner => {
-      const fullPartner = dbPartners.find(p => p._id.toString() === reqPartner.partner.toString());
-      if (fullPartner) {
-        let price = 0;
-        const name = `${fullPartner.name} (${reqPartner.service || fullPartner.category})`;
-
-        if (fullPartner.priceType === "hourly") {
-          price = (reqPartner.hours || 1) * (fullPartner.hourlyRate || 0);
-        } else {
-          price = reqPartner.cost || fullPartner.fixedRate || 0;
-        }
-
-        // Add to services list
-        eventData.pricing.additionalServices.push({ name, price });
-      }
-    });
+  // Process Supplies
+  if (eventData.supplies?.length > 0) {
+    eventData.supplies = await processEventSupplies(eventData.supplies, userVenueId);
   }
 
-  // 3. Create Event
-  // NOTE: collision check and tax calculation happen automatically in the Model's pre('save') hook.
+  // Process Partners
+  if (eventData.partners?.length > 0) {
+    if (!eventData.pricing) eventData.pricing = {};
+    if (!eventData.pricing.additionalServices) eventData.pricing.additionalServices = [];
+    const partnerServices = await processEventPartners(eventData.partners, userVenueId);
+    eventData.pricing.additionalServices.push(...partnerServices);
+  }
+
+  // Create Instance
+  const event = new Event(eventData);
+
+  // 🛑 FORCE CALCULATION BEFORE SAVE
+  calculateTotals(event);
+
   try {
-    const event = new Event(eventData);
-    await event.save(); // This triggers the hooks
-
-    await event.populate([
-      { path: "clientId", select: "name email phone" },
-      { path: "venueSpaceId", select: "name" }
-    ]);
-
+    await event.save();
+    await event.populate([{ path: "clientId" }, { path: "venueSpaceId" }]);
     new ApiResponse({ event }, "Event created successfully", 201).send(res);
   } catch (error) {
-    // Catch specific error messages from the Model Hook
     if (error.message.includes("conflict") || error.message.includes("End time")) {
       throw new ApiError(error.message, 400);
     }
     throw error;
   }
 });
-
 /**
  * @desc    Update event
  * @route   PUT /api/v1/events/:id
@@ -265,84 +357,60 @@ export const createEvent = asyncHandler(async (req, res) => {
 export const updateEvent = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const updateData = req.body;
-  const userVenueId = req.user.venueId._id ? req.user.venueId._id.toString() : req.user.venueId.toString();
+  const userVenueId = req.user.venueId._id || req.user.venueId;
 
-  // 1. Find Event
   let event = await Event.findById(id);
   if (!event) throw new ApiError("Event not found", 404);
+  if (event.venueId.toString() !== userVenueId.toString()) throw new ApiError("Not authorized", 403);
 
-  if (event.venueId.toString() !== userVenueId) {
-    throw new ApiError("Not authorized to update this event", 403);
-  }
-
-  // 2. Handle Client Change
+  // 1. Client Update
   if (updateData.clientId && updateData.clientId !== event.clientId.toString()) {
-    const client = await Client.findOne({ _id: updateData.clientId, venueId: userVenueId });
-    if (!client) throw new ApiError("Client not found", 404);
     event.clientId = updateData.clientId;
   }
 
-  // 3. Handle Partners -> Additional Services Conversion (Replaces old list if sent)
-  if (updateData.partners && Array.isArray(updateData.partners)) {
-    const partnerIds = updateData.partners.map(p => p.partner);
-    const dbPartners = await Partner.find({ _id: { $in: partnerIds }, venueId: userVenueId });
-
-    const newServices = [];
-    
-    updateData.partners.forEach(reqPartner => {
-      const fullPartner = dbPartners.find(p => p._id.toString() === reqPartner.partner.toString());
-      if (fullPartner) {
-        let price = 0;
-        const name = `${fullPartner.name} (${reqPartner.service || fullPartner.category})`;
-        
-        if (fullPartner.priceType === "hourly") {
-          price = (reqPartner.hours || 1) * (fullPartner.hourlyRate || 0);
-        } else {
-          price = reqPartner.cost || fullPartner.fixedRate || 0;
-        }
-        newServices.push({ name, price });
-      }
-    });
-
-    // Initialize pricing if missing
-    if (!event.pricing) event.pricing = {};
-    
-    // We append these to existing services or replace? 
-    // Assuming replace for simplicity if "partners" field is sent
-    if (!updateData.pricing) updateData.pricing = { ...event.pricing };
-    updateData.pricing.additionalServices = [
-      ...(updateData.pricing.additionalServices || []), // Keep manually added services
-      ...newServices // Add partner services
-    ];
+  // 2. Supplies Update
+  if (updateData.supplies) {
+    event.supplies = await processEventSupplies(updateData.supplies, userVenueId);
   }
 
-  // 4. Apply Updates manually to trigger 'save' hooks
-  // We cannot use findByIdAndUpdate if we want the Tax/Total & Collision hooks to run
+  // 3. Partners Update
+  if (updateData.partners) {
+    const partnerServices = await processEventPartners(updateData.partners, userVenueId);
+    if (!event.pricing) event.pricing = {};
+    // Keep non-partner services (manual ones)
+    const manualServices = (event.pricing.additionalServices || []).filter(s => s.type !== "partner_service");
+    event.pricing.additionalServices = [...manualServices, ...partnerServices];
+    event.partners = updateData.partners;
+  }
+
+  // 4. Basic Fields & Manual Pricing
+  const exclude = ["partners", "supplies", "pricing"];
   Object.keys(updateData).forEach((key) => {
-    // Skip partners field as we handled it above
-    if (key !== 'partners') {
-      event[key] = updateData[key];
-    }
+    if (!exclude.includes(key)) event[key] = updateData[key];
   });
 
-  // 5. Save (Triggers Model Hooks for Math & Collision)
-  try {
-    await event.save();
-  } catch (error) {
-    if (error.message.includes("conflict") || error.message.includes("End time")) {
-      throw new ApiError(error.message, 400);
+  if (updateData.pricing) {
+    if (!event.pricing) event.pricing = {};
+    if (updateData.pricing.basePrice !== undefined) event.pricing.basePrice = updateData.pricing.basePrice;
+    if (updateData.pricing.discountAmount !== undefined) event.pricing.discountAmount = updateData.pricing.discountAmount;
+    if (updateData.pricing.taxRate !== undefined) event.pricing.taxRate = updateData.pricing.taxRate;
+    // Manual services update
+    if (updateData.pricing.additionalServices && !updateData.partners) {
+      event.pricing.additionalServices = updateData.pricing.additionalServices;
     }
-    throw error;
   }
 
-  await event.populate([
-    { path: "clientId", select: "name email phone" },
-    { path: "venueSpaceId", select: "name" }
-  ]);
+  // 🛑 FORCE CALCULATION BEFORE SAVE
+  calculateTotals(event);
 
-  new ApiResponse({ event }, "Event updated successfully").send(res);
+  try {
+    await event.save();
+    await event.populate([{ path: "clientId" }, { path: "venueSpaceId" }]);
+    new ApiResponse({ event }, "Event updated successfully").send(res);
+  } catch (error) {
+    throw new ApiError(error.message, 400);
+  }
 });
-
 /**
  * @desc    Archive event
  * @route   DELETE /api/v1/events/:id
