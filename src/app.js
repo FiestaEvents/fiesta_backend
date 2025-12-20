@@ -7,6 +7,7 @@ import rateLimit from "express-rate-limit";
 import morgan from "morgan";
 import hpp from "hpp";
 import path from "path";
+import cookieParser from "cookie-parser";
 import { fileURLToPath } from "url";
 import config from "./config/env.js";
 import errorHandler from "./middleware/errorHandler.js";
@@ -31,9 +32,10 @@ app.use(
     origin: [
       config.frontend.url,      
       "http://localhost:3000",  
-      "http://localhost:5173"   
+      "http://localhost:5173",
+      "https://fiesta.events"   
     ],
-    credentials: true,
+    credentials: true, // Required for Cookies
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "x-venue-id"] 
   })
@@ -42,6 +44,9 @@ app.use(
 // Body parser middleware
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// ✅ 2. USE COOKIE PARSER (Critical for Auth)
+app.use(cookieParser()); 
 
 // Data sanitization against NoSQL injection
 app.use(mongoSanitize());
@@ -60,7 +65,6 @@ if (config.env === "development") {
 }
 
 // Serve Static Files (Uploaded Images)
-// Using process.cwd() is often safer than __dirname for root-relative folders
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 // Rate limiting

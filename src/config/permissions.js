@@ -1,3 +1,4 @@
+//config/permissions.js
 export const PERMISSIONS = [
   // Events
   { name: "events.create", displayName: "Create Events", module: "events", action: "create", scope: "all" },

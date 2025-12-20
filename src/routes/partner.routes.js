@@ -12,52 +12,82 @@ import {
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
 import validateRequest from "../middleware/validateRequest.js";
-import { param } from "express-validator";
+import {
+  createPartnerValidator,
+  updatePartnerValidator,
+  partnerIdValidator,
+} from "../validators/partnerValidator.js";
 
 const router = express.Router();
 
+// Apply authentication to all routes
 router.use(authenticate);
 
+// ==========================================
+// STATIC ROUTES (Must come before /:id)
+// ==========================================
+
 // Stats
-router.get("/stats", checkPermission("partners.read.all"), getPartnerStats);
+router.get(
+  "/stats", 
+  checkPermission("partners.read.all"), 
+  getPartnerStats
+);
 
-// Archived partners
-router.get("/archived", checkPermission("partners.read.all"), getArchivedPartners);
+// Archived List
+router.get(
+  "/archived", 
+  checkPermission("partners.read.all"), 
+  getArchivedPartners
+);
 
-// CRUD operations
+// ==========================================
+// RESTORE (Specific Action)
+// ==========================================
+router.patch(
+  "/:id/restore",
+  checkPermission("partners.delete.all"), // Restore often requires delete privileges
+  partnerIdValidator,
+  validateRequest,
+  restorePartner
+);
+
+// ==========================================
+// MAIN CRUD ROUTES
+// ==========================================
+
 router
   .route("/")
-  .get(checkPermission("partners.read.all"), getPartners)
-  .post(checkPermission("partners.create"), createPartner);
+  .get(
+    checkPermission("partners.read.all"), 
+    getPartners
+  )
+  .post(
+    checkPermission("partners.create"),
+    createPartnerValidator,
+    validateRequest,
+    createPartner
+  );
 
 router
   .route("/:id")
   .get(
     checkPermission("partners.read.all"),
-    param("id").isMongoId(),
+    partnerIdValidator,
     validateRequest,
     getPartner
   )
   .put(
     checkPermission("partners.update.all"),
-    param("id").isMongoId(),
+    updatePartnerValidator,
     validateRequest,
     updatePartner
   )
   .delete(
     checkPermission("partners.delete.all"),
-    param("id").isMongoId(),
+    partnerIdValidator,
     validateRequest,
     deletePartner
   );
-
-// Restore archived partner
-router.patch(
-  "/:id/restore",
-  checkPermission("partners.update.all"),
-  param("id").isMongoId(),
-  validateRequest,
-  restorePartner
-);
 
 export default router;

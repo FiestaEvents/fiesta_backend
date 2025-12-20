@@ -1,4 +1,6 @@
 import express from "express";
+import rateLimit from "express-rate-limit";
+import { param, body } from "express-validator";
 import {
   getTeamMembers,
   getTeamMember,
@@ -10,33 +12,61 @@ import {
   updateTeamMember,
   removeTeamMember,
   getTeamStats,
+  validateInvitationToken,
 } from "../controllers/teamController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
-import { param, body } from "express-validator";
 import validateRequest from "../middleware/validateRequest.js";
 
 const router = express.Router();
 
-// Public route for accepting invitations
+// ==========================================
+// CONFIGURATION
+// ==========================================
+
+// Rate limiter for validation endpoint to prevent brute-force token guessing
+const inviteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // Limit each IP to 20 requests per windowMs
+  message: "Too many attempts, please try again later",
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// ==========================================
+// 🔓 PUBLIC ROUTES (No Token Required)
+// ==========================================
+
+// 1. Validate Invitation Token (Moved UP here to avoid 401 error)
+router.get(
+  "/invitations/validate", 
+  inviteLimiter, 
+  validateInvitationToken
+);
+
+// 2. Accept Invitation
 router.post(
-  "/accept-invitation",
-  body("token").notEmpty().withMessage("Token is required"),
-  body("name").notEmpty().withMessage("Name is required"),
-  body("password")
-    .isLength({ min: 6 })
-    .withMessage("Password must be at least 6 characters"),
+  "/invitations/accept",
+  [
+    body("token").notEmpty().withMessage("Token is required"),
+    body("name").notEmpty().withMessage("Name is required"),
+    body("password")
+      .isLength({ min: 6 })
+      .withMessage("Password must be at least 6 characters"),
+  ],
   validateRequest,
   acceptInvitation
 );
 
-// Protected routes
+// ==========================================
+// 🔒 PROTECTED ROUTES (Login Required)
+// ==========================================
 router.use(authenticate);
 
-// Stats
+// --- Statistics ---
 router.get("/stats", checkPermission("users.read.all"), getTeamStats);
 
-// Invitations
+// --- Invitations Management ---
 router.get(
   "/invitations",
   checkPermission("users.read.all"),
@@ -46,8 +76,10 @@ router.get(
 router.post(
   "/invite",
   checkPermission("users.create"),
-  body("email").isEmail().withMessage("Valid email is required"),
-  body("roleId").isMongoId().withMessage("Valid role ID is required"),
+  [
+    body("email").isEmail().withMessage("Valid email is required"),
+    body("roleId").isMongoId().withMessage("Valid role ID is required"),
+  ],
   validateRequest,
   inviteTeamMember
 );
@@ -55,7 +87,7 @@ router.post(
 router.post(
   "/invitations/:id/resend",
   checkPermission("users.create"),
-  param("id").isMongoId(),
+  [param("id").isMongoId().withMessage("Invalid Invitation ID")],
   validateRequest,
   resendInvitation
 );
@@ -63,34 +95,32 @@ router.post(
 router.delete(
   "/invitations/:id",
   checkPermission("users.delete.all"),
-  param("id").isMongoId(),
+  [param("id").isMongoId().withMessage("Invalid Invitation ID")],
   validateRequest,
   cancelInvitation
 );
 
-// Team members
+// --- Team Member Management ---
 router
   .route("/")
   .get(checkPermission("users.read.all"), getTeamMembers);
 
 router
   .route("/:id")
+  .all([
+    param("id").isMongoId().withMessage("Invalid User ID"), 
+    validateRequest
+  ]) 
   .get(
-    checkPermission("users.read.all"),
-    param("id").isMongoId(),
-    validateRequest,
+    checkPermission("users.read.all"), 
     getTeamMember
   )
   .put(
     checkPermission("users.update.all"),
-    param("id").isMongoId(),
-    validateRequest,
     updateTeamMember
   )
   .delete(
     checkPermission("users.delete.all"),
-    param("id").isMongoId(),
-    validateRequest,
     removeTeamMember
   );
 

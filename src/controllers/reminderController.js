@@ -1,8 +1,9 @@
-// controllers/reminderController.js - IMPROVED VERSION
+// controllers/reminderController.js 
 import asyncHandler from "../middleware/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import { Reminder } from "../models/index.js";
-
+import { agendaService } from '../services/agenda.service.js';
+import { logger } from "../utils/logger.js";
 // ==========================================
 // @desc    Get reminders with filters and pagination
 // @route   GET /api/v1/reminders
@@ -126,6 +127,9 @@ export const createReminder = asyncHandler(async (req, res) => {
     dismissed: false
   });
 
+  // Schedule the reminder with Agenda
+  await agendaService.scheduleReminder(reminder);
+
   res.status(201).json({
     success: true,
     message: "Reminder created successfully",
@@ -149,12 +153,17 @@ export const updateReminder = asyncHandler(async (req, res) => {
     throw new ApiError("Reminder not found", 404);
   }
 
+  // Update the reminder schedule if date/time changed
+  if (req.body.reminderDate || req.body.reminderTime || req.body.status) {
+    await agendaService.updateReminderSchedule(reminder);
+  }
+
   res.status(200).json({
     success: true,
     message: "Reminder updated successfully",
     data: { reminder },
   });
-});
+}); 
 
 // ==========================================
 // @desc    Delete (archive) reminder
@@ -171,6 +180,9 @@ export const deleteReminder = asyncHandler(async (req, res) => {
   if (!reminder) {
     throw new ApiError("Reminder not found", 404);
   }
+
+  // Cancel any scheduled jobs for this reminder
+  await agendaService.cancelReminderJobs(req.params.id);
 
   res.status(200).json({
     success: true,
@@ -197,12 +209,20 @@ export const toggleComplete = asyncHandler(async (req, res) => {
   reminder.status = reminder.status === "active" ? "completed" : "active";
   await reminder.save();
 
+  // Update schedule based on new status
+  if (reminder.status === 'completed') {
+    await agendaService.cancelReminderJobs(req.params.id);
+  } else {
+    await agendaService.scheduleReminder(reminder);
+  }
+
   res.status(200).json({
     success: true,
     message: reminder.status === "completed" ? "Task completed" : "Task reactivated",
     data: { reminder },
   });
 });
+
 
 // ==========================================
 // @desc    Snooze reminder
@@ -213,7 +233,6 @@ export const snoozeReminder = asyncHandler(async (req, res) => {
   const { minutes = 15 } = req.body;
   const { id } = req.params;
   
-  // ✅ Validate minutes
   if (minutes < 5 || minutes > 1440) {
     throw new ApiError('Snooze duration must be between 5 minutes and 24 hours', 400);
   }
@@ -228,15 +247,15 @@ export const snoozeReminder = asyncHandler(async (req, res) => {
     throw new ApiError('Reminder not found', 404);
   }
 
-  // ✅ Calculate new reminder time
+  // Calculate new reminder time
   const now = new Date();
   const newReminderDateTime = new Date(now.getTime() + minutes * 60 * 1000);
   
-  // ✅ Update reminder date and time
+  // Update reminder
   reminder.reminderDate = newReminderDateTime;
   reminder.reminderTime = `${String(newReminderDateTime.getHours()).padStart(2, '0')}:${String(newReminderDateTime.getMinutes()).padStart(2, '0')}`;
   
-  // ✅ Add to snooze history
+  // Add to snooze history
   if (!reminder.snoozeHistory) {
     reminder.snoozeHistory = [];
   }
@@ -247,6 +266,9 @@ export const snoozeReminder = asyncHandler(async (req, res) => {
   });
   
   await reminder.save();
+
+  // Update the schedule with new time
+  await agendaService.updateReminderSchedule(reminder);
 
   res.status(200).json({
     success: true,
@@ -351,6 +373,9 @@ export const dismissReminder = asyncHandler(async (req, res) => {
   reminder.dismissedBy = req.user._id;
 
   await reminder.save();
+
+  // Cancel any scheduled notifications
+  await agendaService.cancelReminderJobs(req.params.id);
 
   res.status(200).json({
     success: true,

@@ -1,4 +1,3 @@
-// routes/reminderRoutes.js - COMPLETE VERSION
 import express from "express";
 import {
   getReminders,
@@ -13,33 +12,102 @@ import {
   getReminderStats,
 } from "../controllers/reminderController.js";
 import { authenticate } from "../middleware/auth.js";
+import { checkPermission } from "../middleware/checkPermission.js";
+import validateRequest from "../middleware/validateRequest.js";
+import {
+  createReminderValidator,
+  updateReminderValidator,
+  reminderIdValidator,
+  snoozeReminderValidator,
+} from "../validators/reminderValidator.js";
 
 const router = express.Router();
 
-// ============================================
-// SPECIAL ROUTES (Must come BEFORE /:id routes)
-// ============================================
-router.get("/upcoming", authenticate, getUpcomingReminders);
-router.get("/stats", authenticate, getReminderStats);
+// Apply authentication to all routes
+router.use(authenticate);
 
 // ============================================
-// MAIN CRUD ROUTES
+// SPECIAL ROUTES (Must come BEFORE /:id)
 // ============================================
-router.route("/") .get(authenticate, getReminders).post(authenticate, createReminder);
+
+// Get Upcoming (Dashboard/Widget)
+router.get(
+  "/upcoming", 
+  // checkPermission("reminders.read.own"), // Usually allowed for everyone with basic read access
+  getUpcomingReminders
+);
+
+// Statistics
+router.get(
+  "/stats", 
+  checkPermission("reminders.read.all"), 
+  getReminderStats
+);
 
 // ============================================
 // ACTION ROUTES (Specific ID operations)
 // ============================================
-router.post("/:id/snooze", authenticate, snoozeReminder);
-router.post("/:id/dismiss", authenticate, dismissReminder);
-router.patch("/:id/toggle-complete", authenticate, toggleComplete);
+
+router.post(
+  "/:id/snooze",
+  checkPermission("reminders.update.own"), // Or .all depending on policy
+  snoozeReminderValidator,
+  validateRequest,
+  snoozeReminder
+);
+
+router.post(
+  "/:id/dismiss",
+  checkPermission("reminders.update.own"),
+  reminderIdValidator,
+  validateRequest,
+  dismissReminder
+);
+
+router.patch(
+  "/:id/toggle-complete",
+  checkPermission("reminders.update.own"),
+  reminderIdValidator,
+  validateRequest,
+  toggleComplete
+);
 
 // ============================================
-// STANDARD ID ROUTES (Must come LAST)
+// MAIN CRUD ROUTES
 // ============================================
-router.route("/:id")
-  .get(authenticate, getReminder)
-  .put(authenticate, updateReminder)
-  .delete(authenticate, deleteReminder);
+
+router
+  .route("/")
+  .get(
+    checkPermission("reminders.read.all"),
+    getReminders
+  )
+  .post(
+    checkPermission("reminders.create"),
+    createReminderValidator,
+    validateRequest,
+    createReminder
+  );
+
+router
+  .route("/:id")
+  .get(
+    checkPermission("reminders.read.all"),
+    reminderIdValidator,
+    validateRequest,
+    getReminder
+  )
+  .put(
+    checkPermission("reminders.update.all"),
+    updateReminderValidator,
+    validateRequest,
+    updateReminder
+  )
+  .delete(
+    checkPermission("reminders.delete.all"),
+    reminderIdValidator,
+    validateRequest,
+    deleteReminder
+  );
 
 export default router;

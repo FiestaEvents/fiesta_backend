@@ -1,63 +1,38 @@
 import http from "http";
-import { Server } from "socket.io";
 import app from "./app.js";
 import config from "./config/env.js";
 import connectDB from "./config/database.js";
-import { initCronJobs } from "./utils/cron.service.js"; 
+import { agendaService } from "./services/agenda.service.js";
+import { initializeSocketIO } from "./services/socket.service.js";
 
-// Handle uncaught exceptions
+// =========================================================
+// GLOBAL ERROR HANDLERS
+// =========================================================
 process.on("uncaughtException", (err) => {
   console.error("❌ UNCAUGHT EXCEPTION! Shutting down...");
   console.error(err.name, err.message);
   process.exit(1);
 });
 
-// Connect to database
-connectDB();
+// =========================================================
+// DATABASE CONNECTION
+// =========================================================
+await connectDB();
 
 // =========================================================
-// SOCKET.IO SETUP
+// HTTP + SOCKET.IO SETUP
 // =========================================================
 
-// 1. Create the HTTP Server explicitly (wrapping Express)
+// 1. Create HTTP server
 const httpServer = http.createServer(app);
 
-// 2. Initialize Socket.io
-const io = new Server(httpServer, {
-  cors: {
-    origin: [
-      config.frontend.url,
-      "http://localhost:3000",
-      "http://localhost:5173"
-    ],
-    methods: ["GET", "POST"],
-    credentials: true
-  }
-});
-
-// 3. Make 'io' global so Cron Service can use it
-global.io = io;
-
-// 4. Socket Connection Logic (Optional Debugging)
-io.on("connection", (socket) => {
-  console.log("⚡ Client connected via Socket:", socket.id);
-
-  socket.on("join_room", (room) => {
-    socket.join(room);
-    console.log(`👤 Socket joined room: ${room}`);
-  });
-
-  socket.on("disconnect", () => {
-    // console.log("❌ Client disconnected");
-  });
-});
+// 2. Initialize Socket.io (your service)
+initializeSocketIO(httpServer);
 
 // =========================================================
 // START SERVER
 // =========================================================
-
-// Note: We listen on 'httpServer', NOT 'app'
-const server = httpServer.listen(config.port, () => {
+const server = httpServer.listen(config.port, async () => {
   console.log(`
   ╔═══════════════════════════════════════════════════════╗
   ║                                                       ║
@@ -71,24 +46,33 @@ const server = httpServer.listen(config.port, () => {
   ║                                                       ║
   ╚═══════════════════════════════════════════════════════╝
   `);
-  
-  // Initialize Cron Jobs AFTER server starts
-  initCronJobs();
+
+  // 3. Initialize Agenda AFTER DB + Socket are ready
+  await agendaService.initialize();
 });
 
-// Handle unhandled promise rejections
+// =========================================================
+// SHUTDOWN HANDLING
+// =========================================================
+
+// Unhandled promise rejections
 process.on("unhandledRejection", (err) => {
   console.error("❌ UNHANDLED REJECTION! Shutting down...");
   console.error(err.name, err.message);
-  server.close(() => {
+
+  server.close(async () => {
+    await agendaService.stop();
     process.exit(1);
   });
 });
 
-// Handle SIGTERM
-process.on("SIGTERM", () => {
+// SIGTERM (Docker / PM2 / Railway / etc.)
+process.on("SIGTERM", async () => {
   console.log("👋 SIGTERM RECEIVED. Shutting down gracefully...");
-  server.close(() => {
+
+  server.close(async () => {
+    await agendaService.stop();
     console.log("💤 Process terminated!");
+    process.exit(0);
   });
 });

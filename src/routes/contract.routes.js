@@ -1,5 +1,4 @@
 import express from "express";
-import { authenticate } from "../middleware/auth.js";
 import {
   // CRUD
   getContracts,
@@ -22,53 +21,147 @@ import {
   getContractStats,
   downloadContractPdf,
 } from "../controllers/contractController.js";
+import { authenticate } from "../middleware/auth.js";
+import { checkPermission } from "../middleware/checkPermission.js";
+import validateRequest from "../middleware/validateRequest.js";
+import {
+  createContractValidator,
+  updateContractValidator,
+  contractIdValidator,
+  contractSettingsValidator,
+} from "../validators/contractValidator.js";
 
 const router = express.Router();
 
-// All routes require authentication
+// Apply authentication to all routes
 router.use(authenticate);
 
 // ============================================
-// SETTINGS (Must be before /:id routes)
+// SETTINGS (Must come before /:id)
 // ============================================
-router.route("/settings")
-  .get(getContractSettings)
-  .put(updateContractSettings);
+router
+  .route("/settings")
+  .get(
+    checkPermission("venue.read"), // Settings usually fall under venue permissions
+    getContractSettings
+  )
+  .put(
+    checkPermission("venue.update"),
+    contractSettingsValidator, // Validate settings payload
+    validateRequest,
+    updateContractSettings
+  );
 
 // ============================================
-// STATS (Must be before /:id routes)
+// STATS
 // ============================================
-router.get("/stats", getContractStats);
+router.get(
+  "/stats",
+  checkPermission("contracts.read.all"),
+  getContractStats
+);
 
 // ============================================
-// CRUD OPERATIONS
+// MAIN CRUD
 // ============================================
-router.route("/")
-  .get(getContracts)
-  .post(createContract);
-
-router.route("/:id")
-  .get(getContractById)
-  .put(updateContract)
-  .delete(deleteContract);
-
-// ============================================
-// ARCHIVE & RESTORE
-// ============================================
-router.patch("/:id/archive", archiveContract);
-router.patch("/:id/restore", restoreContract);
+router
+  .route("/")
+  .get(
+    checkPermission("contracts.read.all"),
+    getContracts
+  )
+  .post(
+    checkPermission("contracts.create"),
+    createContractValidator,
+    validateRequest,
+    createContract
+  );
 
 // ============================================
-// ACTIONS
+// ACTIONS (Specific Operations)
 // ============================================
-router.post("/:id/send", sendContract);
-router.post("/:id/duplicate", duplicateContract);
-router.patch("/:id/view", markContractViewed);
-router.post("/:id/sign", signContract);
+
+// Download
+router.get(
+  "/:id/download",
+  checkPermission("contracts.read.all"),
+  contractIdValidator,
+  validateRequest,
+  downloadContractPdf
+);
+
+// Archive/Restore
+router.patch(
+  "/:id/archive",
+  checkPermission("contracts.delete.all"),
+  contractIdValidator,
+  validateRequest,
+  archiveContract
+);
+
+router.patch(
+  "/:id/restore",
+  checkPermission("contracts.update.all"),
+  contractIdValidator,
+  validateRequest,
+  restoreContract
+);
+
+// Business Logic Actions
+router.post(
+  "/:id/send",
+  checkPermission("contracts.update.all"),
+  contractIdValidator,
+  validateRequest,
+  sendContract
+);
+
+router.post(
+  "/:id/duplicate",
+  checkPermission("contracts.create"),
+  contractIdValidator,
+  validateRequest,
+  duplicateContract
+);
+
+router.patch(
+  "/:id/view",
+  checkPermission("contracts.read.all"),
+  contractIdValidator,
+  validateRequest,
+  markContractViewed
+);
+
+router.post(
+  "/:id/sign",
+  checkPermission("contracts.update.all"),
+  contractIdValidator,
+  validateRequest,
+  signContract
+);
 
 // ============================================
-// DOWNLOAD PDF
+// DYNAMIC ROUTES (/:id)
 // ============================================
-router.get("/:id/download", downloadContractPdf);
+router
+  .route("/:id")
+  .get(
+    checkPermission("contracts.read.all"),
+    contractIdValidator,
+    validateRequest,
+    getContractById
+  )
+  .put(
+    checkPermission("contracts.update.all"),
+    updateContractValidator,
+    validateRequest,
+    updateContract
+  )
+  .delete(
+    checkPermission("contracts.delete.all"),
+    contractIdValidator,
+    validateRequest,
+    deleteContract
+  );
 
 export default router;

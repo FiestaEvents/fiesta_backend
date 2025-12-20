@@ -18,7 +18,7 @@ import Contract from "./Contract.js";
 import ContractSettings from "./ContractSettings.js";
 import Supply from "./Supply.js";
 import SupplyCategory from "./SupplyCategory.js";
-
+import ActivityLog from "./ActivityLog.js";
 export {
   User,
   Venue,
@@ -39,4 +39,5 @@ export {
   ContractSettings,
   Supply,
   SupplyCategory,
+  ActivityLog,
 };

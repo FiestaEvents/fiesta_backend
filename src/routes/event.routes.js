@@ -18,7 +18,7 @@ import validateRequest from "../middleware/validateRequest.js";
 import {
   createEventValidator,
   updateEventValidator,
-  getEventValidator,
+  getEventValidator, // Used for ID validation
   listEventsValidator,
 } from "../validators/eventValidator.js";
 
@@ -27,52 +27,80 @@ const router = express.Router();
 // =============================================================================
 // GLOBAL MIDDLEWARE
 // =============================================================================
-// All event routes require the user to be logged in
 router.use(authenticate);
 
 // =============================================================================
-// SPECIALIZED ROUTES (Must come before /:id)
+// STATIC & SPECIALIZED ROUTES (Must come before /:id)
 // =============================================================================
 
 // 1. Statistics
-router.get("/stats", checkPermission("events.read.all"), getEventStats);
+router.get(
+  "/stats", 
+  checkPermission("events.read.all"), 
+  getEventStats
+);
 
 // 2. Events by Client
 router.get(
-  "/client/:clientId",
+  "/client/:clientId", // Changed path slightly for clarity (/api/v1/events/client/:id)
   checkPermission("events.read.all"),
+  // Assuming you might want to validate clientId here, 
+  // otherwise Mongoose will throw if invalid ID
   getEventsByClient
 );
 
-// 3. Restore Archived Event
-// Uses PATCH because it's a partial update to status
+// =============================================================================
+// SUPPLY MANAGEMENT (Sub-resources of Event)
+// =============================================================================
+// These modify the event, so they require update permissions
+
+router.post(
+  "/:id/supplies/allocate",
+  checkPermission("events.update.all"),
+  getEventValidator, // Validates :id
+  validateRequest,
+  allocateEventSupplies
+);
+
+router.post(
+  "/:id/supplies/return",
+  checkPermission("events.update.all"),
+  getEventValidator,
+  validateRequest,
+  returnEventSupplies
+);
+
+router.patch(
+  "/:id/supplies/delivered",
+  checkPermission("events.update.all"),
+  getEventValidator,
+  validateRequest,
+  markSuppliesDelivered
+);
+
+// =============================================================================
+// RESTORE ARCHIVED
+// =============================================================================
 router.patch(
   "/:id/restore",
-  checkPermission("events.delete.all"),
+  checkPermission("events.delete.all"), // Restoration usually requires delete privs
+  getEventValidator,
+  validateRequest,
   restoreEvent
 );
 
 // =============================================================================
-// CRUD ROUTES
+// MAIN CRUD ROUTES
 // =============================================================================
 
 router
   .route("/")
-  /**
-   * @route   GET /api/v1/events
-   * @desc    Get all events (supports filtering & ?includeArchived=true)
-   */
   .get(
     checkPermission("events.read.all"),
     listEventsValidator,
     validateRequest,
     getEvents
   )
-
-  /**
-   * @route   POST /api/v1/events
-   * @desc    Create a new event
-   */
   .post(
     checkPermission("events.create"),
     createEventValidator,
@@ -82,40 +110,23 @@ router
 
 router
   .route("/:id")
-  /**
-   * @route   GET /api/v1/events/:id
-   * @desc    Get single event details
-   */
   .get(
     checkPermission("events.read.all"),
     getEventValidator,
     validateRequest,
     getEvent
   )
-
-  /**
-   * @route   PUT /api/v1/events/:id
-   * @desc    Update an event
-   */
   .put(
     checkPermission("events.update.all"),
     updateEventValidator,
     validateRequest,
     updateEvent
   )
-
-  /**
-   * @route   DELETE /api/v1/events/:id
-   * @desc    Archive (Soft Delete) an event
-   */
   .delete(
     checkPermission("events.delete.all"),
-    getEventValidator, // Ensures ID is valid MongoID
+    getEventValidator,
     validateRequest,
     archiveEvent
   );
-//  Add supply management endpoints
-router.post("/:id/supplies/allocate", allocateEventSupplies);
-router.post("/:id/supplies/return", returnEventSupplies);
-router.patch("/:id/supplies/delivered", markSuppliesDelivered);
+
 export default router;

@@ -15,24 +15,42 @@ import validateRequest from "../middleware/validateRequest.js";
 import {
   createClientValidator,
   updateClientValidator,
-  getClientValidator,
+  getClientValidator, // Used for ID validation on GET/DELETE/RESTORE
 } from "../validators/clientValidator.js";
 
 const router = express.Router();
 
+// Apply authentication to all routes
 router.use(authenticate);
 
+// ==========================================
+// STATIC ROUTES (Must come before /:id)
+// ==========================================
+
 // Stats
-router.get("/stats", checkPermission("clients.read.all"), getClientStats);
+router.get(
+  "/stats", 
+  checkPermission("clients.read.all"), 
+  getClientStats
+);
 
-// Archive routes
-router.get("/archived", checkPermission("clients.read.all"), getArchivedClients);
-router.patch("/:id/restore", checkPermission("clients.delete.all"), restoreClient);
+// Archived List
+router.get(
+  "/archived", 
+  checkPermission("clients.read.all"), 
+  getArchivedClients
+);
 
-// CRUD operations
+// ==========================================
+// MAIN ROUTES
+// ==========================================
+
 router
   .route("/")
-  .get(checkPermission("clients.read.all"), getClients)
+  .get(
+    checkPermission("clients.read.all"), 
+    getClients // Add getClientsValidator if you have query params validation
+  )
   .post(
     checkPermission("clients.create"),
     createClientValidator,
@@ -40,6 +58,20 @@ router
     createClient
   );
 
+// ==========================================
+// DYNAMIC ROUTES (/:id)
+// ==========================================
+
+// Restore Client
+router.patch(
+  "/:id/restore",
+  checkPermission("clients.delete.all"), // Usually requires same perm as archive
+  getClientValidator, // Validates ID
+  validateRequest,
+  restoreClient
+);
+
+// Single Client Operations
 router
   .route("/:id")
   .get(
@@ -58,7 +90,7 @@ router
     checkPermission("clients.delete.all"),
     getClientValidator,
     validateRequest,
-    archiveClient  // Changed from deleteClient to archiveClient
+    archiveClient
   );
 
 export default router;

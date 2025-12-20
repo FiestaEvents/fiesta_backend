@@ -1,104 +1,96 @@
+import { Role, Permission } from "../models/index.js";
 import asyncHandler from "../middleware/asyncHandler.js";
-import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import { Role, Permission, User } from "../models/index.js";
+import ApiError from "../utils/ApiError.js";
+
+/**
+ * Helper to safely get ID string
+ */
+const getVenueId = (user) => {
+  if (!user || !user.venueId) return null;
+  // If venueId is an object (populated), return its _id, otherwise return the value itself
+  return user.venueId._id ? user.venueId._id : user.venueId;
+};
 
 /**
  * @desc    Get all roles
  * @route   GET /api/v1/roles
- * @access  Private (roles.read.all)
  */
 export const getRoles = asyncHandler(async (req, res) => {
-  const roles = await Role.find({
-    venueId: req.user.venueId,
-    isActive: true,
-  })
-    .populate("permissions")
-    .populate("createdBy", "name email")
-    .sort({ level: -1 });
+  const { page = 1, limit = 10, search } = req.query;
+  
+  // ✅ FIX: Safely extract Venue ID
+  const venueId = getVenueId(req.user);
 
-  // Get user count for each role
-  const rolesWithUserCount = await Promise.all(
-    roles.map(async (role) => {
-      const userCount = await User.countDocuments({ roleId: role._id });
-      return {
-        ...role.toObject(),
-        userCount,
-      };
-    })
-  );
+  if (!venueId) {
+    throw new ApiError("User is not associated with a venue", 400);
+  }
 
-  new ApiResponse({ roles: rolesWithUserCount }).send(res);
+  const query = { 
+    venueId, 
+    isArchived: false 
+  };
+
+  if (search) {
+    query.name = { $regex: search, $options: "i" };
+  }
+
+  // Debug Log
+  console.log(`🔍 [GetRoles] Querying for VenueID: ${venueId}`);
+
+  const roles = await Role.find(query)
+    .populate("permissions", "name displayName module action")
+    .sort({ level: -1, createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(parseInt(limit));
+
+  const total = await Role.countDocuments(query);
+
+  new ApiResponse({ roles, total }, "Roles retrieved").send(res);
 });
 
 /**
  * @desc    Get single role
  * @route   GET /api/v1/roles/:id
- * @access  Private (roles.read.all)
  */
 export const getRole = asyncHandler(async (req, res) => {
-  const role = await Role.findOne({
-    _id: req.params.id,
-    venueId: req.user.venueId,
-  })
-    .populate("permissions")
-    .populate("createdBy", "name email");
+  const venueId = getVenueId(req.user);
+  
+  const role = await Role.findOne({ 
+    _id: req.params.id, 
+    venueId 
+  }).populate("permissions");
 
-  if (!role) {
-    throw new ApiError("Role not found", 404);
-  }
+  if (!role) throw new ApiError("Role not found", 404);
 
-  // Get users with this role
-  const users = await User.find({ roleId: role._id })
-    .select("name email avatar")
-    .limit(10);
-
-  new ApiResponse({
-    role: {
-      ...role.toObject(),
-      users,
-    },
-  }).send(res);
+  new ApiResponse({ role }).send(res);
 });
 
 /**
  * @desc    Create new role
  * @route   POST /api/v1/roles
- * @access  Private (roles.create)
  */
 export const createRole = asyncHandler(async (req, res) => {
-  const { name, description, permissionIds, level } = req.body;
+  const { name, description, permissionIds } = req.body;
+  const venueId = getVenueId(req.user);
 
-  // Check if role name already exists in this venue
-  const existingRole = await Role.findOne({
-    name,
-    venueId: req.user.venueId,
+  // Check uniqueness (case insensitive for user friendliness)
+  const existingRole = await Role.findOne({ 
+    name: { $regex: new RegExp(`^${name}$`, "i") }, 
+    venueId, 
+    isArchived: false 
   });
-
-  if (existingRole) {
-    throw new ApiError("Role with this name already exists", 400);
-  }
-
-  // Verify all permissions exist
-  const permissions = await Permission.find({
-    _id: { $in: permissionIds },
-  });
-
-  if (permissions.length !== permissionIds.length) {
-    throw new ApiError("Some permissions are invalid", 400);
-  }
+  
+  if (existingRole) throw new ApiError("Role with this name already exists", 400);
 
   const role = await Role.create({
     name,
     description,
     permissions: permissionIds,
-    level: level || 50,
-    venueId: req.user.venueId,
-    createdBy: req.user._id,
-    isSystemRole: false,
+    venueId,
+    level: 10, // Default custom level
+    isSystemRole: false
   });
-
-  await role.populate("permissions");
 
   new ApiResponse({ role }, "Role created successfully", 201).send(res);
 });
@@ -106,117 +98,82 @@ export const createRole = asyncHandler(async (req, res) => {
 /**
  * @desc    Update role
  * @route   PUT /api/v1/roles/:id
- * @access  Private (roles.update.all)
  */
 export const updateRole = asyncHandler(async (req, res) => {
-  const { name, description, permissionIds, level, isActive } = req.body;
+  const { name, description, permissionIds } = req.body;
+  const venueId = getVenueId(req.user);
 
-  const role = await Role.findOne({
-    _id: req.params.id,
-    venueId: req.user.venueId,
+  const role = await Role.findOne({ 
+    _id: req.params.id, 
+    venueId 
   });
 
-  if (!role) {
-    throw new ApiError("Role not found", 404);
+  if (!role) throw new ApiError("Role not found", 404);
+
+  // Allow updating permissions of system roles, but NOT their names
+  if (role.isSystemRole && name && name !== role.name) {
+     throw new ApiError("Cannot rename system roles", 403);
+  }
+  
+  // Protect Owner role completely
+  if (role.name === "Owner") {
+     throw new ApiError("Cannot modify the Owner role", 403);
   }
 
-  if (role.isSystemRole) {
-    throw new ApiError("Cannot modify system roles", 400);
-  }
-
-  // Check if new name conflicts with existing role
-  if (name && name !== role.name) {
-    const existingRole = await Role.findOne({
-      name,
-      venueId: req.user.venueId,
-      _id: { $ne: role._id },
-    });
-
-    if (existingRole) {
-      throw new ApiError("Role with this name already exists", 400);
-    }
-  }
-
-  // Verify permissions if being updated
-  if (permissionIds) {
-    const permissions = await Permission.find({
-      _id: { $in: permissionIds },
-    });
-
-    if (permissions.length !== permissionIds.length) {
-      throw new ApiError("Some permissions are invalid", 400);
-    }
-  }
-
-  // Update fields
   if (name) role.name = name;
   if (description) role.description = description;
   if (permissionIds) role.permissions = permissionIds;
-  if (level !== undefined) role.level = level;
-  if (isActive !== undefined) role.isActive = isActive;
 
   await role.save();
-  await role.populate("permissions");
 
-  new ApiResponse({ role }, "Role updated successfully").send(res);
+  // Return populated to update UI
+  const updatedRole = await Role.findById(role._id).populate("permissions");
+
+  new ApiResponse({ role: updatedRole }, "Role updated successfully").send(res);
 });
 
 /**
  * @desc    Delete role
  * @route   DELETE /api/v1/roles/:id
- * @access  Private (roles.delete.all)
  */
 export const deleteRole = asyncHandler(async (req, res) => {
-  const role = await Role.findOne({
-    _id: req.params.id,
-    venueId: req.user.venueId,
+  const venueId = getVenueId(req.user);
+  
+  const role = await Role.findOne({ 
+    _id: req.params.id, 
+    venueId 
   });
 
-  if (!role) {
-    throw new ApiError("Role not found", 404);
-  }
+  if (!role) throw new ApiError("Role not found", 404);
+  if (role.isSystemRole) throw new ApiError("Cannot delete system roles", 403);
 
-  if (role.isSystemRole) {
-    throw new ApiError("Cannot delete system roles", 400);
-  }
-
-  // Check if any users have this role
-  const usersWithRole = await User.countDocuments({ roleId: role._id });
-
+  // Check if users are assigned to this role
+  const { User } = await import("../models/index.js"); // Dynamic import to avoid circular dependency
+  const usersWithRole = await User.countDocuments({ roleId: role._id, isArchived: false });
+  
   if (usersWithRole > 0) {
-    throw new ApiError(
-      `Cannot delete role. ${usersWithRole} user(s) are assigned to this role.`,
-      400
-    );
+    throw new ApiError(`Cannot delete role. It is assigned to ${usersWithRole} users.`, 400);
   }
 
-  await role.deleteOne();
+  // Soft delete
+  role.isArchived = true;
+  await role.save();
 
   new ApiResponse(null, "Role deleted successfully").send(res);
 });
 
 /**
- * @desc    Get all permissions
+ * @desc    Get permissions list
  * @route   GET /api/v1/roles/permissions
- * @access  Private (roles.read.all)
  */
 export const getPermissions = asyncHandler(async (req, res) => {
-  const permissions = await Permission.find({ isActive: true }).sort({
-    module: 1,
-    action: 1,
-  });
-
-  // Group by module
-  const groupedPermissions = permissions.reduce((acc, perm) => {
-    if (!acc[perm.module]) {
-      acc[perm.module] = [];
-    }
-    acc[perm.module].push(perm);
+  const permissions = await Permission.find({ isActive: true }).sort({ module: 1 });
+  
+  const grouped = permissions.reduce((acc, curr) => {
+    if (!acc[curr.module]) acc[curr.module] = [];
+    acc[curr.module].push(curr);
     return acc;
   }, {});
 
-  new ApiResponse({
-    permissions,
-    grouped: groupedPermissions,
-  }).send(res);
+  new ApiResponse({ permissions: grouped, raw: permissions }).send(res);
 });

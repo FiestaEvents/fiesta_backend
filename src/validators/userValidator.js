@@ -1,3 +1,4 @@
+//src/validators/userValidator.js
 import { body, param, query } from "express-validator";
 
 // Common validation rules

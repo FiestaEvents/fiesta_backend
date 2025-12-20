@@ -1,3 +1,4 @@
+//src/config/roles.js
 export const DEFAULT_ROLES = [
   {
     name: "Owner",

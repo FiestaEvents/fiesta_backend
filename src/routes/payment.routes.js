@@ -16,41 +16,64 @@ import validateRequest from "../middleware/validateRequest.js";
 import {
   createPaymentValidator,
   updatePaymentValidator,
+  paymentIdValidator,
 } from "../validators/paymentValidator.js";
-import { param } from "express-validator";
 
 const router = express.Router();
 
+// Apply authentication to all routes
 router.use(authenticate);
 
+// ==========================================
+// STATIC ROUTES (Must come before /:id)
+// ==========================================
+
 // Stats
-router.get("/stats", checkPermission("payments.read.all"), getPaymentStats);
+router.get(
+  "/stats",
+  checkPermission("payments.read.all"),
+  getPaymentStats
+);
 
-// Archived payments
-router.get("/archived", checkPermission("payments.read.all"), getArchivedPayments);
+// Archived Payments
+router.get(
+  "/archived",
+  checkPermission("payments.read.all"),
+  getArchivedPayments
+);
 
-// Refund
+// ==========================================
+// SPECIFIC ACTIONS (Dynamic)
+// ==========================================
+
+// Process Refund
 router.post(
   "/:id/refund",
   checkPermission("payments.update.all"),
-  param("id").isMongoId(),
+  paymentIdValidator,
   validateRequest,
   processRefund
 );
 
-// Restore archived payment
+// Restore Archived Payment
 router.patch(
   "/:id/restore",
-  checkPermission("payments.update.all"),
-  param("id").isMongoId(),
+  checkPermission("payments.delete.all"), // Restore typically aligns with delete permissions
+  paymentIdValidator,
   validateRequest,
   restorePayment
 );
 
-// CRUD operations
+// ==========================================
+// MAIN CRUD ROUTES
+// ==========================================
+
 router
   .route("/")
-  .get(checkPermission("payments.read.all"), getPayments)
+  .get(
+    checkPermission("payments.read.all"), 
+    getPayments
+  )
   .post(
     checkPermission("payments.create"),
     createPaymentValidator,
@@ -62,7 +85,7 @@ router
   .route("/:id")
   .get(
     checkPermission("payments.read.all"),
-    param("id").isMongoId(),
+    paymentIdValidator,
     validateRequest,
     getPayment
   )
@@ -74,7 +97,7 @@ router
   )
   .delete(
     checkPermission("payments.delete.all"),
-    param("id").isMongoId(),
+    paymentIdValidator,
     validateRequest,
     deletePayment
   );

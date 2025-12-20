@@ -17,45 +17,95 @@ import {
 } from "../controllers/financeController.js";
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
-import { param, body } from "express-validator";
 import validateRequest from "../middleware/validateRequest.js";
+import {
+  createFinanceValidator,
+  updateFinanceValidator,
+  financeIdValidator,
+  // dateRangeValidator, // Optional: if you have query params for reports
+} from "../validators/financeValidator.js";
 
 const router = express.Router();
 
+// Apply authentication to all routes
 router.use(authenticate);
 
-// Reports and analytics
-router.get("/summary", checkPermission("finance.read.all"), getFinancialSummary);
-router.get("/cashflow", checkPermission("finance.read.all"), getCashFlowReport);
-router.get("/expenses/breakdown", checkPermission("finance.read.all"), getExpenseBreakdown);
-router.get("/income/breakdown", checkPermission("finance.read.all"), getIncomeBreakdown);
-router.get("/profit-loss", checkPermission("finance.read.all"), getProfitLossStatement);
-router.get("/trends", checkPermission("finance.read.all"), getFinancialTrends);
-router.get("/tax-summary", checkPermission("finance.read.all"), getTaxSummary);
+// ==========================================
+// REPORTS & ANALYTICS (Static Routes)
+// ==========================================
+router.get(
+  "/summary",
+  checkPermission("finance.read.all"),
+  getFinancialSummary
+);
 
-// Archived records
-router.get("/archived", checkPermission("finance.read.all"), getArchivedFinanceRecords);
+router.get(
+  "/cashflow",
+  checkPermission("finance.read.all"),
+  getCashFlowReport
+);
 
-// Restore archived record
+router.get(
+  "/expenses/breakdown",
+  checkPermission("finance.read.all"),
+  getExpenseBreakdown
+);
+
+router.get(
+  "/income/breakdown",
+  checkPermission("finance.read.all"),
+  getIncomeBreakdown
+);
+
+router.get(
+  "/profit-loss",
+  checkPermission("finance.read.all"),
+  getProfitLossStatement
+);
+
+router.get(
+  "/trends",
+  checkPermission("finance.read.all"),
+  getFinancialTrends
+);
+
+router.get(
+  "/tax-summary",
+  checkPermission("finance.read.all"),
+  getTaxSummary
+);
+
+// ==========================================
+// ARCHIVE MANAGEMENT
+// ==========================================
+router.get(
+  "/archived",
+  checkPermission("finance.read.all"),
+  getArchivedFinanceRecords
+);
+
+// Restore logic (Moved before generic /:id to prevent collision)
 router.patch(
   "/:id/restore",
-  checkPermission("finance.update.all"),
-  param("id").isMongoId(),
+  checkPermission("finance.delete.all"), // Using delete permission as it reverses archiving
+  financeIdValidator,
   validateRequest,
   restoreFinanceRecord
 );
 
-// CRUD operations
+// ==========================================
+// CRUD OPERATIONS
+// ==========================================
+
 router
   .route("/")
-  .get(checkPermission("finance.read.all"), getFinanceRecords)
+  .get(
+    checkPermission("finance.read.all"),
+    getFinanceRecords
+  )
   .post(
     checkPermission("finance.create"),
-    body("type").isIn(["income", "expense"]).withMessage("Invalid type"),
-    body("category").notEmpty().withMessage("Category is required"),
-    body("description").notEmpty().withMessage("Description is required"),
-    body("amount").isFloat({ min: 0 }).withMessage("Amount must be a positive number"),
-    body("date").isISO8601().withMessage("Invalid date format"),
+    createFinanceValidator, // abstracted validation logic
     validateRequest,
     createFinanceRecord
   );
@@ -64,19 +114,19 @@ router
   .route("/:id")
   .get(
     checkPermission("finance.read.all"),
-    param("id").isMongoId(),
+    financeIdValidator,
     validateRequest,
     getFinanceRecord
   )
   .put(
     checkPermission("finance.update.all"),
-    param("id").isMongoId(),
+    updateFinanceValidator, // checks ID and body
     validateRequest,
     updateFinanceRecord
   )
   .delete(
     checkPermission("finance.delete.all"),
-    param("id").isMongoId(),
+    financeIdValidator,
     validateRequest,
     deleteFinanceRecord
   );

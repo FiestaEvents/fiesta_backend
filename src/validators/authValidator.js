@@ -1,247 +1,134 @@
 import { body } from "express-validator";
 
 // =========================================================
-// PASSWORD REQUIREMENTS (Simplified)
+// CONFIGURATION & CONSTANTS
 // =========================================================
-const PASSWORD_REQUIREMENTS = {
-  MIN_LENGTH: 8,
-  MAX_LENGTH: 128,
-  ERROR_MESSAGE: "Password must be at least 8 characters long"
+const LIMITS = {
+  NAME: { min: 2, max: 50 },
+  EMAIL: { max: 100 },
+  PASSWORD: { min: 8, max: 128 },
+  PHONE: { max: 20 },
+  VENUE_NAME: { min: 2, max: 100 },
+  DESC: { max: 500 },
+  ADDRESS: { max: 200 },
+  CITY_STATE_COUNTRY: { max: 100 },
+  URL: { max: 500 },
 };
 
 // =========================================================
-// REGISTER VALIDATOR
+// REUSABLE VALIDATION RULES
 // =========================================================
-export const registerValidator = [
-  body("name")
+const commonRules = {
+  email: body("email")
     .trim()
-    .notEmpty()
-    .withMessage("Name is required")
-    .isLength({ min: 2, max: 50 })
-    .withMessage("Name must be between 2 and 50 characters"),
-
-  body("email")
-    .trim()
-    .notEmpty()
-    .withMessage("Email is required")
-    .isEmail()
-    .withMessage("Please provide a valid email")
+    .notEmpty().withMessage("Email is required")
+    .isEmail().withMessage("Please provide a valid email")
     .normalizeEmail()
-    .isLength({ max: 100 })
-    .withMessage("Email must be less than 100 characters"),
+    .isLength({ max: LIMITS.EMAIL.max }).withMessage(`Email too long (max ${LIMITS.EMAIL.max} chars)`),
 
-  body("password")
-    .notEmpty()
-    .withMessage("Password is required")
-    .isLength({ min: PASSWORD_REQUIREMENTS.MIN_LENGTH })
-    .withMessage(PASSWORD_REQUIREMENTS.ERROR_MESSAGE)
-    .isLength({ max: PASSWORD_REQUIREMENTS.MAX_LENGTH })
-    .withMessage(`Password must be less than ${PASSWORD_REQUIREMENTS.MAX_LENGTH} characters`),
+  name: body("name")
+    .trim()
+    .notEmpty().withMessage("Name is required")
+    .isLength(LIMITS.NAME).withMessage(`Name must be between ${LIMITS.NAME.min} and ${LIMITS.NAME.max} characters`),
 
-  body("confirmPassword")
-    .notEmpty()
-    .withMessage("Please confirm your password")
-    .custom((value, { req }) => {
-      if (value !== req.body.password) {
-        throw new Error("Passwords do not match");
-      }
-      return true;
-    }),
+  // Enforces strong password constraints (for Register/Reset/Change)
+  strongPassword: (fieldName = "password") => 
+    body(fieldName)
+      .notEmpty().withMessage(`${fieldName} is required`)
+      .isLength(LIMITS.PASSWORD).withMessage(`Password must be between ${LIMITS.PASSWORD.min} and ${LIMITS.PASSWORD.max} characters`),
+
+  // Simple check for login (just existence)
+  simplePassword: (fieldName = "password") =>
+    body(fieldName).notEmpty().withMessage(`${fieldName} is required`),
+
+  confirmPassword: (compareField = "password") =>
+    body("confirmPassword")
+      .notEmpty().withMessage("Please confirm your password")
+      .custom((value, { req }) => {
+        if (value !== req.body[compareField]) throw new Error("Passwords do not match");
+        return true;
+      }),
+
+  phone: body("phone")
+    .optional()
+    .trim()
+    .isMobilePhone("any").withMessage("Invalid phone number")
+    .isLength({ max: LIMITS.PHONE.max }).withMessage(`Phone too long (max ${LIMITS.PHONE.max} chars)`),
+};
+
+// =========================================================
+// ROUTE SPECIFIC VALIDATORS
+// =========================================================
+
+export const registerValidator = [
+  commonRules.name,
+  commonRules.email,
+  commonRules.strongPassword("password"),
+  commonRules.confirmPassword("password"),
+  commonRules.phone,
 
   body("venueName")
     .trim()
-    .notEmpty()
-    .withMessage("Venue name is required")
-    .isLength({ min: 2, max: 100 })
-    .withMessage("Venue name must be between 2 and 100 characters"),
-
-  body("phone")
-    .optional()
-    .trim()
-    .isMobilePhone()
-    .withMessage("Please provide a valid phone number")
-    .isLength({ max: 20 })
-    .withMessage("Phone number must be less than 20 characters"),
+    .notEmpty().withMessage("Venue name is required")
+    .isLength(LIMITS.VENUE_NAME).withMessage(`Venue name must be between ${LIMITS.VENUE_NAME.min} and ${LIMITS.VENUE_NAME.max} chars`),
 
   body("description")
     .optional()
     .trim()
-    .isLength({ max: 500 })
-    .withMessage("Description must be less than 500 characters"),
+    .isLength({ max: LIMITS.DESC.max }).withMessage("Description too long"),
 
-  body("address.street")
-    .optional()
-    .trim()
-    .isLength({ max: 200 })
-    .withMessage("Street address must be less than 200 characters"),
-
-  body("address.city")
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage("City must be less than 100 characters"),
-
-  body("address.state")
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage("State must be less than 100 characters"),
-
-  body("address.zipCode")
-    .optional()
-    .trim()
-    .isPostalCode("any")
-    .withMessage("Please provide a valid zip/postal code"),
-
-  body("address.country")
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage("Country must be less than 100 characters"),
+  body("address.street").optional().trim().isLength({ max: LIMITS.ADDRESS.max }),
+  body("address.city").optional().trim().isLength({ max: LIMITS.CITY_STATE_COUNTRY.max }),
+  body("address.state").optional().trim().isLength({ max: LIMITS.CITY_STATE_COUNTRY.max }),
+  body("address.country").optional().trim().isLength({ max: LIMITS.CITY_STATE_COUNTRY.max }),
+  body("address.zipCode").optional().trim().isPostalCode("any").withMessage("Invalid zip code"),
 ];
 
-// =========================================================
-// LOGIN VALIDATOR
-// =========================================================
 export const loginValidator = [
-  body("email")
-    .trim()
-    .notEmpty()
-    .withMessage("Email is required")
-    .isEmail()
-    .withMessage("Please provide a valid email")
-    .normalizeEmail()
-    .isLength({ max: 100 })
-    .withMessage("Email must be less than 100 characters"),
-
-  body("password")
-    .notEmpty()
-    .withMessage("Password is required")
-    .isLength({ min: 1 })
-    .withMessage("Password is required"),
+  commonRules.email,
+  commonRules.simplePassword("password"),
 ];
 
-// =========================================================
-// EMAIL VALIDATOR (Generic)
-// =========================================================
 export const emailValidator = [
-  body("email")
-    .trim()
-    .notEmpty()
-    .withMessage("Email is required")
-    .isEmail()
-    .withMessage("Please provide a valid email")
-    .normalizeEmail()
-    .isLength({ max: 100 })
-    .withMessage("Email must be less than 100 characters"),
+  commonRules.email,
 ];
 
-// =========================================================
-// FORGOT PASSWORD VALIDATOR
-// =========================================================
 export const forgotPasswordValidator = [
-  body("email")
-    .trim()
-    .notEmpty()
-    .withMessage("Email is required")
-    .isEmail()
-    .withMessage("Please provide a valid email")
-    .normalizeEmail()
-    .isLength({ max: 100 })
-    .withMessage("Email must be less than 100 characters"),
+  commonRules.email,
 ];
 
-// =========================================================
-// RESET PASSWORD VALIDATOR
-// =========================================================
 export const resetPasswordValidator = [
-  body("password")
-    .notEmpty()
-    .withMessage("Password is required")
-    .isLength({ min: PASSWORD_REQUIREMENTS.MIN_LENGTH })
-    .withMessage(PASSWORD_REQUIREMENTS.ERROR_MESSAGE)
-    .isLength({ max: PASSWORD_REQUIREMENTS.MAX_LENGTH })
-    .withMessage(`Password must be less than ${PASSWORD_REQUIREMENTS.MAX_LENGTH} characters`),
-
-  body("confirmPassword")
-    .notEmpty()
-    .withMessage("Please confirm your password")
-    .custom((value, { req }) => {
-      if (value !== req.body.password) {
-        throw new Error("Passwords do not match");
-      }
-      return true;
-    }),
+  commonRules.strongPassword("password"),
+  commonRules.confirmPassword("password"),
   
   body("token")
-    .notEmpty()
-    .withMessage("Reset token is required")
-    .isLength({ min: 64, max: 64 })
-    .withMessage("Invalid reset token format")
-    .matches(/^[A-Fa-f0-9]+$/)
-    .withMessage("Reset token contains invalid characters"),
+    .notEmpty().withMessage("Reset token is required")
+    .isLength({ min: 64, max: 64 }).withMessage("Invalid token length")
+    .matches(/^[A-Fa-f0-9]+$/).withMessage("Invalid token format"),
 ];
 
-// =========================================================
-// RESTORE ACCOUNT VALIDATOR
-// =========================================================
 export const restoreAccountValidator = [
-  body("email")
-    .trim()
-    .notEmpty()
-    .withMessage("Email is required")
-    .isEmail()
-    .withMessage("Please provide a valid email")
-    .normalizeEmail()
-    .isLength({ max: 100 })
-    .withMessage("Email must be less than 100 characters"),
+  commonRules.email,
 ];
 
-// =========================================================
-// UPDATE PROFILE VALIDATOR
-// =========================================================
 export const updateProfileValidator = [
   body("name")
     .optional()
     .trim()
-    .notEmpty()
-    .withMessage("Name cannot be empty")
-    .isLength({ min: 2, max: 50 })
-    .withMessage("Name must be between 2 and 50 characters"),
+    .isLength(LIMITS.NAME).withMessage(`Name must be between ${LIMITS.NAME.min} and ${LIMITS.NAME.max} characters`),
 
-  body("phone")
-    .optional()
-    .trim()
-    .isMobilePhone()
-    .withMessage("Please provide a valid phone number")
-    .isLength({ max: 20 })
-    .withMessage("Phone number must be less than 20 characters"),
+  commonRules.phone,
 
   body("avatar")
-    .optional()
-    .isURL()
-    .withMessage("Avatar must be a valid URL")
-    .isLength({ max: 500 })
-    .withMessage("Avatar URL must be less than 500 characters"),
+    .optional({ checkFalsy: true }) 
+    .isURL().withMessage("Avatar must be a valid URL")
+    .isLength({ max: LIMITS.URL.max }),
 ];
 
-// =========================================================
-// CHANGE PASSWORD VALIDATOR
-// =========================================================
 export const changePasswordValidator = [
-  body("currentPassword")
-    .notEmpty()
-    .withMessage("Current password is required")
-    .isLength({ min: 1 })
-    .withMessage("Current password is required"),
-
-  body("newPassword")
-    .notEmpty()
-    .withMessage("New password is required")
-    .isLength({ min: PASSWORD_REQUIREMENTS.MIN_LENGTH })
-    .withMessage(PASSWORD_REQUIREMENTS.ERROR_MESSAGE)
-    .isLength({ max: PASSWORD_REQUIREMENTS.MAX_LENGTH })
-    .withMessage(`New password must be less than ${PASSWORD_REQUIREMENTS.MAX_LENGTH} characters`)
+  commonRules.simplePassword("currentPassword"),
+  
+  commonRules.strongPassword("newPassword")
     .custom((value, { req }) => {
       if (value === req.body.currentPassword) {
         throw new Error("New password must be different from current password");
@@ -249,24 +136,12 @@ export const changePasswordValidator = [
       return true;
     }),
 
-  body("confirmPassword")
-    .notEmpty()
-    .withMessage("Please confirm your new password")
-    .custom((value, { req }) => {
-      if (value !== req.body.newPassword) {
-        throw new Error("Passwords do not match");
-      }
-      return true;
-    }),
+  commonRules.confirmPassword("newPassword"),
 ];
 
-// =========================================================
-// ARCHIVE ACCOUNT VALIDATOR
-// =========================================================
 export const archiveAccountValidator = [
   body("confirmation")
-    .notEmpty()
-    .withMessage("Confirmation is required")
+    .notEmpty().withMessage("Confirmation is required")
     .equals("I understand this action is irreversible")
-    .withMessage("Please type the confirmation phrase exactly as shown"),
+    .withMessage("Confirmation phrase does not match"),
 ];

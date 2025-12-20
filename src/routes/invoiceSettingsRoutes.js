@@ -1,37 +1,66 @@
 import express from "express";
-import { protect } from "../middleware/auth.js";
-// Do NOT import the controller yet.
+import { authenticate } from "../middleware/auth.js";
+import { checkPermission } from "../middleware/checkPermission.js";
+import validateRequest from "../middleware/validateRequest.js";
+import {
+  getInvoiceSettings,
+  updateInvoiceSettings,
+  previewInvoice,
+  applyTemplate,
+  resetToDefaults,
+} from "../controllers/invoiceSettingsController.js";
+import { invoiceSettingsValidator } from "../validators/invoiceValidator.js";
 
 const router = express.Router();
 
-router.use(protect);
+// Apply authentication to all routes
+router.use(authenticate);
 
-// 1. GET SETTINGS (Inline)
-router.get("/", async (req, res) => {
-  console.log("✅ ROUTER HIT: /invoices/settings (Get)");
-  return res.json({
-    success: true,
-    data: {
-      venue: req.user.venueId,
-      branding: {
-        logo: { url: "", width: 150 },
-        colors: { primary: "#F18237", secondary: "#374151" }
-      },
-      layout: { template: "modern", sections: [] },
-      table: { columns: { description: true, total: true } },
-      labels: { invoiceTitle: "INVOICE" }
-    }
-  });
-});
+// ==========================================
+// SETTINGS CRUD
+// ==========================================
 
-// 2. UPDATE SETTINGS (Inline)
-router.put("/", async (req, res) => {
-  console.log("✅ ROUTER HIT: /invoices/settings (Update)");
-  return res.json({ success: true, message: "Settings Updated" });
-});
+// Get Settings
+router.get(
+  "/",
+  checkPermission("venue.read"), // Settings are usually venue-level
+  getInvoiceSettings
+);
 
-router.post("/preview", (req, res) => res.json({ success: true }));
-router.post("/apply-template", (req, res) => res.json({ success: true }));
-router.post("/reset", (req, res) => res.json({ success: true }));
+// Update Settings
+router.put(
+  "/",
+  checkPermission("venue.update"),
+  invoiceSettingsValidator,
+  validateRequest,
+  updateInvoiceSettings
+);
+
+// ==========================================
+// UTILITY ACTIONS
+// ==========================================
+
+// Preview changes (without saving)
+router.post(
+  "/preview",
+  checkPermission("venue.read"),
+  invoiceSettingsValidator, // Validate payload before previewing
+  validateRequest,
+  previewInvoice
+);
+
+// Apply a specific template style
+router.post(
+  "/apply-template",
+  checkPermission("venue.update"),
+  applyTemplate
+);
+
+// Reset to system defaults
+router.post(
+  "/reset",
+  checkPermission("venue.update"),
+  resetToDefaults
+);
 
 export default router;

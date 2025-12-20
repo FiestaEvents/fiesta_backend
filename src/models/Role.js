@@ -4,26 +4,17 @@ const roleSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, "Role name is required"],
+      required: true,
       trim: true,
-      maxlength: [50, "Role name cannot exceed 50 characters"],
     },
     description: {
       type: String,
-      maxlength: [200, "Description cannot exceed 200 characters"],
+      trim: true,
     },
     venueId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Venue",
       required: true,
-    },
-    isSystemRole: {
-      type: Boolean,
-      default: false,
-    },
-    isActive: {
-      type: Boolean,
-      default: true,
     },
     permissions: [
       {
@@ -31,15 +22,21 @@ const roleSchema = new mongoose.Schema(
         ref: "Permission",
       },
     ],
+    isSystemRole: {
+      type: Boolean,
+      default: false,
+    },
     level: {
       type: Number,
-      default: 0,
-      min: 0,
-      max: 100,
+      default: 10,
     },
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    isArchived: {
+      type: Boolean,
+      default: false,
     },
   },
   {
@@ -48,12 +45,5 @@ const roleSchema = new mongoose.Schema(
 );
 
 roleSchema.index({ name: 1, venueId: 1 }, { unique: true });
-
-roleSchema.pre("deleteOne", { document: true }, function (next) {
-  if (this.isSystemRole) {
-    return next(new Error("Cannot delete system roles"));
-  }
-  next();
-});
 
 export default mongoose.model("Role", roleSchema);

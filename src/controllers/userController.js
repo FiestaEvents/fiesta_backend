@@ -1,9 +1,8 @@
 import asyncHandler from "../middleware/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import { User, Venue, Role, Permission } from "../models/index.js";
+import { User, Venue, Role, Permission, ActivityLog } from "../models/index.js";
 import mongoose from "mongoose";
-
 /**
  * @desc    Get all users with filtering and pagination
  * @route   GET /api/v1/users
@@ -35,7 +34,11 @@ export const getUsers = asyncHandler(async (req, res) => {
 
   // Role filter
   if (role) {
-    const roleDoc = await Role.findOne({ name: role, venueId, isArchived: false });
+    const roleDoc = await Role.findOne({
+      name: role,
+      venueId,
+      isArchived: false,
+    });
     if (roleDoc) {
       query.roleId = roleDoc._id;
     }
@@ -90,11 +93,7 @@ export const getUsers = asyncHandler(async (req, res) => {
  * @access  Private (users:read:team)
  */
 export const getArchivedUsers = asyncHandler(async (req, res) => {
-  const {
-    search,
-    page = 1,
-    limit = 10,
-  } = req.query;
+  const { search, page = 1, limit = 10 } = req.query;
 
   const venueId = req.user.venueId;
   const query = { venueId, isArchived: true };
@@ -199,7 +198,11 @@ export const createUser = asyncHandler(async (req, res) => {
   const invitedBy = req.user._id;
 
   // Check if user already exists (non-archived)
-  const existingUser = await User.findOne({ email, venueId, isArchived: false });
+  const existingUser = await User.findOne({
+    email,
+    venueId,
+    isArchived: false,
+  });
   if (existingUser) {
     throw new ApiError("User with this email already exists", 400);
   }
@@ -258,14 +261,8 @@ export const createUser = asyncHandler(async (req, res) => {
  */
 export const updateUser = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const {
-    name,
-    phone,
-    roleId,
-    roleType,
-    isActive,
-    customPermissions,
-  } = req.body;
+  const { name, phone, roleId, roleType, isActive, customPermissions } =
+    req.body;
 
   const venueId = req.user.venueId;
 
@@ -289,7 +286,11 @@ export const updateUser = asyncHandler(async (req, res) => {
 
   // Update role if provided
   if (roleId) {
-    const role = await Role.findOne({ _id: roleId, venueId, isArchived: false });
+    const role = await Role.findOne({
+      _id: roleId,
+      venueId,
+      isArchived: false,
+    });
     if (!role) {
       throw new ApiError("Invalid role", 400);
     }
@@ -303,7 +304,7 @@ export const updateUser = asyncHandler(async (req, res) => {
   }
 
   await user.save();
-
+  await logActivity(req.user._id, req.user.venueId, "update_member", `Updated member ${user.name} (Role/Status changed)`);
   // Populate updated user data
   await user.populate([
     { path: "roleId", select: "name level" },
@@ -685,8 +686,16 @@ export const getUserStats = asyncHandler(async (req, res) => {
   ]);
 
   // Process statistics
-  const archivedStats = stats.find(stat => stat._id === true) || { total: 0, active: 0, byRole: [] };
-  const activeStats = stats.find(stat => stat._id === false) || { total: 0, active: 0, byRole: [] };
+  const archivedStats = stats.find((stat) => stat._id === true) || {
+    total: 0,
+    active: 0,
+    byRole: [],
+  };
+  const activeStats = stats.find((stat) => stat._id === false) || {
+    total: 0,
+    active: 0,
+    byRole: [],
+  };
 
   // Get role details for active users
   const roleStats = await Role.aggregate([
@@ -822,4 +831,22 @@ export const checkArchiveEligibility = asyncHandler(async (req, res) => {
       role: user.roleType,
     },
   }).send(res);
+});
+
+/**
+ * @desc    Get user activity history
+ * @route   GET /api/v1/users/:id/activity
+ */
+export const getUserActivity = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { page = 1, limit = 10 } = req.query;
+
+  const logs = await ActivityLog.find({ userId: id })
+    .sort({ timestamp: -1 })
+    .skip((page - 1) * limit)
+    .limit(parseInt(limit));
+
+  const total = await ActivityLog.countDocuments({ userId: id });
+
+  new ApiResponse({ logs, pagination: { total, page, limit } }).send(res);
 });

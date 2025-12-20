@@ -1,4 +1,3 @@
-// routes/users.js 
 import express from "express";
 import {
   getUsers,
@@ -12,34 +11,138 @@ import {
   getArchivedUsers,
   bulkArchiveUsers,
   bulkRestoreUsers,
+  getUserActivity,
 } from "../controllers/userController.js";
-import { authenticate, authorize } from "../middleware/auth.js";
+import { authenticate } from "../middleware/auth.js";
+import { checkPermission } from "../middleware/checkPermission.js";
 import validateRequest from "../middleware/validateRequest.js";
 import {
   createUserValidator,
   updateUserValidator,
+  userIdValidator,
+  archiveUserValidator,
+  restoreUserValidator,
+  permanentDeleteValidator,
+  bulkArchiveValidator,
+  bulkRestoreValidator,
+  getUsersValidator,
+  getArchivedUsersValidator,
 } from "../validators/userValidator.js";
 
 const router = express.Router();
 
-// Apply authentication to all routes
+// Apply authentication to all routes (Deep Populates permissions)
 router.use(authenticate);
 
-// Main user routes
-router.get("/", authorize("users:read:team"), getUsers);
-router.get("/stats", authorize("users:read:team"), getUserStats);
-router.get("/:id", authorize("users:read:team"), getUserById);
-router.post("/", authorize("users:create:team"), createUserValidator, validateRequest, createUser);
-router.put("/:id", authorize("users:update:team"), updateUserValidator, validateRequest, updateUser);
+// ==========================================
+// STATIC ROUTES (Must come before /:id)
+// ==========================================
 
-// Archive routes
-router.get("/archived/list", authorize("users:read:team"), getArchivedUsers);
-router.patch("/:id/archive", authorize("users:delete:team"), archiveUser);
-router.patch("/:id/restore", authorize("users:update:team"), restoreUser);
-router.delete("/:id/permanent", authorize("users:delete:all"), permanentDeleteUser);
+// Stats
+router.get(
+  "/stats", 
+  checkPermission("users.read.all"), 
+  getUserStats
+);
 
-// Bulk archive operations
-router.patch("/bulk/archive", authorize("users:delete:team"), bulkArchiveUsers);
-router.patch("/bulk/restore", authorize("users:update:team"), bulkRestoreUsers);
+// Archived Users List
+router.get(
+  "/archived/list",
+  checkPermission("users.read.all"), // Using read permission to view list
+  getArchivedUsersValidator,
+  validateRequest,
+  getArchivedUsers
+);
 
+// Bulk Operations
+router.patch(
+  "/bulk/archive",
+  checkPermission("users.delete.all"),
+  bulkArchiveValidator,
+  validateRequest,
+  bulkArchiveUsers
+);
+
+router.patch(
+  "/bulk/restore",
+  checkPermission("users.update.all"),
+  bulkRestoreValidator,
+  validateRequest,
+  bulkRestoreUsers
+);
+
+// ==========================================
+// MAIN USER ROUTES
+// ==========================================
+
+// Get All Users (with filters)
+router.get(
+  "/",
+  checkPermission("users.read.all"),
+  getUsersValidator,
+  validateRequest,
+  getUsers
+);
+
+// Create User (Direct admin creation)
+router.post(
+  "/",
+  checkPermission("users.create"),
+  createUserValidator,
+  validateRequest,
+  createUser
+);
+
+// ==========================================
+// DYNAMIC ROUTES (/:id)
+// ==========================================
+
+// Get Single User
+router.get(
+  "/:id",
+  checkPermission("users.read.all"),
+  userIdValidator,
+  validateRequest,
+  getUserById
+);
+
+// Update User
+router.put(
+  "/:id",
+  checkPermission("users.update.all"),
+  updateUserValidator,
+  validateRequest,
+  updateUser
+);
+
+// Archive Single User
+router.patch(
+  "/:id/archive",
+  checkPermission("users.delete.all"),
+  archiveUserValidator,
+  validateRequest,
+  archiveUser
+);
+
+// Restore Single User
+router.patch(
+  "/:id/restore",
+  checkPermission("users.update.all"),
+  restoreUserValidator,
+  validateRequest,
+  restoreUser
+);
+
+// Permanent Delete
+router.delete(
+  "/:id/permanent",
+  checkPermission("users.delete.all"),
+  permanentDeleteValidator,
+  validateRequest,
+  permanentDeleteUser
+);
+
+router.get(
+  "/:id/activity", checkPermission("users.read.all"), getUserActivity);
+  
 export default router;
