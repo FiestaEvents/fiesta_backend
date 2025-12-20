@@ -1,93 +1,68 @@
 import { body, param } from "express-validator";
 
-// =========================================================
-// REUSABLE RULES
-// =========================================================
 const commonRules = {
-  mongoId: (field) => 
+  mongoId: (field) =>
     body(field)
-      .notEmpty().withMessage(`${field} is required`)
-      .isMongoId().withMessage(`Invalid ${field} format`),
-  
+      .notEmpty()
+      .withMessage(`${field} is required`)
+      .isMongoId()
+      .withMessage(`Invalid ${field} format`),
+
   optionalMongoId: (field) =>
     body(field)
-      .optional()
-      .isMongoId().withMessage(`Invalid ${field} format`),
+      .optional({ checkFalsy: true })
+      .isMongoId()
+      .withMessage(`Invalid ${field} format`), // checkFalsy allows "" to be ignored
 
   amount: body("amount")
-    .notEmpty().withMessage("Amount is required")
-    .isFloat({ min: 0.01 }).withMessage("Amount must be greater than 0"),
+    .notEmpty()
+    .withMessage("Amount is required")
+    .isFloat({ min: 0.01 })
+    .withMessage("Amount must be greater than 0"),
 
-  date: body("date")
-    .optional()
-    .isISO8601().withMessage("Invalid date format")
-    .toDate(),
-
-  method: body("method")
-    .notEmpty().withMessage("Payment method is required")
-    .isIn(["cash", "credit_card", "bank_transfer", "check", "online"])
-    .withMessage("Invalid payment method"),
-    
   status: body("status")
     .optional()
     .isIn(["pending", "completed", "failed", "refunded"])
     .withMessage("Invalid status"),
 };
 
-// =========================================================
-// ID VALIDATOR
-// =========================================================
 export const paymentIdValidator = [
   param("id").isMongoId().withMessage("Invalid payment ID"),
 ];
 
-// =========================================================
-// CREATE VALIDATOR
-// =========================================================
 export const createPaymentValidator = [
   commonRules.amount,
-  commonRules.method,
-  
-  // Link to either Invoice OR Client directly
-  body("invoiceId").optional().isMongoId().withMessage("Invalid Invoice ID"),
-  body("clientId").optional().isMongoId().withMessage("Invalid Client ID"),
-  
-  // Custom validator: Ensure at least one link exists
+
+  body("method")
+    .notEmpty()
+    .withMessage("Payment method is required")
+    .isIn(["cash", "credit_card", "bank_transfer", "check", "online"])
+    .withMessage("Invalid payment method"),
+
+  // ✅ FIX: Allow empty string to pass as optional
+  commonRules.optionalMongoId("invoiceId"),
+  commonRules.optionalMongoId("clientId"),
+  commonRules.optionalMongoId("eventId"),
+
+  // Custom: At least one link
   body().custom((value, { req }) => {
-    if (!req.body.invoiceId && !req.body.clientId) {
-      throw new Error("Payment must be linked to either an Invoice or a Client");
+    if (!req.body.invoiceId && !req.body.clientId && !req.body.eventId) {
+      throw new Error("Payment must be linked to Invoice, Client, or Event");
     }
     return true;
   }),
 
-  commonRules.date,
-  
-  body("reference")
-    .optional()
-    .trim()
-    .isLength({ max: 100 }),
-    
-  body("notes")
-    .optional()
-    .trim()
-    .isLength({ max: 500 }),
+  // Dates
+  body("date").optional({ checkFalsy: true }).isISO8601().toDate(),
+  body("dueDate").optional({ checkFalsy: true }).isISO8601().toDate(),
+  body("paidDate").optional({ checkFalsy: true }).isISO8601().toDate(),
+
+  body("reference").optional().trim().isLength({ max: 100 }),
+  body("description").optional().trim().isLength({ max: 500 }),
 ];
 
-// =========================================================
-// UPDATE VALIDATOR
-// =========================================================
 export const updatePaymentValidator = [
   param("id").isMongoId().withMessage("Invalid payment ID"),
-  
   commonRules.status,
-  
-  body("notes")
-    .optional()
-    .trim()
-    .isLength({ max: 500 }),
-    
-  // Prevent changing amount/method after creation for audit trail (optional policy)
-  // If allowed, uncomment below:
-  // body("amount").optional().isFloat({ min: 0.01 }),
-  // body("method").optional().isIn([...]),
+  body("description").optional().trim().isLength({ max: 500 }),
 ];
