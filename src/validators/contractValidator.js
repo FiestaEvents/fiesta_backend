@@ -6,89 +6,64 @@ import { body, param, query } from "express-validator";
 const commonRules = {
   mongoId: (field) => 
     body(field)
-      .notEmpty().withMessage(`${field} is required`)
-      .isMongoId().withMessage(`Invalid ${field} format`),
-  
-  optionalMongoId: (field) =>
-    body(field)
-      .optional()
+      .optional({ checkFalsy: true }) // Allow empty strings or null
       .isMongoId().withMessage(`Invalid ${field} format`),
 
   title: body("title")
     .trim()
     .notEmpty().withMessage("Contract title is required")
-    .isLength({ max: 100 }).withMessage("Title must be less than 100 characters"),
+    .isLength({ max: 100 }).withMessage("Title too long"),
 
   status: body("status")
     .optional()
-    .isIn(["draft", "sent", "viewed", "signed", "cancelled", "expired"])
-    .withMessage("Invalid status value"),
+    .isIn(["draft", "sent", "viewed", "signed", "cancelled", "expired"]),
 
-  date: (field) => 
-    body(field)
-      .optional()
-      .isISO8601().withMessage(`Invalid date format for ${field}`)
-      .toDate(),
-
-  money: (field) =>
-    body(field)
-      .optional()
-      .isFloat({ min: 0 }).withMessage(`${field} must be a positive number`),
+  // Party Validation (Nested Object)
+  partyName: body("party.name").notEmpty().withMessage("Party Name is required"),
+  partyType: body("party.type").isIn(["individual", "company"]).withMessage("Invalid Party Type"),
+  partyAddress: body("party.address").notEmpty().withMessage("Address is required"),
+  
+  // Logistics Validation
+  startDate: body("logistics.startDate").isISO8601().toDate().withMessage("Invalid Start Date"),
+  endDate: body("logistics.endDate").isISO8601().toDate().withMessage("Invalid End Date"),
 };
-
-// =========================================================
-// ID VALIDATORS
-// =========================================================
-export const contractIdValidator = [
-  param("id")
-    .isMongoId().withMessage("Invalid contract ID"),
-];
 
 // =========================================================
 // CREATE CONTRACT VALIDATOR
 // =========================================================
 export const createContractValidator = [
-  commonRules.mongoId("clientId"),
-  commonRules.mongoId("eventId"), // Link to event
-  
   commonRules.title,
-  
   commonRules.status,
   
-  commonRules.date("validUntil"),
+  // Optional Links
+  commonRules.mongoId("eventId"), 
   
-  // Terms & Notes
-  body("terms")
-    .optional()
-    .trim()
-    .isLength({ max: 5000 }).withMessage("Terms cannot exceed 5000 characters"),
+  // Party Details
+  commonRules.partyName,
+  commonRules.partyType,
+  commonRules.partyAddress,
   
-  body("notes")
-    .optional()
-    .trim()
-    .isLength({ max: 1000 }).withMessage("Notes cannot exceed 1000 characters"),
+  // Logistics
+  commonRules.startDate,
+  commonRules.endDate,
 
-  // Items Array Validation
-  body("items")
-    .isArray({ min: 1 }).withMessage("Contract must have at least one item"),
+  // Services Array (renamed from items to services)
+  body("services")
+    .isArray({ min: 1 }).withMessage("At least one service is required"),
   
-  body("items.*.description")
-    .notEmpty().withMessage("Item description is required"),
+  body("services.*.description")
+    .notEmpty().withMessage("Service description is required"),
   
-  body("items.*.quantity")
-    .isFloat({ min: 0.01 }).withMessage("Quantity must be greater than 0"),
+  body("services.*.quantity")
+    .isFloat({ min: 0.01 }).withMessage("Quantity must be positive"),
   
-  body("items.*.unitPrice")
-    .isFloat({ min: 0 }).withMessage("Unit price must be positive"),
-  
-  body("items.*.taxRate")
-    .optional()
-    .isFloat({ min: 0, max: 100 }).withMessage("Tax rate must be between 0 and 100"),
+  body("services.*.rate")
+    .isFloat({ min: 0 }).withMessage("Rate must be non-negative"),
 
-  // Financials
-  commonRules.money("taxAmount"),
-  commonRules.money("discountAmount"),
-  commonRules.money("totalAmount"),
+  // Financials (Nested Object)
+  body("financials.amountHT").isFloat({ min: 0 }),
+  body("financials.totalTTC").isFloat({ min: 0 }),
+  body("financials.vatRate").optional().isFloat({ min: 0, max: 100 }),
 ];
 
 // =========================================================
@@ -96,74 +71,21 @@ export const createContractValidator = [
 // =========================================================
 export const updateContractValidator = [
   param("id").isMongoId().withMessage("Invalid contract ID"),
-
-  commonRules.optionalMongoId("clientId"),
-  commonRules.optionalMongoId("eventId"),
   
-  body("title")
-    .optional()
-    .trim()
-    .notEmpty().withMessage("Title cannot be empty"),
-
-  commonRules.status,
-  commonRules.date("validUntil"),
-
-  body("items")
-    .optional()
-    .isArray().withMessage("Items must be an array"),
+  body("title").optional().trim().notEmpty(),
   
-  body("items.*.description")
-    .optional()
-    .notEmpty().withMessage("Item description cannot be empty"),
-    
-  body("items.*.quantity")
-    .optional()
-    .isFloat({ min: 0.01 }),
-
-  body("items.*.unitPrice")
-    .optional()
-    .isFloat({ min: 0 }),
+  // Optional deep updates
+  body("party.name").optional().notEmpty(),
+  body("services").optional().isArray(),
+  body("financials").optional().isObject(),
 ];
 
-// =========================================================
-// SETTINGS VALIDATOR
-// =========================================================
+// ... (Rest of file: ID Validator, Settings Validator) ...
+export const contractIdValidator = [
+  param("id").isMongoId().withMessage("Invalid contract ID"),
+];
+
 export const contractSettingsValidator = [
-  body("prefix")
-    .optional()
-    .trim()
-    .notEmpty().withMessage("Prefix cannot be empty")
-    .isLength({ max: 10 }).withMessage("Prefix too long"),
-
-  body("nextNumber")
-    .optional()
-    .isInt({ min: 1 }).withMessage("Next number must be a positive integer"),
-
-  body("defaultTerms")
-    .optional()
-    .trim(),
-
-  body("defaultTaxRate")
-    .optional()
-    .isFloat({ min: 0, max: 100 }).withMessage("Default tax rate must be between 0 and 100"),
-
-  body("currency")
-    .optional()
-    .trim()
-    .isLength({ min: 3, max: 3 }).withMessage("Currency must be a 3-letter ISO code (e.g., USD)"),
-];
-
-// =========================================================
-// SEARCH/FILTER VALIDATOR
-// =========================================================
-export const contractQueryValidator = [
-  query("status")
-    .optional()
-    .isIn(["draft", "sent", "viewed", "signed", "cancelled", "expired"]),
-  
-  query("clientId").optional().isMongoId(),
-  query("eventId").optional().isMongoId(),
-  
-  query("startDate").optional().isISO8601().toDate(),
-  query("endDate").optional().isISO8601().toDate(),
+  body("companyInfo.name").optional().trim().notEmpty(),
+  body("financialDefaults.defaultVatRate").optional().isFloat({ min: 0, max: 100 }),
 ];
