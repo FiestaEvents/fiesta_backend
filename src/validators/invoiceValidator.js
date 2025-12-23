@@ -32,10 +32,10 @@ export const invoiceIdValidator = [
 // CREATE INVOICE VALIDATOR
 // =========================================================
 export const createInvoiceValidator = [
-  commonRules.mongoId("clientId"),
+  commonRules.mongoId("client"),
   
   // Event ID is optional (invoice might not be linked to event)
-  body("eventId")
+  body("event")
     .optional()
     .isMongoId().withMessage("Invalid event ID"),
 
@@ -55,7 +55,7 @@ export const createInvoiceValidator = [
   body("items.*.quantity")
     .isFloat({ min: 0.01 }).withMessage("Quantity must be greater than 0"),
 
-  body("items.*.unitPrice")
+  body("items.*.rate")
     .isFloat({ min: 0 }).withMessage("Unit price must be positive"),
 
   // Financials
