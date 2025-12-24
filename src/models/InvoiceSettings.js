@@ -1,4 +1,5 @@
-import mongoose from "mongoose";
+// src/models/InvoiceSettings.js
+const mongoose = require('mongoose');
 
 // ==========================================
 // 1. CONSTANTS (Pure Data)
@@ -57,9 +58,12 @@ const DEFAULTS = {
 // ==========================================
 const invoiceSettingsSchema = new mongoose.Schema(
   {
-    venue: {
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venue
+    // =========================================================
+    business: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
+      ref: "Business",
       required: true,
       unique: true,
     },
@@ -138,13 +142,13 @@ const invoiceSettingsSchema = new mongoose.Schema(
 // ==========================================
 // 3. METHODS
 // ==========================================
-invoiceSettingsSchema.statics.getOrCreate = async function (venueId) {
-  let settings = await this.findOne({ venue: venueId });
+invoiceSettingsSchema.statics.getOrCreate = async function (businessId) {
+  let settings = await this.findOne({ business: businessId });
 
   if (!settings) {
     // Merge defaults
     settings = await this.create({
-      venue: venueId,
+      business: businessId,
       branding: DEFAULTS.branding,
       layout: DEFAULTS.layout,
       table: DEFAULTS.table,
@@ -160,4 +164,4 @@ invoiceSettingsSchema.statics.getOrCreate = async function (venueId) {
   return settings;
 };
 
-export default mongoose.model("InvoiceSettings", invoiceSettingsSchema);
+module.exports = mongoose.model("InvoiceSettings", invoiceSettingsSchema);

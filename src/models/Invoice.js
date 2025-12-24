@@ -1,17 +1,24 @@
-import mongoose from "mongoose";
+// src/models/Invoice.js
+const mongoose = require('mongoose');
 
 const invoiceSchema = new mongoose.Schema(
   {
-    venue: {
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venue
+    // =========================================================
+    business: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
+      ref: "Business",
       required: true,
       index: true,
     },
+    
     invoiceNumber: {
       type: String,
-      unique: true,
+      // Global uniqueness removed. Uniqueness is now enforced per-business via compound index below.
+      required: true
     },
+    
     invoiceType: {
       type: String,
       enum: ["client", "partner"],
@@ -23,12 +30,13 @@ const invoiceSchema = new mongoose.Schema(
       default: "draft",
       index: true,
     },
+    
     // Relationships
     client: { type: mongoose.Schema.Types.ObjectId, ref: "Client" },
     partner: { type: mongoose.Schema.Types.ObjectId, ref: "Partner" },
     event: { type: mongoose.Schema.Types.ObjectId, ref: "Event" },
     
-    // Snapshot Data (In case Client/Partner is deleted later)
+    // Snapshot Data (Preserves history if Client/Partner is deleted)
     recipientName: String,
     recipientEmail: String,
     recipientPhone: String,
@@ -74,15 +82,23 @@ const invoiceSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// COMPOUND INDEX: Ensures uniqueness PER BUSINESS
+// Example: Business A can have INV-25-0001 and Business B can also have INV-25-0001
+invoiceSchema.index({ business: 1, invoiceNumber: 1 }, { unique: true });
+
 // Auto-generate Invoice Number (INV-YY-0001)
-invoiceSchema.pre("save", async function (next) {
+invoiceSchema.pre("validate", async function (next) {
   if (this.isNew && !this.invoiceNumber) {
-    const count = await this.constructor.countDocuments({ venue: this.venue });
+    // Count existing invoices for THIS Business only
+    const count = await this.constructor.countDocuments({ business: this.business });
+    
     const year = new Date().getFullYear().toString().slice(-2);
     const prefix = this.invoiceType === 'client' ? 'INV' : 'BILL';
+    
+    // Format: INV-25-0001
     this.invoiceNumber = `${prefix}-${year}-${(count + 1).toString().padStart(4, "0")}`;
   }
   next();
 });
 
-export default mongoose.model("Invoice", invoiceSchema);
+module.exports = mongoose.model("Invoice", invoiceSchema);

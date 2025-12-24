@@ -48,5 +48,10 @@ router
   .get(checkPermission("venue.read"), getVenueSpace)
   .put(checkPermission("venue.update"), updateVenueSpace)
   .delete(checkPermission("venue.delete"), deleteVenueSpace);
+router.post(
+  "/portfolio", 
+  upload.single("image"), 
+  uploadPortfolioImage
+);
 
 export default router;

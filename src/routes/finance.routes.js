@@ -1,5 +1,6 @@
-import express from "express";
-import {
+// src/routes/financeRoutes.js
+const express = require('express');
+const {
   getFinanceRecords,
   getFinanceRecord,
   createFinanceRecord,
@@ -14,16 +15,17 @@ import {
   getTaxSummary,
   restoreFinanceRecord,
   getArchivedFinanceRecords,
-} from "../controllers/financeController.js";
-import { authenticate } from "../middleware/auth.js";
-import { checkPermission } from "../middleware/checkPermission.js";
-import validateRequest from "../middleware/validateRequest.js";
-import {
+} = require('../controllers/financeController');
+
+const { authenticate } = require('../middleware/authMiddleware');
+const { checkPermission } = require('../middleware/permissionMiddleware');
+const validateRequest = require('../middleware/validateRequest');
+
+const {
   createFinanceValidator,
   updateFinanceValidator,
   financeIdValidator,
-  // dateRangeValidator, // Optional: if you have query params for reports
-} from "../validators/financeValidator.js";
+} = require('../validators/financeValidator');
 
 const router = express.Router();
 
@@ -105,7 +107,7 @@ router
   )
   .post(
     checkPermission("finance.create"),
-    createFinanceValidator, // abstracted validation logic
+    createFinanceValidator,
     validateRequest,
     createFinanceRecord
   );
@@ -120,7 +122,7 @@ router
   )
   .put(
     checkPermission("finance.update.all"),
-    updateFinanceValidator, // checks ID and body
+    updateFinanceValidator,
     validateRequest,
     updateFinanceRecord
   )
@@ -131,4 +133,4 @@ router
     deleteFinanceRecord
   );
 
-export default router;
+module.exports = router;

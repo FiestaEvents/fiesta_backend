@@ -1,4 +1,5 @@
-import mongoose from "mongoose";
+// src/models/ActivityLog.js
+const mongoose = require('mongoose');
 
 const activityLogSchema = new mongoose.Schema({
   userId: {
@@ -8,23 +9,37 @@ const activityLogSchema = new mongoose.Schema({
   },
   action: {
     type: String,
-    required: true, // e.g., "created_event", "updated_client", "logged_in"
+    required: true, 
   },
   details: {
-    type: String, // e.g., "Created event: Annual Gala"
+    type: String, 
   },
   metadata: {
-    type: Object, // Optional: store IDs of changed objects { eventId: "..." }
+    type: mongoose.Schema.Types.Mixed, 
+    default: {}
   },
-  venueId: {
+  
+  // =========================================================
+  // ARCHITECTURE UPDATE: Linked to Generic Business
+  // =========================================================
+  businessId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "Venue",
+    ref: "Business",
     required: true,
   },
+  
+  // Security Auditing
+  ipAddress: {
+    type: String
+  },
+  
   timestamp: {
     type: Date,
     default: Date.now,
   },
 });
 
-export default mongoose.model("ActivityLog", activityLogSchema);
+// Index for efficiently fetching "Recent Activity" feeds on dashboards
+activityLogSchema.index({ businessId: 1, timestamp: -1 });
+
+module.exports = mongoose.model("ActivityLog", activityLogSchema);

@@ -1,15 +1,16 @@
-// controllers/reminderController.js 
-import asyncHandler from "../middleware/asyncHandler.js";
-import ApiError from "../utils/ApiError.js";
-import { Reminder } from "../models/index.js";
-import { agendaService } from '../services/agenda.service.js';
-import { logger } from "../utils/logger.js";
+// src/controllers/reminderController.js
+const asyncHandler = require("../middleware/asyncHandler");
+const ApiError = require("../utils/ApiError");
+const { Reminder } = require("../models/index");
+const { agendaService } = require("../services/agenda.service");
+const { logger } = require("../utils/logger");
+
 // ==========================================
 // @desc    Get reminders with filters and pagination
 // @route   GET /api/v1/reminders
 // @access  Private
 // ==========================================
-export const getReminders = asyncHandler(async (req, res) => {
+exports.getReminders = asyncHandler(async (req, res) => {
   const {
     page = 1,
     limit = 20,
@@ -21,9 +22,9 @@ export const getReminders = asyncHandler(async (req, res) => {
     search
   } = req.query;
 
-  // 1. Base Query
+  // 1. Base Query scoped to Business
   const query = {
-    venueId: req.user.venueId,
+    businessId: req.business._id, // Updated
     isArchived: false,
   };
 
@@ -67,7 +68,7 @@ export const getReminders = asyncHandler(async (req, res) => {
       .populate("relatedEvent", "title startDate")
       .populate("relatedClient", "name company")
       .populate("assignedTo", "name avatar")
-      .lean(), // ✅ Use lean for better performance
+      .lean(), 
     Reminder.countDocuments(query),
   ]);
 
@@ -91,10 +92,10 @@ export const getReminders = asyncHandler(async (req, res) => {
 // @route   GET /api/v1/reminders/:id
 // @access  Private
 // ==========================================
-export const getReminder = asyncHandler(async (req, res) => {
+exports.getReminder = asyncHandler(async (req, res) => {
   const reminder = await Reminder.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId: req.business._id,
     isArchived: false,
   })
     .populate("relatedEvent", "title startDate")
@@ -117,10 +118,10 @@ export const getReminder = asyncHandler(async (req, res) => {
 // @route   POST /api/v1/reminders
 // @access  Private
 // ==========================================
-export const createReminder = asyncHandler(async (req, res) => {
+exports.createReminder = asyncHandler(async (req, res) => {
   const reminder = await Reminder.create({
     ...req.body,
-    venueId: req.user.venueId,
+    businessId: req.business._id, // Updated
     createdBy: req.user._id,
     status: "active",
     isArchived: false,
@@ -142,9 +143,9 @@ export const createReminder = asyncHandler(async (req, res) => {
 // @route   PUT /api/v1/reminders/:id
 // @access  Private
 // ==========================================
-export const updateReminder = asyncHandler(async (req, res) => {
+exports.updateReminder = asyncHandler(async (req, res) => {
   const reminder = await Reminder.findOneAndUpdate(
-    { _id: req.params.id, venueId: req.user.venueId, isArchived: false },
+    { _id: req.params.id, businessId: req.business._id, isArchived: false },
     req.body,
     { new: true, runValidators: true }
   );
@@ -170,9 +171,9 @@ export const updateReminder = asyncHandler(async (req, res) => {
 // @route   DELETE /api/v1/reminders/:id
 // @access  Private
 // ==========================================
-export const deleteReminder = asyncHandler(async (req, res) => {
+exports.deleteReminder = asyncHandler(async (req, res) => {
   const reminder = await Reminder.findOneAndUpdate(
-    { _id: req.params.id, venueId: req.user.venueId },
+    { _id: req.params.id, businessId: req.business._id },
     { isArchived: true, archivedAt: new Date() },
     { new: true }
   );
@@ -195,10 +196,10 @@ export const deleteReminder = asyncHandler(async (req, res) => {
 // @route   PATCH /api/v1/reminders/:id/toggle-complete
 // @access  Private
 // ==========================================
-export const toggleComplete = asyncHandler(async (req, res) => {
+exports.toggleComplete = asyncHandler(async (req, res) => {
   const reminder = await Reminder.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId: req.business._id,
     isArchived: false,
   });
 
@@ -229,7 +230,7 @@ export const toggleComplete = asyncHandler(async (req, res) => {
 // @route   POST /api/v1/reminders/:id/snooze
 // @access  Private
 // ==========================================
-export const snoozeReminder = asyncHandler(async (req, res) => {
+exports.snoozeReminder = asyncHandler(async (req, res) => {
   const { minutes = 15 } = req.body;
   const { id } = req.params;
   
@@ -239,7 +240,7 @@ export const snoozeReminder = asyncHandler(async (req, res) => {
 
   const reminder = await Reminder.findOne({ 
     _id: id, 
-    venueId: req.user.venueId,
+    businessId: req.business._id,
     isArchived: false
   });
   
@@ -282,10 +283,9 @@ export const snoozeReminder = asyncHandler(async (req, res) => {
 // @route   GET /api/v1/reminders/upcoming
 // @access  Private
 // ==========================================
-export const getUpcomingReminders = asyncHandler(async (req, res) => {
+exports.getUpcomingReminders = asyncHandler(async (req, res) => {
   const hours = parseInt(req.query.hours) || 168; // Default 7 days
   
-  // ✅ Validate hours parameter
   if (hours < 0 || hours > 720) {
     throw new ApiError('Hours parameter must be between 0 and 720', 400);
   }
@@ -294,11 +294,10 @@ export const getUpcomingReminders = asyncHandler(async (req, res) => {
   const futureDate = new Date(now.getTime() + hours * 60 * 60 * 1000);
   const pastDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24h ago
 
-  // ✅ Query with proper fields
   const reminders = await Reminder.find({
-    venueId: req.user.venueId,
+    businessId: req.business._id, // Updated
     isArchived: false,
-    dismissed: false, // ✅ Exclude dismissed reminders
+    dismissed: false, 
     status: 'active',
     reminderDate: {
       $gte: pastDate,
@@ -309,10 +308,9 @@ export const getUpcomingReminders = asyncHandler(async (req, res) => {
   .populate('relatedEvent', 'title startDate')
   .populate('relatedClient', 'name')
   .sort({ reminderDate: 1, reminderTime: 1 })
-  .limit(100) // ✅ Increased limit
-  .lean(); // ✅ Use lean for better performance
+  .limit(100) 
+  .lean(); 
 
-  // ✅ Pre-calculate stats
   const stats = {
     total: reminders.length,
     overdue: 0,
@@ -357,10 +355,10 @@ export const getUpcomingReminders = asyncHandler(async (req, res) => {
 // @route   POST /api/v1/reminders/:id/dismiss
 // @access  Private
 // ==========================================
-export const dismissReminder = asyncHandler(async (req, res) => {
+exports.dismissReminder = asyncHandler(async (req, res) => {
   const reminder = await Reminder.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId: req.business._id, // Updated
     isArchived: false,
   });
 
@@ -389,8 +387,8 @@ export const dismissReminder = asyncHandler(async (req, res) => {
 // @route   GET /api/v1/reminders/stats
 // @access  Private
 // ==========================================
-export const getReminderStats = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+exports.getReminderStats = asyncHandler(async (req, res) => {
+  const businessId = req.business._id; // Updated
   const now = new Date();
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
@@ -400,7 +398,7 @@ export const getReminderStats = asyncHandler(async (req, res) => {
   const [overdue, today, upcoming, total] = await Promise.all([
     // Overdue
     Reminder.countDocuments({
-      venueId,
+      businessId,
       isArchived: false,
       dismissed: false,
       status: 'active',
@@ -409,7 +407,7 @@ export const getReminderStats = asyncHandler(async (req, res) => {
     
     // Today
     Reminder.countDocuments({
-      venueId,
+      businessId,
       isArchived: false,
       dismissed: false,
       status: 'active',
@@ -421,7 +419,7 @@ export const getReminderStats = asyncHandler(async (req, res) => {
     
     // Upcoming (next 7 days)
     Reminder.countDocuments({
-      venueId,
+      businessId,
       isArchived: false,
       dismissed: false,
       status: 'active',
@@ -433,7 +431,7 @@ export const getReminderStats = asyncHandler(async (req, res) => {
     
     // Total active
     Reminder.countDocuments({
-      venueId,
+      businessId,
       isArchived: false,
       dismissed: false,
       status: 'active'

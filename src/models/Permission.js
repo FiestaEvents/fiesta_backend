@@ -1,4 +1,5 @@
-import mongoose from "mongoose";
+// src/models/Permission.js
+const mongoose = require('mongoose');
 
 const permissionSchema = new mongoose.Schema(
   {
@@ -20,21 +21,24 @@ const permissionSchema = new mongoose.Schema(
       type: String,
       required: true,
       enum: [
-        "events",
+        "events",       // Core Job/Event management
         "clients",
         "partners",
         "finance",
         "payments",
         "invoices",   
         "contracts",  
-        "supplies",   
+        "supplies",     // Consumables (Food, Paper, etc.)
+        "inventory",    // NEW: Assets (Cameras, Vehicles, Sound Equipment)
+        "portfolio",    // NEW: For Photographers/Creatives to manage galleries
         "tasks",
         "reminders",
         "users",
         "roles",
-        "venue",
+        "business",     // NEW: Generalizes 'venue' (Profile, Operating Hours)
+        "venue",        // KEPT FOR MIGRATION: Specific venue features (Spaces)
         "reports",
-        "settings",
+        "settings",     // Global app settings
       ],
     },
     action: {
@@ -59,4 +63,4 @@ const permissionSchema = new mongoose.Schema(
 
 permissionSchema.index({ module: 1, action: 1, scope: 1 }, { unique: true });
 
-export default mongoose.model("Permission", permissionSchema);
+module.exports = mongoose.model("Permission", permissionSchema);

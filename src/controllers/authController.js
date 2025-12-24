@@ -1,19 +1,21 @@
-import crypto from "crypto";
-import jwt from "jsonwebtoken";
-import mongoose from "mongoose";
+// src/controllers/authController.js
+const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
 
 // Middleware & Utils
-import asyncHandler from "../middleware/asyncHandler.js";
-import ApiError from "../utils/ApiError.js";
-import ApiResponse from "../utils/ApiResponse.js";
-import config from "../config/env.js";
-import { generateToken } from "../utils/tokenService.js";
-import { sendWelcomeEmail, sendPasswordResetEmail } from "../services/emailService.js";
+const asyncHandler = require("../middleware/asyncHandler.js");
+const ApiError = require("../utils/ApiError.js");
+const ApiResponse = require("../utils/ApiResponse.js");
+const config = require("../config/env.js");
+const { generateToken } = require("../utils/tokenService.js");
+const { sendWelcomeEmail, sendPasswordResetEmail } = require("../services/emailService.js");
 
-// Models & Config
-import { User, Venue, Role, Permission, VenueSpace } from "../models/index.js";
-import { PERMISSIONS } from "../config/permissions.js";
-import { DEFAULT_ROLES } from "../config/roles.js";
+// Models
+// Note: Space replaces VenueSpace
+const { User, Business, Role, Permission, Space } = require("../models/index.js"); 
+const { PERMISSIONS } = require("../config/permissions.js");
+const { DEFAULT_ROLES } = require("../config/roles.js");
 
 // =============================================================================
 // 🛠️ HELPER FUNCTIONS
@@ -75,6 +77,7 @@ const formatAuthResponse = (user) => {
       email: user.email,
       phone: user.phone,
       avatar: user.avatar,
+      isSuperAdmin: user.isSuperAdmin,
       role: user.roleId
         ? {
             id: user.roleId._id,
@@ -83,10 +86,13 @@ const formatAuthResponse = (user) => {
             level: user.roleId.level,
           }
         : null,
-      venue: user.venueId
+      // Renamed from 'venue' to 'business'
+      business: user.businessId
         ? {
-            id: user.venueId._id,
-            name: user.venueId.name,
+            id: user.businessId._id,
+            name: user.businessId.name,
+            category: user.businessId.category,
+            subscription: user.businessId.subscription
           }
         : null,
       permissions: getPermissionsList(user),
@@ -95,18 +101,20 @@ const formatAuthResponse = (user) => {
 };
 
 /**
- * Background Task: Initialize Venue Data (Roles, Spaces, Permissions)
+ * Background Task: Initialize Business Data (Roles, Permissions, Defaults)
  */
-const completeVenueSetupAsync = async ({
-  venueId,
+const completeBusinessSetupAsync = async ({
+  businessId,
   userId,
-  spaces,
+  category,
+  spaces, // Optional: Only for Venues
   userEmail,
   userName,
-  venueName,
+  businessName,
 }) => {
   try {
-    // 1. Seed Permissions
+    // 1. Seed System Permissions (if missing)
+    // In a real prod environment, this might be a separate migration script
     const permissionOps = PERMISSIONS.map((perm) => ({
       updateOne: {
         filter: { name: perm.name },
@@ -122,9 +130,10 @@ const completeVenueSetupAsync = async ({
       return acc;
     }, {});
 
-    // 2. Create Default Roles
+    // 2. Create Default Roles for THIS Business
+    // TODO: Filter DEFAULT_ROLES based on category (e.g., Drivers don't need 'Chef')
     const rolePromises = DEFAULT_ROLES.map(async (roleConfig) => {
-      if (roleConfig.name === "Owner") return null;
+      if (roleConfig.name === "Owner") return null; // Already created in register
       
       const permissionIds = roleConfig.permissions === "ALL"
         ? allPermissions.map((p) => p._id)
@@ -135,53 +144,56 @@ const completeVenueSetupAsync = async ({
       return Role.create({
         ...roleConfig,
         permissions: permissionIds,
-        venueId,
+        businessId, // Linked to the new business
         isArchived: false,
       });
     }).filter(Boolean);
 
     await Promise.all(rolePromises);
 
-    // 3. Update Owner Permissions
-    const ownerRole = await Role.findOne({ venueId, name: "Owner" });
+    // 3. Update Owner Permissions (Grant ALL)
+    const ownerRole = await Role.findOne({ businessId, name: "Owner" });
     if (ownerRole) {
       ownerRole.permissions = allPermissions.map((p) => p._id);
       await ownerRole.save();
     }
 
-    // 4. Create Venue Spaces
-    if (spaces?.length > 0) {
+    // 4. Create Venue Spaces (Only if category is 'venue')
+    if (category === 'venue' && spaces?.length > 0) {
       const spaceDocs = spaces.map((space) => ({
         name: space.name,
-        description: space.description || `Welcome to ${space.name}`,
+        type: 'room', // Explicit type
+        description: space.description || `Space at ${businessName}`,
         capacity: {
           min: parseInt(space.minCapacity) || 1,
           max: parseInt(space.maxCapacity) || 100,
         },
         basePrice: parseFloat(space.basePrice) || 0,
         amenities: space.amenities || [],
-        venueId,
+        businessId,
         owner: userId,
         isActive: true,
         isArchived: false,
-        timeZone: "UTC",
+        timeZone: "Africa/Tunis",
       }));
-      await VenueSpace.insertMany(spaceDocs);
+      await Space.insertMany(spaceDocs);
     }
+    
+    // Future: If category === 'driver', create default 'Vehicle' resource?
 
     // 5. Send Welcome Email
     try {
       await sendWelcomeEmail({
         email: userEmail,
         userName,
-        venueName,
-        spacesCount: spaces?.length || 0,
+        businessName, // Renamed param in email template
+        category,
       });
     } catch (e) {
       console.error("Email service failed:", e.message);
     }
 
-    console.log(`✅ Setup completed for venue: ${venueName}`);
+    console.log(`✅ Setup completed for business: ${businessName} (${category})`);
   } catch (error) {
     console.error("❌ Async setup error:", error);
   }
@@ -195,12 +207,12 @@ const completeVenueSetupAsync = async ({
  * @desc    Login user & set HttpOnly cookie
  * @route   POST /api/v1/auth/login
  */
-export const login = asyncHandler(async (req, res) => {
+exports.login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
   const user = await User.findOne({ email, isArchived: false })
     .select("+password")
-    .populate("venueId")
+    .populate("businessId") // Changed from venueId
     .populate({
       path: "roleId",
       populate: { path: "permissions", model: "Permission" },
@@ -216,8 +228,10 @@ export const login = asyncHandler(async (req, res) => {
     throw new ApiError("Your account has been deactivated", 403);
   }
 
-  if (user.venueId?.subscription?.status !== "active") {
-    throw new ApiError("Venue subscription is inactive", 403);
+  // Check Business Subscription
+  if (user.businessId && user.businessId.subscription?.status !== "active") {
+    // Optional: throw new ApiError("Business subscription is inactive", 403);
+    // For now, usually we let them log in to PAY, but maybe restrict features.
   }
 
   // Update Login Stats
@@ -235,7 +249,7 @@ export const login = asyncHandler(async (req, res) => {
  * @desc    Get current user profile (Session Check)
  * @route   GET /api/v1/auth/me
  */
-export const getCurrentUser = asyncHandler(async (req, res) => {
+exports.getCurrentUser = asyncHandler(async (req, res) => {
   let user = req.user;
 
   // Ensure deep population if middleware didn't provide it
@@ -245,7 +259,7 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
 
   if (!isPermissionsPopulated) {
     user = await User.findById(req.user._id)
-      .populate("venueId")
+      .populate("businessId")
       .populate({
         path: "roleId",
         populate: { path: "permissions", model: "Permission" },
@@ -258,55 +272,79 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Register new venue owner
+ * @desc    Register new Business Owner (Chameleon Flow)
  * @route   POST /api/v1/auth/register
  */
-export const register = asyncHandler(async (req, res) => {
+exports.register = asyncHandler(async (req, res) => {
   const {
+    // 1. User Info
     name,
     email,
     password,
     phone,
+    
+    // 2. Business Info
+    businessName, // Renamed from venueName
+    category = "venue", // 'venue', 'photography', 'driver', etc.
     description,
-    venueName,
-    address,
-    spaces = [],
+    
+    // 3. Dynamic Details
+    address,        // Common
+    spaces = [],    // If Venue
+    serviceRadius,  // If Service Provider
+    pricingModel    // If Service Provider
   } = req.body;
 
+  // Validation
   if (await User.findOne({ email, isArchived: false })) {
     throw new ApiError("Email already registered", 400);
   }
 
-  // 1. Create Venue
-  const venue = await Venue.create({
-    name: venueName,
-    description: description || `Welcome to ${venueName}`,
-    address: address || {},
+  // 1. Prepare Business Data (The "Chameleon" Logic)
+  const businessData = {
+    name: businessName,
+    description: description || `Welcome to ${businessName}`,
+    category,
     contact: { phone, email },
-    capacity: { min: 50, max: 500 },
-    pricing: { basePrice: 0 },
+    address: address || {},
     subscription: {
       plan: "free",
       status: "active",
       startDate: new Date(),
-      amount: 0,
     },
     owner: null, // Linked later
     isArchived: false,
-  });
+  };
 
-  // 2. Create Owner Role (Placeholder)
+  // Populate polymorphic sub-documents
+  if (category === 'venue') {
+    businessData.venueDetails = {
+      capacity: { min: 0, max: 0 } // Defaults
+      // spaces are added in async setup
+    };
+  } else {
+    // It's a service provider (Photographer, Driver, etc.)
+    businessData.serviceDetails = {
+      serviceRadiusKM: serviceRadius || 50,
+      pricingModel: pricingModel || 'fixed'
+    };
+  }
+
+  // 2. Create Business
+  const business = await Business.create(businessData);
+
+  // 3. Create Owner Role
   const ownerRole = await Role.create({
     name: "Owner",
-    description: "Venue owner with full permissions",
+    description: "Business owner with full permissions",
     level: 100,
     permissions: [], // Populated async
-    venueId: venue._id,
+    businessId: business._id, // Renamed from venueId
     isSystemRole: true,
     isArchived: false,
   });
 
-  // 3. Create User
+  // 4. Create User
   const user = await User.create({
     name,
     email,
@@ -314,26 +352,30 @@ export const register = asyncHandler(async (req, res) => {
     phone,
     roleId: ownerRole._id,
     roleType: "owner",
-    venueId: venue._id,
+    businessId: business._id, // Renamed from venueId
     isArchived: false,
   });
 
-  // 4. Link Venue Owner
-  venue.owner = user._id;
-  await venue.save();
+  // 5. Link Owner to Business
+  business.owner = user._id;
+  await business.save();
 
-  // 5. Set Cookie & Response
+  // 6. Set Cookie & Response
   const token = generateToken(user._id);
   res.cookie("jwt", token, getCookieOptions());
 
-  // Construct initial response manually (DB population not ready yet)
+  // Construct initial response
   const initialResponse = {
     user: {
       id: user._id,
       name: user.name,
       email: user.email,
       role: { id: ownerRole._id, name: "Owner", type: "owner", level: 100 },
-      venue: { id: venue._id, name: venue.name },
+      business: { 
+        id: business._id, 
+        name: business.name, 
+        category: business.category 
+      },
       permissions: [], 
     },
     setupStatus: "in_progress",
@@ -341,14 +383,15 @@ export const register = asyncHandler(async (req, res) => {
 
   new ApiResponse(initialResponse, "Registration successful", 201).send(res);
 
-  // 6. Trigger Background Setup
-  completeVenueSetupAsync({
-    venueId: venue._id,
+  // 7. Trigger Background Setup
+  completeBusinessSetupAsync({
+    businessId: business._id,
     userId: user._id,
-    spaces,
+    category,
+    spaces,       // Passed if venue
     userEmail: email,
     userName: name,
-    venueName,
+    businessName,
   });
 });
 
@@ -356,7 +399,7 @@ export const register = asyncHandler(async (req, res) => {
  * @desc    Logout user & clear cookie
  * @route   POST /api/v1/auth/logout
  */
-export const logout = asyncHandler(async (req, res) => {
+exports.logout = asyncHandler(async (req, res) => {
   res.cookie("jwt", "loggedout", {
     expires: new Date(Date.now() + 10 * 1000),
     httpOnly: true,
@@ -368,13 +411,13 @@ export const logout = asyncHandler(async (req, res) => {
 // 👤 PROFILE & ACCOUNT MANAGEMENT
 // =============================================================================
 
-export const verifyEmail = asyncHandler(async (req, res) => {
+exports.verifyEmail = asyncHandler(async (req, res) => {
   const user = await User.findOne({ email: req.body.email, isArchived: false });
   if (user) throw new ApiError("Email is already taken", 401);
   return res.status(200).send({ message: "Email is available" });
 });
 
-export const updateProfile = asyncHandler(async (req, res) => {
+exports.updateProfile = asyncHandler(async (req, res) => {
   const { name, phone, avatar } = req.body;
   const user = await User.findOne({ _id: req.user._id, isArchived: false });
 
@@ -387,7 +430,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
   await user.save();
 
   const updatedUser = await User.findById(user._id)
-    .populate("venueId")
+    .populate("businessId")
     .populate({ path: "roleId", populate: { path: "permissions" } });
 
   new ApiResponse(
@@ -396,7 +439,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
   ).send(res);
 });
 
-export const changePassword = asyncHandler(async (req, res) => {
+exports.changePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   const user = await User.findOne({ _id: req.user._id }).select("+password");
 
@@ -416,11 +459,12 @@ export const changePassword = asyncHandler(async (req, res) => {
 // 🔄 PASSWORD RESET & RECOVERY
 // =============================================================================
 
-export const forgotPassword = asyncHandler(async (req, res) => {
+exports.forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
   const user = await User.findOne({ email, isArchived: false });
 
   if (!user) {
+    // Standard security practice: Don't reveal if email exists
     return new ApiResponse(null, "If registered, you will receive an email").send(res);
   }
 
@@ -444,7 +488,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   }
 });
 
-export const resetPassword = asyncHandler(async (req, res) => {
+exports.resetPassword = asyncHandler(async (req, res) => {
   const { token, password } = req.body;
   const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
@@ -468,7 +512,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
 // 📦 ARCHIVE & RESTORE
 // =============================================================================
 
-export const archiveAccount = asyncHandler(async (req, res) => {
+exports.archiveAccount = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
   if (!user) throw new ApiError("User not found", 404);
 
@@ -479,7 +523,7 @@ export const archiveAccount = asyncHandler(async (req, res) => {
   new ApiResponse(null, "Account archived").send(res);
 });
 
-export const restoreAccount = asyncHandler(async (req, res) => {
+exports.restoreAccount = asyncHandler(async (req, res) => {
   const { email } = req.body;
   const user = await User.findOne({ email, isArchived: true });
 
@@ -496,10 +540,11 @@ export const restoreAccount = asyncHandler(async (req, res) => {
  * @desc    Get user stats (Admin)
  * @route   GET /api/v1/auth/stats
  */
-export const getUserStats = asyncHandler(async (req, res) => {
-  const venueId = new mongoose.Types.ObjectId(req.user.venueId);
+exports.getUserStats = asyncHandler(async (req, res) => {
+  // Updated to use businessId
+  const businessId = new mongoose.Types.ObjectId(req.user.businessId);
   const stats = await User.aggregate([
-    { $match: { venueId } },
+    { $match: { businessId } },
     {
       $group: {
         _id: null,

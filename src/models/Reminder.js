@@ -1,4 +1,5 @@
-import mongoose from "mongoose";
+// src/models/Reminder.js
+const mongoose = require('mongoose');
 
 const reminderSchema = new mongoose.Schema(
   {
@@ -23,7 +24,7 @@ const reminderSchema = new mongoose.Schema(
       enum: ["active", "completed"],
       default: "active",
     },
-    // Priority is optional/visual only now
+    // Priority is optional/visual only
     priority: {
       type: String,
       enum: ["low", "medium", "high", "urgent"],
@@ -47,12 +48,15 @@ const reminderSchema = new mongoose.Schema(
       type: Date,
     },
 
-    // Relationships
-    venueId: {
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venueId
+    // =========================================================
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
+      ref: "Business",
       required: true,
     },
+    
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -63,27 +67,31 @@ const reminderSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
-     dismissed: {
-    type: Boolean,
-    default: false,
-  },
-  dismissedAt: {
-    type: Date,
-  },
-  dismissedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-  },
-  snoozeHistory: [
-    {
-      snoozedAt: { type: Date, default: Date.now },
-      snoozeMinutes: Number,
-      snoozedBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
+    
+    // Dismissal Logic
+    dismissed: {
+      type: Boolean,
+      default: false,
     },
-  ],
+    dismissedAt: {
+      type: Date,
+    },
+    dismissedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    
+    // Snooze Logic
+    snoozeHistory: [
+      {
+        snoozedAt: { type: Date, default: Date.now },
+        snoozeMinutes: Number,
+        snoozedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+      },
+    ],
 
     // Optional Relations
     relatedEvent: { type: mongoose.Schema.Types.ObjectId, ref: "Event" },
@@ -97,15 +105,21 @@ const reminderSchema = new mongoose.Schema(
 );
 
 // Indexes for common queries
-reminderSchema.index({  venueId: 1, 
+reminderSchema.index({ 
+  businessId: 1, 
   isArchived: 1, 
   status: 1,
   reminderDate: 1 
- });
-reminderSchema.index({  reminderDate: 1, 
-  reminderTime: 1  });
+});
+
+reminderSchema.index({ 
+  reminderDate: 1, 
+  reminderTime: 1 
+});
+
 reminderSchema.index({ 
   title: 'text', 
   description: 'text' 
 });
-export default mongoose.model("Reminder", reminderSchema);
+
+module.exports = mongoose.model("Reminder", reminderSchema);

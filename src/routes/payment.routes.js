@@ -1,5 +1,6 @@
-import express from "express";
-import {
+// src/routes/paymentRoutes.js
+const express = require('express');
+const {
   getPayments,
   getPayment,
   createPayment,
@@ -9,15 +10,17 @@ import {
   processRefund,
   restorePayment,
   getArchivedPayments,
-} from "../controllers/paymentController.js";
-import { authenticate } from "../middleware/auth.js";
-import { checkPermission } from "../middleware/checkPermission.js";
-import validateRequest from "../middleware/validateRequest.js";
-import {
+} = require('../controllers/paymentController');
+
+const { authenticate } = require('../middleware/authMiddleware');
+const { checkPermission } = require('../middleware/permissionMiddleware');
+const validateRequest = require('../middleware/validateRequest');
+
+const {
   createPaymentValidator,
   updatePaymentValidator,
   paymentIdValidator,
-} from "../validators/paymentValidator.js";
+} = require('../validators/paymentValidator');
 
 const router = express.Router();
 
@@ -102,4 +105,4 @@ router
     deletePayment
   );
 
-export default router;
+module.exports = router;

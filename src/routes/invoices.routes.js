@@ -1,8 +1,6 @@
-import express from "express";
-import { authenticate } from "../middleware/auth.js";
-import { checkPermission } from "../middleware/checkPermission.js";
-import validateRequest from "../middleware/validateRequest.js";
-import {
+// src/routes/invoiceRoutes.js
+const express = require('express');
+const {
   getAllInvoices, 
   createInvoice, 
   getInvoiceById, 
@@ -13,20 +11,26 @@ import {
   sendInvoice, 
   markAsPaid, 
   cancelInvoice
-} from "../controllers/invoiceController.js";
-import {
+} = require('../controllers/invoiceController');
+
+const {
   getInvoiceSettings, 
   updateInvoiceSettings,
   previewInvoice, 
   resetToDefaults, 
   applyTemplate
-} from "../controllers/invoiceSettingsController.js";
-import {
+} = require('../controllers/invoiceSettingsController');
+
+const { authenticate } = require('../middleware/authMiddleware');
+const { checkPermission } = require('../middleware/permissionMiddleware');
+const validateRequest = require('../middleware/validateRequest');
+
+const {
   createInvoiceValidator,
   updateInvoiceValidator,
   invoiceIdValidator,
   invoiceSettingsValidator,
-} from "../validators/invoiceValidator.js";
+} = require('../validators/invoiceValidator');
 
 const router = express.Router();
 
@@ -38,11 +42,12 @@ router.use(authenticate);
 // ====================================================
 router.route("/settings")
   .get(
-    checkPermission("venue.read"), // Settings are venue-level
+    // Updated permission to match new Business Architecture
+    checkPermission("business.read"), 
     getInvoiceSettings
   )
   .put(
-    checkPermission("venue.update"),
+    checkPermission("business.update"),
     invoiceSettingsValidator,
     validateRequest,
     updateInvoiceSettings
@@ -50,21 +55,21 @@ router.route("/settings")
 
 router.post(
   "/settings/preview",
-  checkPermission("venue.read"),
-  invoiceSettingsValidator, // Validate payload to preview
+  checkPermission("business.read"),
+  invoiceSettingsValidator,
   validateRequest,
   previewInvoice
 );
 
 router.post(
   "/settings/reset",
-  checkPermission("venue.update"),
+  checkPermission("business.update"),
   resetToDefaults
 );
 
 router.post(
   "/settings/apply-template",
-  checkPermission("venue.update"),
+  checkPermission("business.update"),
   applyTemplate
 );
 
@@ -150,4 +155,4 @@ router.route("/:id")
     deleteInvoice
   );
 
-export default router;
+module.exports = router;

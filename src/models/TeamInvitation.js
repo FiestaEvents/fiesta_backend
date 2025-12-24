@@ -1,21 +1,26 @@
-import mongoose from "mongoose";
-import crypto from "crypto";
+// src/models/TeamInvitation.js
+const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 const teamInvitationSchema = new mongoose.Schema(
   {
-    // The actual unhashed token is sent in the invitation email/link.
     // The HASHED token is stored here for secure lookup.
     token: {
       type: String,
       required: true,
       unique: true,
-      index: true, // <-- Correct, single index definition
+      index: true, 
     },
-    venueId: {
+    
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venueId
+    // =========================================================
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
-      required: [true, "Venue ID is required for the invitation"],
+      ref: "Business",
+      required: [true, "Business ID is required for the invitation"],
     },
+    
     invitedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -76,4 +81,4 @@ teamInvitationSchema.methods.generateInvitationToken = function () {
   return rawToken;
 };
 
-export default mongoose.model("TeamInvitation", teamInvitationSchema);
+module.exports = mongoose.model("TeamInvitation", teamInvitationSchema);

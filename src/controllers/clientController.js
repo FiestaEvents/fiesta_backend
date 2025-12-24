@@ -1,14 +1,15 @@
-import asyncHandler from "../middleware/asyncHandler.js";
-import ApiError from "../utils/ApiError.js";
-import ApiResponse from "../utils/ApiResponse.js";
-import { Client, Event, Payment } from "../models/index.js";
+// src/controllers/clientController.js
+const asyncHandler = require("../middleware/asyncHandler");
+const ApiError = require("../utils/ApiError");
+const ApiResponse = require("../utils/ApiResponse");
+const { Client, Event, Payment } = require("../models/index");
 
 /**
  * @desc    Get all clients
  * @route   GET /api/v1/clients
  * @access  Private
  */
-export const getClients = asyncHandler(async (req, res) => {
+exports.getClients = asyncHandler(async (req, res) => {
   const {
     page = 1,
     limit = 10,
@@ -19,8 +20,11 @@ export const getClients = asyncHandler(async (req, res) => {
     includeArchived = false,
   } = req.query;
 
+  // Use the business context attached by authMiddleware
+  const businessId = req.business._id;
+
   // Build query
-  const query = { venueId: req.user.venueId };
+  const query = { businessId };
 
   if (status) query.status = status;
 
@@ -88,10 +92,10 @@ export const getClients = asyncHandler(async (req, res) => {
  * @route   GET /api/v1/clients/:id
  * @access  Private
  */
-export const getClient = asyncHandler(async (req, res) => {
+exports.getClient = asyncHandler(async (req, res) => {
   const client = await Client.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId: req.business._id,
   })
     .populate("createdBy", "name email")
     .populate("archivedBy", "name email");
@@ -100,7 +104,7 @@ export const getClient = asyncHandler(async (req, res) => {
     throw new ApiError("Client not found", 404);
   }
 
-  // ✅ Get client's events with payment information (excluding archived events)
+  // ✅ Get client's events with payment information
   const events = await Event.find({ 
     clientId: client._id,
     isArchived: { $ne: true }
@@ -128,7 +132,7 @@ export const getClient = asyncHandler(async (req, res) => {
       $group: {
         _id: null,
         totalRevenue: { $sum: "$pricing.totalAmount" },
-        totalPaid: { $sum: "$paymentSummary.paidAmount" },
+        totalPaid: { $sum: "$paymentInfo.paidAmount" }, // Updated field path match new Schema
         upcomingEvents: {
           $sum: {
             $cond: [
@@ -184,11 +188,13 @@ export const getClient = asyncHandler(async (req, res) => {
  * @route   POST /api/v1/clients
  * @access  Private (clients.create)
  */
-export const createClient = asyncHandler(async (req, res) => {
-  // Check if client with email already exists in this venue (excluding archived)
+exports.createClient = asyncHandler(async (req, res) => {
+  const businessId = req.business._id;
+
+  // Check if client with email already exists in this business (excluding archived)
   const existingClient = await Client.findOne({
     email: req.body.email,
-    venueId: req.user.venueId,
+    businessId,
     isArchived: { $ne: true }
   });
 
@@ -198,7 +204,7 @@ export const createClient = asyncHandler(async (req, res) => {
 
   const client = await Client.create({
     ...req.body,
-    venueId: req.user.venueId,
+    businessId,
     createdBy: req.user._id,
   });
 
@@ -210,10 +216,12 @@ export const createClient = asyncHandler(async (req, res) => {
  * @route   PUT /api/v1/clients/:id
  * @access  Private (clients.update.all)
  */
-export const updateClient = asyncHandler(async (req, res) => {
+exports.updateClient = asyncHandler(async (req, res) => {
+  const businessId = req.business._id;
+
   const client = await Client.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
     isArchived: { $ne: true }
   });
 
@@ -221,11 +229,11 @@ export const updateClient = asyncHandler(async (req, res) => {
     throw new ApiError("Client not found", 404);
   }
 
-  // Check if email is being changed and if it's already in use (excluding archived)
+  // Check if email is being changed and if it's already in use
   if (req.body.email && req.body.email !== client.email) {
     const existingClient = await Client.findOne({
       email: req.body.email,
-      venueId: req.user.venueId,
+      businessId,
       _id: { $ne: client._id },
       isArchived: { $ne: true }
     });
@@ -246,10 +254,10 @@ export const updateClient = asyncHandler(async (req, res) => {
  * @route   DELETE /api/v1/clients/:id
  * @access  Private (clients.delete.all)
  */
-export const archiveClient = asyncHandler(async (req, res) => {
+exports.archiveClient = asyncHandler(async (req, res) => {
   const client = await Client.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId: req.business._id,
     isArchived: { $ne: true }
   });
 
@@ -268,10 +276,10 @@ export const archiveClient = asyncHandler(async (req, res) => {
  * @route   PATCH /api/v1/clients/:id/restore
  * @access  Private (clients.delete.all)
  */
-export const restoreClient = asyncHandler(async (req, res) => {
+exports.restoreClient = asyncHandler(async (req, res) => {
   const client = await Client.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId: req.business._id,
     isArchived: true
   });
 
@@ -289,7 +297,7 @@ export const restoreClient = asyncHandler(async (req, res) => {
  * @route   GET /api/v1/clients/archived
  * @access  Private (clients.read.all)
  */
-export const getArchivedClients = asyncHandler(async (req, res) => {
+exports.getArchivedClients = asyncHandler(async (req, res) => {
   const {
     page = 1,
     limit = 10,
@@ -298,7 +306,7 @@ export const getArchivedClients = asyncHandler(async (req, res) => {
 
   // Build query for archived clients
   const query = { 
-    venueId: req.user.venueId,
+    businessId: req.business._id,
     isArchived: true 
   };
 
@@ -341,21 +349,21 @@ export const getArchivedClients = asyncHandler(async (req, res) => {
  * @route   GET /api/v1/clients/stats
  * @access  Private
  */
-export const getClientStats = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+exports.getClientStats = asyncHandler(async (req, res) => {
+  const businessId = req.business._id;
 
   // Exclude archived clients from stats
   const [totalClients, activeClients, inactiveClients] = await Promise.all([
-    Client.countDocuments({ venueId, isArchived: { $ne: true } }),
-    Client.countDocuments({ venueId, status: "active", isArchived: { $ne: true } }),
-    Client.countDocuments({ venueId, status: "inactive", isArchived: { $ne: true } }),
+    Client.countDocuments({ businessId, isArchived: { $ne: true } }),
+    Client.countDocuments({ businessId, status: "active", isArchived: { $ne: true } }),
+    Client.countDocuments({ businessId, status: "inactive", isArchived: { $ne: true } }),
   ]);
 
   // Top clients by revenue (excluding archived events)
   const topClients = await Event.aggregate([
     { 
       $match: { 
-        venueId,
+        businessId,
         isArchived: { $ne: true }
       } 
     },
@@ -399,7 +407,7 @@ export const getClientStats = asyncHandler(async (req, res) => {
   startOfMonth.setHours(0, 0, 0, 0);
 
   const newClientsThisMonth = await Client.countDocuments({
-    venueId,
+    businessId,
     isArchived: { $ne: true },
     createdAt: { $gte: startOfMonth }
   });

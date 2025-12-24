@@ -1,4 +1,5 @@
-import mongoose from "mongoose";
+// src/models/Client.js
+const mongoose = require('mongoose');
 
 const clientSchema = new mongoose.Schema(
   {
@@ -19,18 +20,23 @@ const clientSchema = new mongoose.Schema(
       required: [true, "Phone is required"],
       trim: true,
     },
-    venueId: { 
+    
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venueId
+    // =========================================================
+    businessId: { 
       type: mongoose.Schema.Types.ObjectId, 
-      ref: "Venue", 
+      ref: "Business", 
       required: true,
     },
+    
     status: { 
       type: String, 
       enum: ["active", "inactive"], 
       default: "active",
     },
     
-    // Archive fields
+    // Archive fields (Soft Delete)
     isArchived: { 
       type: Boolean, 
       default: false 
@@ -55,7 +61,8 @@ const clientSchema = new mongoose.Schema(
       type: String,
       maxlength: [1000, "Notes cannot exceed 1000 characters"],
     },
-    tags: [String],
+    tags: [String], // e.g., "VIP", "Wedding 2024", "Corporate"
+    
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -71,10 +78,11 @@ clientSchema.pre("deleteOne", { document: true }, async function (next) {
   // Instead of deleting, archive the client
   this.isArchived = true;
   this.archivedAt = new Date();
-  this.archivedBy = this.createdBy;
+  this.archivedBy = this.createdBy; // Fallback if specific user not passed
   
   // Prevent the actual deletion
-  next(new Error("Clients should be archived instead of deleted. Use archiveClient method."));
+  const error = new Error("Clients should be archived instead of deleted. Use archiveClient method.");
+  next(error);
 });
 
 // Static method to archive a client
@@ -114,8 +122,9 @@ clientSchema.query.includeArchived = function() {
   return this;
 };
 
-clientSchema.index({ venueId: 1, status: 1 });
-clientSchema.index({ email: 1, venueId: 1 });
+// Updated Indexes for the new Business Architecture
+clientSchema.index({ businessId: 1, status: 1 });
+clientSchema.index({ email: 1, businessId: 1 });
 clientSchema.index({ isArchived: 1 });
 
-export default mongoose.model("Client", clientSchema);
+module.exports = mongoose.model("Client", clientSchema);

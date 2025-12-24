@@ -1,7 +1,8 @@
-import mongoose from "mongoose";
+// src/models/ContractSettings.js
+const mongoose = require('mongoose');
 
 // =========================================================
-// 1. DEFAULT SETTINGS CONSTANTS (Pure Values Only)
+// 1. DEFAULT SETTINGS CONSTANTS
 // =========================================================
 const DEFAULT_SETTINGS = {
   branding: {
@@ -26,7 +27,6 @@ const DEFAULT_SETTINGS = {
     footerHeight: 60,
     showPageNumbers: true,
     showDate: true,
-    // Just the array of strings here, not the schema definition
     blockOrder: ["header", "parties", "scope", "financials", "clauses", "signatures", "footer"],
   },
   financialDefaults: {
@@ -42,7 +42,7 @@ const DEFAULT_SETTINGS = {
   labels: {
     contractTitle: "CONTRAT DE PRESTATION",
     partiesTitle: "ENTRE LES SOUSSIGNÉS",
-    serviceProvider: "Le Prestataire",
+    serviceProvider: "Le Prestataire", // Generic enough for Venue, Driver, or Photographer
     clientLabel: "Le Client",
     partnerLabel: "Le Partenaire",
     servicesTitle: "OBJET DU CONTRAT",
@@ -55,7 +55,7 @@ const DEFAULT_SETTINGS = {
     {
       id: "scope",
       title: "Article 1 : Objet du Contrat",
-      content: "Le présent contrat a pour objet la location de la salle et/ou la fourniture de services pour l'événement décrit ci-dessus.",
+      content: "Le présent contrat a pour objet la fourniture de services pour l'événement décrit ci-dessus.",
       type: "scope",
       order: 1,
       isRequired: true,
@@ -82,7 +82,7 @@ const DEFAULT_SETTINGS = {
     {
       id: "liability",
       title: "Article 4 : Responsabilité",
-      content: "Le Client est responsable de tout dommage causé aux locaux ou équipements par ses invités.",
+      content: "Le Client est responsable de tout dommage causé aux équipements ou au personnel par ses invités.",
       type: "liability",
       order: 4,
       isRequired: true,
@@ -91,7 +91,7 @@ const DEFAULT_SETTINGS = {
     {
       id: "jurisdiction",
       title: "Article 5 : Juridiction",
-      content: "En cas de litige, et faute d'accord amiable, les tribunaux de Tunis seront seuls compétents.",
+      content: "En cas de litige, et faute d'accord amiable, les tribunaux du siège social du Prestataire seront seuls compétents.",
       type: "jurisdiction",
       order: 5,
       isRequired: true,
@@ -132,9 +132,10 @@ const DEFAULT_SETTINGS = {
 // =========================================================
 const contractSettingsSchema = new mongoose.Schema(
   {
-    venue: {
+    // ARCHITECTURE UPDATE: Replaces Venue with Business
+    business: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
+      ref: "Business",
       required: true,
       unique: true,
     },
@@ -171,7 +172,6 @@ const contractSettingsSchema = new mongoose.Schema(
       footerHeight: { type: Number, default: DEFAULT_SETTINGS.layout.footerHeight },
       showPageNumbers: { type: Boolean, default: DEFAULT_SETTINGS.layout.showPageNumbers },
       showDate: { type: Boolean, default: DEFAULT_SETTINGS.layout.showDate },
-      // NEW: Block Order stored here
       blockOrder: { 
         type: [String], 
         default: DEFAULT_SETTINGS.layout.blockOrder 
@@ -182,7 +182,7 @@ const contractSettingsSchema = new mongoose.Schema(
     companyInfo: {
       legalName: { type: String, required: true },
       displayName: String,
-      matriculeFiscale: { type: String, required: true },
+      matriculeFiscale: { type: String, required: true }, // Tax ID
       address: { type: String, required: true },
       phone: String,
       email: String,
@@ -287,22 +287,34 @@ const contractSettingsSchema = new mongoose.Schema(
 // =========================================================
 // STATIC: Get Or Create Defaults
 // =========================================================
-contractSettingsSchema.statics.getOrCreate = async function (venueId) {
-  let settings = await this.findOne({ venue: venueId });
+contractSettingsSchema.statics.getOrCreate = async function (businessId) {
+  let settings = await this.findOne({ business: businessId });
 
   if (!settings) {
-    const Venue = mongoose.model("Venue");
-    const venue = await Venue.findById(venueId);
+    // UPDATED: Fetch from Business model instead of Venue
+    const Business = mongoose.model("Business");
+    const business = await Business.findById(businessId);
+
+    if (!business) {
+      throw new Error("Business not found when creating default contract settings");
+    }
+
+    // Format generic address string from Business address object
+    const formatAddress = (addr) => {
+      if (!addr) return "Adresse du siège";
+      const parts = [addr.street, addr.city, addr.zipCode, addr.state].filter(Boolean);
+      return parts.length > 0 ? parts.join(", ") : "Adresse du siège";
+    };
 
     settings = await this.create({
-      venue: venueId,
+      business: businessId,
       companyInfo: {
-        legalName: venue?.name || "Votre Raison Sociale",
-        displayName: venue?.name || "Nom Commercial",
+        legalName: business.name || "Votre Raison Sociale",
+        displayName: business.name || "Nom Commercial",
         matriculeFiscale: "0000000/A/M/000",
-        address: venue?.address || "Adresse du siège",
-        phone: venue?.phone || "",
-        email: venue?.email || "",
+        address: formatAddress(business.address),
+        phone: business.contact?.phone || "",
+        email: business.contact?.email || "",
         rib: "",
         legalRepresentative: "",
       },
@@ -317,4 +329,4 @@ contractSettingsSchema.statics.getOrCreate = async function (venueId) {
   return settings;
 };
 
-export default mongoose.model("ContractSettings", contractSettingsSchema);
+module.exports = mongoose.model("ContractSettings", contractSettingsSchema);

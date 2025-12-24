@@ -1,5 +1,6 @@
-import express from "express";
-import {
+// src/routes/clientRoutes.js
+const express = require('express');
+const {
   getClients,
   getClient,
   createClient,
@@ -8,15 +9,17 @@ import {
   restoreClient,
   getArchivedClients,
   getClientStats,
-} from "../controllers/clientController.js";
-import { authenticate } from "../middleware/auth.js";
-import { checkPermission } from "../middleware/checkPermission.js";
-import validateRequest from "../middleware/validateRequest.js";
-import {
+} = require('../controllers/clientController');
+
+const { authenticate } = require('../middleware/authMiddleware');
+const { checkPermission } = require('../middleware/permissionMiddleware');
+const validateRequest = require('../middleware/validateRequest');
+
+const {
   createClientValidator,
   updateClientValidator,
-  getClientValidator, // Used for ID validation on GET/DELETE/RESTORE
-} from "../validators/clientValidator.js";
+  getClientValidator,
+} = require('../validators/clientValidator');
 
 const router = express.Router();
 
@@ -49,7 +52,7 @@ router
   .route("/")
   .get(
     checkPermission("clients.read.all"), 
-    getClients // Add getClientsValidator if you have query params validation
+    getClients
   )
   .post(
     checkPermission("clients.create"),
@@ -65,7 +68,7 @@ router
 // Restore Client
 router.patch(
   "/:id/restore",
-  checkPermission("clients.delete.all"), // Usually requires same perm as archive
+  checkPermission("clients.delete.all"),
   getClientValidator, // Validates ID
   validateRequest,
   restoreClient
@@ -93,4 +96,4 @@ router
     archiveClient
   );
 
-export default router;
+module.exports = router;

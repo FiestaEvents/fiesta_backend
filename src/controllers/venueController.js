@@ -479,3 +479,49 @@ export const deleteVenueSpace = asyncHandler(async (req, res) => {
 
   new ApiResponse({ spaceId }, "Venue space deleted successfully").send(res);
 });
+/**
+ * @desc    Upload image to portfolio
+ * @route   POST /api/v1/business/portfolio
+ * @access  Private (Owner/Manager)
+ */
+export const uploadPortfolioImage = asyncHandler(async (req, res) => {
+  // Multer adds the 'file' object to req
+  if (!req.file) {
+    throw new ApiError("No image file provided", 400);
+  }
+
+  const { title, description } = req.body;
+  const imageUrl = req.file.path; // Cloudinary returns the URL in 'path'
+
+  // Push to Business Model
+  const business = await Business.findByIdAndUpdate(
+    req.user.businessId,
+    {
+      $push: {
+        "serviceDetails.portfolio": {
+          url: imageUrl,
+          title: title || "Portfolio Image",
+          description: description || "",
+          uploadedAt: new Date()
+        }
+      }
+    },
+    { new: true }
+  );
+
+  new ApiResponse(
+    { 
+      portfolio: business.serviceDetails.portfolio,
+      newImage: imageUrl 
+    }, 
+    "Image uploaded successfully"
+  ).send(res);
+});
+
+/**
+ * @desc    Delete image from portfolio
+ * @route   DELETE /api/v1/business/portfolio/:imageId
+ */
+export const deletePortfolioImage = asyncHandler(async (req, res) => {
+    // Logic to pull from array and delete from Cloudinary...
+});

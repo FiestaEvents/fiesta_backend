@@ -1,17 +1,18 @@
-import Contract from "../models/Contract.js";
-import ContractSettings from "../models/ContractSettings.js";
-import asyncHandler from "../middleware/asyncHandler.js";
-import ApiError from "../utils/ApiError.js";
-import ApiResponse from "../utils/ApiResponse.js";
-import Venue from "../models/Venue.js";
-import { generateContractPDF } from "../utils/generateContractPDF.js";
+// src/controllers/contractController.js
+const Contract = require("../models/Contract");
+const ContractSettings = require("../models/ContractSettings");
+const Business = require("../models/Business");
+const asyncHandler = require("../middleware/asyncHandler");
+const ApiError = require("../utils/ApiError");
+const ApiResponse = require("../utils/ApiResponse");
+const { generateContractPDF } = require("../utils/generateContractPDF");
 
 // ============================================
 // HELPER: Generate Contract Number based on Settings
 // ============================================
-const generateContractNumber = async (venueId) => {
+const generateContractNumber = async (businessId) => {
   // 1. Fetch Settings
-  const settings = await ContractSettings.findOne({ venue: venueId });
+  const settings = await ContractSettings.findOne({ business: businessId });
   const structure = settings?.structure || {
     prefix: "CTR",
     separator: "-",
@@ -27,7 +28,7 @@ const generateContractNumber = async (venueId) => {
   const yearToUse = structure.yearFormat === "YY" ? yearShort : yearFull;
 
   // 2. Count existing docs for this year/sequence
-  const query = { venue: venueId };
+  const query = { business: businessId };
   if (structure.includeYear && structure.resetSequenceYearly) {
     query.createdAt = {
       $gte: new Date(yearFull, 0, 1),
@@ -76,7 +77,7 @@ const calculateFinancials = (services, vatRate = 19, stampDuty = 1.0) => {
 
 // @desc    Get all contracts
 // @route   GET /api/contracts
-export const getContracts = asyncHandler(async (req, res) => {
+exports.getContracts = asyncHandler(async (req, res) => {
   const {
     page = 1,
     limit = 10,
@@ -87,7 +88,7 @@ export const getContracts = asyncHandler(async (req, res) => {
     sortOrder = "desc",
   } = req.query;
 
-  const query = { venue: req.user.venueId };
+  const query = { business: req.business._id };
 
   if (status) query.status = status;
   if (contractType) query.contractType = contractType;
@@ -130,10 +131,10 @@ export const getContracts = asyncHandler(async (req, res) => {
 
 // @desc    Get single contract
 // @route   GET /api/contracts/:id
-export const getContractById = asyncHandler(async (req, res) => {
+exports.getContractById = asyncHandler(async (req, res) => {
   const contract = await Contract.findOne({
     _id: req.params.id,
-    venue: req.user.venueId,
+    business: req.business._id,
   })
     .populate("event", "title startDate endDate type")
     .populate("createdBy", "name email");
@@ -145,7 +146,7 @@ export const getContractById = asyncHandler(async (req, res) => {
 
 // @desc    Create contract
 // @route   POST /api/contracts
-export const createContract = asyncHandler(async (req, res) => {
+exports.createContract = asyncHandler(async (req, res) => {
   const {
     contractType,
     eventId,
@@ -159,7 +160,6 @@ export const createContract = asyncHandler(async (req, res) => {
   } = req.body;
 
   if (!party || !party.name) {
-    // ✅ FIXED: Message first, Status Code second
     throw new ApiError("Party details are required", 400);
   }
 
@@ -183,10 +183,10 @@ export const createContract = asyncHandler(async (req, res) => {
     ...calculatedStats,
   };
 
-  const contractNumber = await generateContractNumber(req.user.venueId);
+  const contractNumber = await generateContractNumber(req.business._id);
 
   const contract = await Contract.create({
-    venue: req.user.venueId,
+    business: req.business._id, // Updated reference
     contractNumber,
     contractType,
     event: eventId || undefined,
@@ -208,10 +208,10 @@ export const createContract = asyncHandler(async (req, res) => {
 
 // @desc    Update contract
 // @route   PUT /api/contracts/:id
-export const updateContract = asyncHandler(async (req, res) => {
+exports.updateContract = asyncHandler(async (req, res) => {
   let contract = await Contract.findOne({
     _id: req.params.id,
-    venue: req.user.venueId,
+    business: req.business._id,
   });
 
   if (!contract) throw new ApiError("Contract not found", 404); 
@@ -277,10 +277,10 @@ export const updateContract = asyncHandler(async (req, res) => {
 
 // @desc    Delete contract
 // @route   DELETE /api/contracts/:id
-export const deleteContract = asyncHandler(async (req, res) => {
+exports.deleteContract = asyncHandler(async (req, res) => {
   const contract = await Contract.findOne({
     _id: req.params.id,
-    venue: req.user.venueId,
+    business: req.business._id,
   });
 
   if (!contract) throw new ApiError("Contract not found", 404); 
@@ -297,9 +297,9 @@ export const deleteContract = asyncHandler(async (req, res) => {
 
 // @desc    Archive contract
 // @route   PATCH /api/contracts/:id/archive
-export const archiveContract = asyncHandler(async (req, res) => {
+exports.archiveContract = asyncHandler(async (req, res) => {
   const contract = await Contract.findOneAndUpdate(
-    { _id: req.params.id, venue: req.user.venueId },
+    { _id: req.params.id, business: req.business._id },
     { status: "cancelled" },
     { new: true }
   );
@@ -311,9 +311,9 @@ export const archiveContract = asyncHandler(async (req, res) => {
 
 // @desc    Restore contract
 // @route   PATCH /api/contracts/:id/restore
-export const restoreContract = asyncHandler(async (req, res) => {
+exports.restoreContract = asyncHandler(async (req, res) => {
   const contract = await Contract.findOneAndUpdate(
-    { _id: req.params.id, venue: req.user.venueId },
+    { _id: req.params.id, business: req.business._id },
     { status: "draft" },
     { new: true }
   );
@@ -329,10 +329,10 @@ export const restoreContract = asyncHandler(async (req, res) => {
 
 // @desc    Send contract
 // @route   POST /api/contracts/:id/send
-export const sendContract = asyncHandler(async (req, res) => {
+exports.sendContract = asyncHandler(async (req, res) => {
   const contract = await Contract.findOne({
     _id: req.params.id,
-    venue: req.user.venueId,
+    business: req.business._id,
   });
   if (!contract) throw new ApiError("Contract not found", 404);
 
@@ -344,10 +344,10 @@ export const sendContract = asyncHandler(async (req, res) => {
 
 // @desc    Duplicate contract
 // @route   POST /api/contracts/:id/duplicate
-export const duplicateContract = asyncHandler(async (req, res) => {
+exports.duplicateContract = asyncHandler(async (req, res) => {
   const original = await Contract.findOne({
     _id: req.params.id,
-    venue: req.user.venueId,
+    business: req.business._id,
   }).lean();
 
   if (!original) throw new ApiError("Contract not found", 404); 
@@ -361,7 +361,7 @@ export const duplicateContract = asyncHandler(async (req, res) => {
 
   original.status = "draft";
   original.title = `${original.title} (Copie)`;
-  original.contractNumber = await generateContractNumber(req.user.venueId);
+  original.contractNumber = await generateContractNumber(req.business._id);
   original.createdBy = req.user._id;
 
   const newContract = await Contract.create(original);
@@ -373,7 +373,9 @@ export const duplicateContract = asyncHandler(async (req, res) => {
 
 // @desc    Mark contract as viewed
 // @route   PATCH /api/contracts/:id/view
-export const markContractViewed = asyncHandler(async (req, res) => {
+exports.markContractViewed = asyncHandler(async (req, res) => {
+  // Can be viewed by client via public link (no auth check on businessId potentially), 
+  // but if internal API, check business
   const contract = await Contract.findById(req.params.id);
   if (!contract) throw new ApiError("Contract not found", 404); 
 
@@ -387,7 +389,7 @@ export const markContractViewed = asyncHandler(async (req, res) => {
 
 // @desc    Sign contract
 // @route   POST /api/contracts/:id/sign
-export const signContract = asyncHandler(async (req, res) => {
+exports.signContract = asyncHandler(async (req, res) => {
   const { signatureData, signerIp } = req.body;
 
   const contract = await Contract.findById(req.params.id);
@@ -414,24 +416,25 @@ export const signContract = asyncHandler(async (req, res) => {
 
 // @desc    Get contract settings
 // @route   GET /api/contracts/settings
-export const getContractSettings = asyncHandler(async (req, res) => {
-  const settings = await ContractSettings.getOrCreate(req.user.venueId);
+exports.getContractSettings = asyncHandler(async (req, res) => {
+  // Use getOrCreate for the generic Business ID
+  const settings = await ContractSettings.getOrCreate(req.business._id);
   res.status(200).json(new ApiResponse(200, { settings }));
 });
 
 // @desc    Update contract settings
 // @route   PUT /api/contracts/settings
-export const updateContractSettings = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+exports.updateContractSettings = asyncHandler(async (req, res) => {
+  const businessId = req.business._id;
 
   // 1. Find existing settings
-  let settings = await ContractSettings.findOne({ venue: venueId });
+  let settings = await ContractSettings.findOne({ business: businessId });
 
   if (!settings) {
-    settings = await ContractSettings.getOrCreate(venueId);
+    settings = await ContractSettings.getOrCreate(businessId);
   }
 
-  // 2. Update fields directly on the document
+  // 2. Update fields
   const fieldsToUpdate = [
     "companyInfo",
     "branding",
@@ -451,7 +454,7 @@ export const updateContractSettings = asyncHandler(async (req, res) => {
     }
   }
 
-  // 3. Save with validation disabled for speed
+  // 3. Save
   await settings.save({ validateBeforeSave: false });
 
   res
@@ -465,9 +468,9 @@ export const updateContractSettings = asyncHandler(async (req, res) => {
 
 // @desc    Get contract stats
 // @route   GET /api/contracts/stats
-export const getContractStats = asyncHandler(async (req, res) => {
+exports.getContractStats = asyncHandler(async (req, res) => {
   const stats = await Contract.aggregate([
-    { $match: { venue: req.user.venueId } },
+    { $match: { business: req.business._id } },
     {
       $group: {
         _id: null,
@@ -542,23 +545,23 @@ export const getContractStats = asyncHandler(async (req, res) => {
 
 // @desc    Download PDF
 // @route   GET /api/contracts/:id/download
-export const downloadContractPdf = asyncHandler(async (req, res) => {
+exports.downloadContractPdf = asyncHandler(async (req, res) => {
   // 1. Fetch Contract
   const contract = await Contract.findOne({
     _id: req.params.id,
-    venue: req.user.venueId,
+    business: req.business._id,
   });
 
   if (!contract) throw new ApiError("Contract not found", 404);
 
   // 2. Fetch Settings (for styling)
-  const settings = await ContractSettings.findOne({ venue: req.user.venueId });
+  const settings = await ContractSettings.findOne({ business: req.business._id });
 
-  // 3. Fetch Venue (for fallback info)
-  const venue = await Venue.findById(req.user.venueId);
+  // 3. Fetch Business (Was Venue)
+  const business = await Business.findById(req.business._id);
 
   // 4. Generate PDF
-  const pdfBuffer = await generateContractPDF(contract, venue, settings);
+  const pdfBuffer = await generateContractPDF(contract, business, settings);
 
   // 5. Send Response
   res.setHeader("Content-Type", "application/pdf");

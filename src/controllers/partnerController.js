@@ -1,14 +1,15 @@
-import asyncHandler from "../middleware/asyncHandler.js";
-import ApiError from "../utils/ApiError.js";
-import ApiResponse from "../utils/ApiResponse.js";
-import { Partner, Event } from "../models/index.js";
+// src/controllers/partnerController.js
+const asyncHandler = require("../middleware/asyncHandler");
+const ApiError = require("../utils/ApiError");
+const ApiResponse = require("../utils/ApiResponse");
+const { Partner, Event } = require("../models/index");
 
 /**
  * @desc    Get all partners (non-archived by default)
  * @route   GET /api/v1/partners
  * @access  Private
  */
-export const getPartners = asyncHandler(async (req, res) => {
+exports.getPartners = asyncHandler(async (req, res) => {
   const {
     page = 1,
     limit = 10,
@@ -17,16 +18,15 @@ export const getPartners = asyncHandler(async (req, res) => {
     search,
     sortBy = "createdAt",
     order = "desc",
-    includeArchived = false, // New parameter to include archived partners
+    includeArchived = false,
   } = req.query;
 
-  // Build query
-  const query = { venueId: req.user.venueId };
+  // Build query using Business context
+  const query = { businessId: req.business._id };
 
   if (category) query.category = category;
   if (status) query.status = status;
   
-  // Modified: Only fetch non-archived partners by default
   if (!includeArchived) {
     query.isArchived = false;
   }
@@ -40,14 +40,10 @@ export const getPartners = asyncHandler(async (req, res) => {
     ];
   }
 
-  // Pagination
   const skip = (page - 1) * limit;
-
-  // Sort
   const sortOrder = order === "asc" ? 1 : -1;
   const sortOptions = { [sortBy]: sortOrder };
 
-  // Execute query
   const [partners, total] = await Promise.all([
     Partner.find(query)
       .populate("createdBy", "name email")
@@ -74,10 +70,10 @@ export const getPartners = asyncHandler(async (req, res) => {
  * @route   GET /api/v1/partners/:id
  * @access  Private
  */
-export const getPartner = asyncHandler(async (req, res) => {
+exports.getPartner = asyncHandler(async (req, res) => {
   const partner = await Partner.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId: req.business._id, // Updated
   })
     .populate("createdBy", "name email")
     .populate("archivedBy", "name email");
@@ -88,7 +84,7 @@ export const getPartner = asyncHandler(async (req, res) => {
 
   // Get events where this partner is involved
   const events = await Event.find({
-    venueId: req.user.venueId,
+    businessId: req.business._id, // Updated
     "partners.partner": partner._id,
   })
     .select("title startDate status partners.$")
@@ -108,12 +104,12 @@ export const getPartner = asyncHandler(async (req, res) => {
  * @route   POST /api/v1/partners
  * @access  Private (partners.create)
  */
-export const createPartner = asyncHandler(async (req, res) => {
-  // Check if partner with email already exists in this venue (non-archived)
+exports.createPartner = asyncHandler(async (req, res) => {
+  // Check if partner with email already exists in this business
   const existingPartner = await Partner.findOne({
     email: req.body.email,
-    venueId: req.user.venueId,
-    isArchived: false, // Only check non-archived partners
+    businessId: req.business._id, // Updated
+    isArchived: false, 
   });
 
   if (existingPartner) {
@@ -122,9 +118,9 @@ export const createPartner = asyncHandler(async (req, res) => {
 
   const partner = await Partner.create({
     ...req.body,
-    venueId: req.user.venueId,
+    businessId: req.business._id, // Updated
     createdBy: req.user._id,
-    isArchived: false, // Ensure new partners are not archived
+    isArchived: false,
   });
 
   new ApiResponse({ partner }, "Partner created successfully", 201).send(res);
@@ -135,10 +131,10 @@ export const createPartner = asyncHandler(async (req, res) => {
  * @route   PUT /api/v1/partners/:id
  * @access  Private (partners.update.all)
  */
-export const updatePartner = asyncHandler(async (req, res) => {
+exports.updatePartner = asyncHandler(async (req, res) => {
   const partner = await Partner.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId: req.business._id,
   });
 
   if (!partner) {
@@ -149,11 +145,11 @@ export const updatePartner = asyncHandler(async (req, res) => {
     throw new ApiError("Cannot update an archived partner", 400);
   }
 
-  // Check if email is being changed and if it's already in use (non-archived)
+  // Check if email is being changed and if it's already in use
   if (req.body.email && req.body.email !== partner.email) {
     const existingPartner = await Partner.findOne({
       email: req.body.email,
-      venueId: req.user.venueId,
+      businessId: req.business._id,
       _id: { $ne: partner._id },
       isArchived: false,
     });
@@ -174,10 +170,10 @@ export const updatePartner = asyncHandler(async (req, res) => {
  * @route   DELETE /api/v1/partners/:id
  * @access  Private (partners.delete.all)
  */
-export const deletePartner = asyncHandler(async (req, res) => {
+exports.deletePartner = asyncHandler(async (req, res) => {
   const partner = await Partner.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId: req.business._id,
   });
 
   if (!partner) {
@@ -190,7 +186,7 @@ export const deletePartner = asyncHandler(async (req, res) => {
 
   // Check if partner is associated with any events
   const eventsWithPartner = await Event.countDocuments({
-    venueId: req.user.venueId,
+    businessId: req.business._id,
     "partners.partner": partner._id,
   });
 
@@ -201,7 +197,7 @@ export const deletePartner = asyncHandler(async (req, res) => {
     );
   }
 
-  // Soft delete: Archive the partner instead of deleting
+  // Soft delete
   partner.isArchived = true;
   partner.archivedAt = new Date();
   partner.archivedBy = req.user._id;
@@ -215,10 +211,10 @@ export const deletePartner = asyncHandler(async (req, res) => {
  * @route   PATCH /api/v1/partners/:id/restore
  * @access  Private (partners.update.all)
  */
-export const restorePartner = asyncHandler(async (req, res) => {
+exports.restorePartner = asyncHandler(async (req, res) => {
   const partner = await Partner.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId: req.business._id,
   });
 
   if (!partner) {
@@ -229,10 +225,10 @@ export const restorePartner = asyncHandler(async (req, res) => {
     throw new ApiError("Partner is not archived", 400);
   }
 
-  // Check if email conflicts with existing active partners
+  // Check for email conflicts
   const existingPartner = await Partner.findOne({
     email: partner.email,
-    venueId: req.user.venueId,
+    businessId: req.business._id,
     _id: { $ne: partner._id },
     isArchived: false,
   });
@@ -257,16 +253,16 @@ export const restorePartner = asyncHandler(async (req, res) => {
  * @route   GET /api/v1/partners/stats
  * @access  Private
  */
-export const getPartnerStats = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+exports.getPartnerStats = asyncHandler(async (req, res) => {
+  const businessId = req.business._id;
 
   const [totalPartners, activePartners, partnersByCategory, archivedPartners] = await Promise.all([
-    Partner.countDocuments({ venueId, isArchived: false }),
-    Partner.countDocuments({ venueId, status: "active", isArchived: false }),
+    Partner.countDocuments({ businessId, isArchived: false }),
+    Partner.countDocuments({ businessId, status: "active", isArchived: false }),
     Partner.aggregate([
       { 
         $match: { 
-          venueId,
+          businessId,
           isArchived: false 
         } 
       },
@@ -278,7 +274,7 @@ export const getPartnerStats = asyncHandler(async (req, res) => {
       },
       { $sort: { count: -1 } },
     ]),
-    Partner.countDocuments({ venueId, isArchived: true }),
+    Partner.countDocuments({ businessId, isArchived: true }),
   ]);
 
   new ApiResponse({
@@ -294,7 +290,7 @@ export const getPartnerStats = asyncHandler(async (req, res) => {
  * @route   GET /api/v1/partners/archived
  * @access  Private
  */
-export const getArchivedPartners = asyncHandler(async (req, res) => {
+exports.getArchivedPartners = asyncHandler(async (req, res) => {
   const {
     page = 1,
     limit = 10,
@@ -302,20 +298,15 @@ export const getArchivedPartners = asyncHandler(async (req, res) => {
     order = "desc",
   } = req.query;
 
-  // Build query for archived partners only
   const query = { 
-    venueId: req.user.venueId,
+    businessId: req.business._id,
     isArchived: true 
   };
 
-  // Pagination
   const skip = (page - 1) * limit;
-
-  // Sort
   const sortOrder = order === "asc" ? 1 : -1;
   const sortOptions = { [sortBy]: sortOrder };
 
-  // Execute query
   const [partners, total] = await Promise.all([
     Partner.find(query)
       .populate("createdBy", "name email")

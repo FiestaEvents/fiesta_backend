@@ -1,5 +1,6 @@
-import express from "express";
-import {
+// src/routes/contractRoutes.js
+const express = require('express');
+const {
   // CRUD
   getContracts,
   getContractById,
@@ -20,16 +21,18 @@ import {
   // Stats & Download
   getContractStats,
   downloadContractPdf,
-} from "../controllers/contractController.js";
-import { authenticate } from "../middleware/auth.js";
-import { checkPermission } from "../middleware/checkPermission.js";
-import validateRequest from "../middleware/validateRequest.js";
-import {
+} = require('../controllers/contractController');
+
+const { authenticate } = require('../middleware/authMiddleware');
+const { checkPermission } = require('../middleware/permissionMiddleware');
+const validateRequest = require('../middleware/validateRequest');
+
+const {
   createContractValidator,
   updateContractValidator,
   contractIdValidator,
   contractSettingsValidator,
-} from "../validators/contractValidator.js";
+} = require('../validators/contractValidator');
 
 const router = express.Router();
 
@@ -42,12 +45,13 @@ router.use(authenticate);
 router
   .route("/settings")
   .get(
-    checkPermission("venue.read"), // Settings usually fall under venue permissions
+    // Updated from 'venue.read' to 'business.read' to match new architecture
+    checkPermission("business.read"), 
     getContractSettings
   )
   .put(
-    checkPermission("venue.update"),
-    contractSettingsValidator, // Validate settings payload
+    checkPermission("business.update"),
+    contractSettingsValidator,
     validateRequest,
     updateContractSettings
   );
@@ -164,4 +168,4 @@ router
     deleteContract
   );
 
-export default router;
+module.exports = router;

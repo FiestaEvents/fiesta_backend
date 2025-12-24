@@ -1,5 +1,6 @@
-import express from "express";
-import {
+// src/routes/partnerRoutes.js
+const express = require('express');
+const {
   getPartners,
   getPartner,
   createPartner,
@@ -8,15 +9,17 @@ import {
   getPartnerStats,
   restorePartner,
   getArchivedPartners,
-} from "../controllers/partnerController.js";
-import { authenticate } from "../middleware/auth.js";
-import { checkPermission } from "../middleware/checkPermission.js";
-import validateRequest from "../middleware/validateRequest.js";
-import {
+} = require('../controllers/partnerController');
+
+const { authenticate } = require('../middleware/authMiddleware');
+const { checkPermission } = require('../middleware/permissionMiddleware');
+const validateRequest = require('../middleware/validateRequest');
+
+const {
   createPartnerValidator,
   updatePartnerValidator,
   partnerIdValidator,
-} from "../validators/partnerValidator.js";
+} = require('../validators/partnerValidator');
 
 const router = express.Router();
 
@@ -90,4 +93,4 @@ router
     deletePartner
   );
 
-export default router;
+module.exports = router;

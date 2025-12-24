@@ -785,7 +785,26 @@ const seedFinancialsAndContracts = async (venue, events, clients, createdBy) => 
 
   console.log("✅ Financials & Contracts Seeded");
 };
+const seedSuperAdmin = async () => {
+  console.log("\n👑 Seeding Super Admin...");
+  
+  // Check if exists
+  const exists = await User.findOne({ email: "admin@fiesta.events" });
+  if (exists) return;
 
+  await User.create({
+    name: "Super Admin",
+    email: "admin@fiesta.events",
+    password: "supersecretpassword", // Change this!
+    phone: "00000000",
+    isSuperAdmin: true,
+    // No businessId needed due to schema change
+    isActive: true,
+    roleType: "owner" // Just a placeholder, isSuperAdmin overrides permissions
+  });
+  
+  console.log("✅ Super Admin created: admin@fiesta.events");
+};
 // =========================================================
 // MAIN EXECUTION
 // =========================================================

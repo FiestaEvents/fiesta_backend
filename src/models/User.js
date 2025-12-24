@@ -1,5 +1,6 @@
-import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
+// src/models/User.js
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
 const userSchema = new mongoose.Schema(
   {
@@ -16,37 +17,46 @@ const userSchema = new mongoose.Schema(
       trim: true,
       match: [/^\S+@\S+\.\S+$/, "Please provide a valid email"],
     },
-password: { 
-  type: String, 
-  required: [true, "Password is required"],
-  minlength: [6, "Password must be at least 6 characters"],
-  select: false,
-},
+    password: { 
+      type: String, 
+      required: [true, "Password is required"],
+      minlength: [6, "Password must be at least 6 characters"],
+      select: false, // Don't return password by default
+    },
     phone: { 
       type: String,
       trim: true,
     },
+    
+    // =========================================================
+    // ARCHITECTURE UPDATE: References Business (Venue, Driver, etc.)
+    // =========================================================
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business", 
+      // Platform Admins don't need a business, everyone else does
+      required: function() { return !this.isSuperAdmin; },
+    },
+    
     roleId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Role",
     },
+    
+    // Generic Role Types (used for UI logic before RBAC loads)
     roleType: {
       type: String,
       enum: ["owner", "manager", "staff", "viewer", "custom"],
       default: "viewer",
     },
-    venueId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
-      required: [true, "Venue is required"],
+    
+    // THE GOD MODE FLAG (Platform Admin)
+    isSuperAdmin: {
+      type: Boolean,
+      default: false,
     },
-    isActive: { type: Boolean, default: true },
-    isArchived: { type: Boolean, default: false },
-    archivedAt: { type: Date },
-    archivedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
+    
+    // Granular Permission Overrides
     customPermissions: {
       granted: [
         {
@@ -61,15 +71,29 @@ password: {
         },
       ],
     },
+    
+    // Profile & Meta
     avatar: { type: String },
     lastLogin: { type: Date },
     isActive: { type: Boolean, default: true },
+    
+    // Soft Delete
+    isArchived: { type: Boolean, default: false },
+    archivedAt: { type: Date },
+    archivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    
+    // Invitation Tracking
     invitedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
     invitedAt: { type: Date },
     acceptedAt: { type: Date },
+    
+    // Password Reset
     resetPasswordToken: String,
     resetPasswordExpire: Date,
   },
@@ -78,6 +102,7 @@ password: {
   }
 );
 
+// Encrypt password using bcrypt
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) {
     return next();
@@ -86,11 +111,14 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
+// Match user entered password to hashed password in database
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
+// Flatten permissions (Role Permissions + Custom Granted - Custom Revoked)
 userSchema.methods.getPermissions = async function () {
+  // Populate the role and its permissions
   await this.populate({
     path: "roleId",
     populate: { path: "permissions" },
@@ -98,8 +126,10 @@ userSchema.methods.getPermissions = async function () {
 
   if (!this.roleId || !this.roleId.permissions) return [];
 
+  // Start with Role Permissions
   let permissions = this.roleId.permissions.map((p) => p._id.toString());
 
+  // Add Custom Granted
   if (this.customPermissions?.granted) {
     permissions = [
       ...permissions,
@@ -107,14 +137,17 @@ userSchema.methods.getPermissions = async function () {
     ];
   }
 
+  // Remove Custom Revoked
   if (this.customPermissions?.revoked) {
     const revoked = this.customPermissions.revoked.map((p) => p.toString());
     permissions = permissions.filter((p) => !revoked.includes(p));
   }
 
+  // Return unique list
   return [...new Set(permissions)];
 };
 
+// Quick check helper
 userSchema.methods.hasPermission = async function (permissionName) {
   const Permission = mongoose.model("Permission");
   const permission = await Permission.findOne({ name: permissionName });
@@ -125,4 +158,4 @@ userSchema.methods.hasPermission = async function (permissionName) {
   return userPermissions.includes(permission._id.toString());
 };
 
-export default mongoose.model("User", userSchema);
+module.exports = mongoose.model("User", userSchema);

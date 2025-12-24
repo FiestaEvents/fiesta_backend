@@ -1,4 +1,5 @@
-import mongoose from "mongoose";
+// src/models/Finance.js
+const mongoose = require('mongoose');
 
 const financeSchema = new mongoose.Schema(
   {
@@ -14,12 +15,14 @@ const financeSchema = new mongoose.Schema(
         "event_revenue",
         "partner_payment",
         "utilities",
-        "maintenance",
+        "maintenance",    // Works for Venue maintenance or Vehicle repairs
         "marketing",
         "staff_salary",
-        "equipment",
+        "equipment",      // Cameras, DJ decks, Ovens
         "insurance",
         "taxes",
+        "supplies",       // New: Catering ingredients, cleaning products
+        "fuel",           // New: Specific for Drivers/Logistics
         "other",
       ],
     },
@@ -33,12 +36,15 @@ const financeSchema = new mongoose.Schema(
       required: [true, "Amount is required"],
       min: [0, "Amount cannot be negative"],
     },
-      isArchived: { type: Boolean, default: false },
-  archivedAt: { type: Date },
-  archivedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-  },
+    
+    // Archive / Soft Delete
+    isArchived: { type: Boolean, default: false },
+    archivedAt: { type: Date },
+    archivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+
     date: {
       type: Date,
       required: [true, "Date is required"],
@@ -53,6 +59,8 @@ const financeSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    
+    // Relationships
     relatedEvent: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Event",
@@ -62,21 +70,24 @@ const financeSchema = new mongoose.Schema(
     },
     relatedPartner: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Partner",
+      ref: "Partner", // External vendor
       required: function () {
         return this.category === "partner_payment";
       },
     },
+    
     receipt: {
       fileName: String,
-      fileUrl: String,
+      fileUrl: String, // Cloudinary/S3 URL
       uploadDate: { type: Date, default: Date.now },
     },
+    
     taxInfo: {
       taxRate: { type: Number, default: 0 },
       taxAmount: { type: Number, default: 0 },
       taxIncluded: { type: Boolean, default: false },
     },
+    
     status: {
       type: String,
       enum: ["pending", "completed", "cancelled"],
@@ -86,11 +97,16 @@ const financeSchema = new mongoose.Schema(
       type: String,
       maxlength: [1000, "Notes cannot exceed 1000 characters"],
     },
-    venueId: {
+    
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venueId
+    // =========================================================
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
+      ref: "Business",
       required: true,
     },
+    
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -101,7 +117,8 @@ const financeSchema = new mongoose.Schema(
   }
 );
 
-financeSchema.index({ venueId: 1, type: 1, date: -1 });
+// Indexes
+financeSchema.index({ businessId: 1, type: 1, date: -1 });
 financeSchema.index({ category: 1, date: -1 });
 
-export default mongoose.model("Finance", financeSchema);
+module.exports = mongoose.model("Finance", financeSchema);

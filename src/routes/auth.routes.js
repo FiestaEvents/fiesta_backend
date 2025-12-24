@@ -1,5 +1,6 @@
-import express from "express";
-import {
+// src/routes/authRoutes.js
+const express = require('express');
+const {
   register,
   login,
   getCurrentUser,
@@ -12,11 +13,14 @@ import {
   archiveAccount,
   restoreAccount,
   getUserStats,
+} = require('../controllers/authController');
 
-} from "../controllers/authController.js";
-import { authenticate } from "../middleware/auth.js";
-import validateRequest from "../middleware/validateRequest.js";
-import {
+// Updated path to match the file refactored in previous steps
+const { authenticate } = require('../middleware/authMiddleware');
+
+// Assuming these files will also be converted to CommonJS
+const validateRequest = require('../middleware/validateRequest');
+const {
   registerValidator,
   loginValidator,
   forgotPasswordValidator,
@@ -26,7 +30,7 @@ import {
   updateProfileValidator,
   changePasswordValidator,
   archiveAccountValidator,
-} from "../validators/authValidator.js";
+} = require('../validators/authValidator');
 
 const router = express.Router();
 
@@ -88,8 +92,6 @@ router.patch(
   archiveAccount
 );
 
-router.get(
-  "/stats", getUserStats);
+router.get("/stats", getUserStats);
 
-
-export default router;
+module.exports = router;

@@ -1,4 +1,5 @@
-import mongoose from "mongoose";
+// src/models/Payment.js
+const mongoose = require('mongoose');
 
 const paymentSchema = new mongoose.Schema(
   {
@@ -10,18 +11,22 @@ const paymentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Client",
     },
+    
+    // Income (Client pays Business) vs Expense (Business pays Partner)
     type: {
       type: String,
       required: [true, "Payment type is required"],
       enum: ["income", "expense"],
       default: "income",
     },
-      isArchived: { type: Boolean, default: false },
-  archivedAt: { type: Date },
-  archivedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-  },
+    
+    // Archive / Soft Delete
+    isArchived: { type: Boolean, default: false },
+    archivedAt: { type: Date },
+    archivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
   
     amount: {
       type: Number,
@@ -47,7 +52,7 @@ const paymentSchema = new mongoose.Schema(
     },
     reference: {
       type: String,
-      trim: true,
+      trim: true, // Check number or Transaction ID
     },
     description: {
       type: String,
@@ -59,6 +64,8 @@ const paymentSchema = new mongoose.Schema(
     paidDate: {
       type: Date,
     },
+    
+    // Refund Logic
     refundAmount: {
       type: Number,
       default: 0,
@@ -71,19 +78,26 @@ const paymentSchema = new mongoose.Schema(
       type: String,
       maxlength: [500, "Refund reason cannot exceed 500 characters"],
     },
+    
+    // Platform/Processing Fees
     fees: {
       processingFee: { type: Number, default: 0 },
       platformFee: { type: Number, default: 0 },
       otherFees: { type: Number, default: 0 },
     },
     netAmount: {
-      type: Number,
+      type: Number, // Calculated automatically
     },
-    venueId: {
+    
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venueId
+    // =========================================================
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
+      ref: "Business",
       required: true,
     },
+    
     processedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -100,13 +114,16 @@ paymentSchema.pre("save", function (next) {
     (this.fees?.processingFee || 0) +
     (this.fees?.platformFee || 0) +
     (this.fees?.otherFees || 0);
+  
+  // Net = Amount collected - Fees - Refunds
   this.netAmount = this.amount - totalFees - (this.refundAmount || 0);
   next();
 });
 
-paymentSchema.index({ venueId: 1, status: 1 });
-paymentSchema.index({ venueId: 1, type: 1 });
+// Indexes
+paymentSchema.index({ businessId: 1, status: 1 });
+paymentSchema.index({ businessId: 1, type: 1 });
 paymentSchema.index({ dueDate: 1 });
 paymentSchema.index({ event: 1 });
 
-export default mongoose.model("Payment", paymentSchema);
+module.exports = mongoose.model("Payment", paymentSchema);

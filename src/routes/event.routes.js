@@ -1,6 +1,6 @@
-//src/routes/event.routes.js
-import express from "express";
-import {
+// src/routes/eventRoutes.js
+const express = require('express');
+const {
   getEvents,
   getEventsByClient,
   getEvent,
@@ -12,16 +12,18 @@ import {
   allocateEventSupplies,
   returnEventSupplies,
   markSuppliesDelivered,
-} from "../controllers/eventController.js";
-import { authenticate } from "../middleware/auth.js";
-import { checkPermission } from "../middleware/checkPermission.js";
-import validateRequest from "../middleware/validateRequest.js";
-import {
+} = require('../controllers/eventController');
+
+const { authenticate } = require('../middleware/authMiddleware');
+const { checkPermission } = require('../middleware/permissionMiddleware');
+const validateRequest = require('../middleware/validateRequest');
+
+const {
   createEventValidator,
   updateEventValidator,
-  getEventValidator, // Used for ID validation
+  getEventValidator,
   listEventsValidator,
-} from "../validators/eventValidator.js";
+} = require('../validators/eventValidator');
 
 const router = express.Router();
 
@@ -43,17 +45,14 @@ router.get(
 
 // 2. Events by Client
 router.get(
-  "/client/:clientId", // Changed path slightly for clarity (/api/v1/events/client/:id)
+  "/client/:clientId", 
   checkPermission("events.read.all"),
-  // Assuming you might want to validate clientId here, 
-  // otherwise Mongoose will throw if invalid ID
   getEventsByClient
 );
 
 // =============================================================================
 // SUPPLY MANAGEMENT (Sub-resources of Event)
 // =============================================================================
-// These modify the event, so they require update permissions
 
 router.post(
   "/:id/supplies/allocate",
@@ -84,7 +83,7 @@ router.patch(
 // =============================================================================
 router.patch(
   "/:id/restore",
-  checkPermission("events.delete.all"), // Restoration usually requires delete privs
+  checkPermission("events.delete.all"),
   getEventValidator,
   validateRequest,
   restoreEvent
@@ -130,4 +129,4 @@ router
     archiveEvent
   );
 
-export default router;
+module.exports = router;
