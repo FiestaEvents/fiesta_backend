@@ -57,11 +57,15 @@ const DEFAULTS = {
 // ==========================================
 const invoiceSettingsSchema = new mongoose.Schema(
   {
-    venue: {
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venue
+    // =========================================================
+    // Renamed to businessId to match User/Event/Client models
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
+      ref: "Business",
       required: true,
-      unique: true,
+      unique: true, // One settings doc per business
     },
 
     // --- BRANDING ---
@@ -138,13 +142,13 @@ const invoiceSettingsSchema = new mongoose.Schema(
 // ==========================================
 // 3. METHODS
 // ==========================================
-invoiceSettingsSchema.statics.getOrCreate = async function (venueId) {
-  let settings = await this.findOne({ venue: venueId });
+invoiceSettingsSchema.statics.getOrCreate = async function (businessId) {
+  let settings = await this.findOne({ businessId });
 
   if (!settings) {
     // Merge defaults
     settings = await this.create({
-      venue: venueId,
+      businessId,
       branding: DEFAULTS.branding,
       layout: DEFAULTS.layout,
       table: DEFAULTS.table,

@@ -9,13 +9,18 @@ const teamInvitationSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      index: true, // <-- Correct, single index definition
+      index: true,
     },
-    venueId: {
+    
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venueId
+    // =========================================================
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
-      required: [true, "Venue ID is required for the invitation"],
+      ref: "Business",
+      required: [true, "Business ID is required for the invitation"],
     },
+    
     invitedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -68,9 +73,10 @@ teamInvitationSchema.methods.generateInvitationToken = function () {
   // 3. Set the hashed token on the document
   this.token = hashedToken;
 
-  // 4. Set expiration time (e.g., 7 days from now)
-  // 7 days = 7 * 24 * 60 * 60 * 1000 milliseconds
-  this.expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  // 4. Set expiration time (e.g., 48 hours from now)
+  // 48 hours = 48 * 60 * 60 * 1000 milliseconds
+  // (Note: Changed from 7 days to 48h to match security best practices in your new controller)
+  this.expiresAt = Date.now() + 48 * 60 * 60 * 1000;
 
   // 5. Return the raw token (to be sent to the user)
   return rawToken;

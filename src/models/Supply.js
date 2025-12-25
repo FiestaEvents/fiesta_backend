@@ -10,7 +10,7 @@ const supplySchema = new mongoose.Schema(
       maxlength: [100, "Name cannot exceed 100 characters"],
     },
     
-    // Custom category reference (venue-specific)
+    // Custom category reference
     categoryId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "SupplyCategory",
@@ -24,8 +24,7 @@ const supplySchema = new mongoose.Schema(
       required: [true, "Unit of measurement is required"],
       trim: true,
       maxlength: [20, "Unit name cannot exceed 20 characters"],
-      // Now customizable by venue owner
-      // Examples: piece, bottle, pack, kg, liter, box, dozen, serving, unit, can, jar, bag, carton, etc.
+      // Examples: kg (Bakery), bottle (Bar), pack (Office), stem (Florist)
     },
     
     currentStock: {
@@ -80,7 +79,7 @@ const supplySchema = new mongoose.Schema(
     
     // Storage & Handling
     storage: {
-      location: String,        // "Main Storage", "Refrigerator", etc.
+      location: String,        // "Pantry", "Refrigerator", "Warehouse A"
       requiresRefrigeration: { type: Boolean, default: false },
       expiryTracking: { type: Boolean, default: false },
       shelfLife: Number,       // Days
@@ -114,10 +113,12 @@ const supplySchema = new mongoose.Schema(
     // Image for dashboard display
     image: String,
     
-    // Venue Reference (Multi-tenancy)
-    venueId: {
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venueId
+    // =========================================================
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
+      ref: "Business",
       required: true,
       index: true,
     },
@@ -170,9 +171,9 @@ supplySchema.virtual("totalValue").get(function () {
 // ======================================================
 // STATIC: Get Low Stock Items
 // ======================================================
-supplySchema.statics.getLowStockItems = async function (venueId) {
+supplySchema.statics.getLowStockItems = async function (businessId) {
   return await this.find({
-    venueId,
+    businessId,
     status: "active",
     isArchived: false,
     $expr: { $lte: ["$currentStock", "$minimumStock"] },
@@ -249,8 +250,8 @@ supplySchema.statics.allocateToEvent = async function (
 // INDEXES
 // ======================================================
 supplySchema.index({ name: "text", notes: "text" });
-supplySchema.index({ venueId: 1, categoryId: 1, status: 1 });
-supplySchema.index({ venueId: 1, currentStock: 1 });
+supplySchema.index({ businessId: 1, categoryId: 1, status: 1 });
+supplySchema.index({ businessId: 1, currentStock: 1 });
 
 // ======================================================
 // QUERY HELPERS
@@ -267,8 +268,4 @@ supplySchema.query.byCategory = function (categoryId) {
   return this.where({ categoryId });
 };
 
-// Create the model
-const Supply = mongoose.model("Supply", supplySchema);
-
-// Export as default
-export default Supply;
+export default mongoose.model("Supply", supplySchema);

@@ -1,26 +1,36 @@
-import mongoose from "mongoose"; // ✅ ADDED: Missing import
+import mongoose from "mongoose";
 import { Supply } from "../models/index.js";
-import asyncHandler from "express-async-handler";
+import asyncHandler from "../middleware/asyncHandler.js";
+
+/**
+ * Helper to safely get Business ID string
+ */
+const getBusinessId = (user) => {
+  if (!user || !user.businessId) return null;
+  return user.businessId._id ? user.businessId._id : user.businessId;
+};
 
 // @desc    Create new supply item
 // @route   POST /api/supplies
-// @access  Private (Owner, Manager)
+// @access  Private (Owner, Manager, Chef, Tech Lead)
 export const createSupply = asyncHandler(async (req, res) => {
-  // Validate category exists and belongs to venue
+  const businessId = getBusinessId(req.user);
+
+  // Validate category exists and belongs to business
   const SupplyCategory = mongoose.model("SupplyCategory");
   const category = await SupplyCategory.findOne({
     _id: req.body.categoryId,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!category) {
     res.status(400);
-    throw new Error("Invalid category or category does not belong to your venue");
+    throw new Error("Invalid category or category does not belong to your business");
   }
 
   const supply = await Supply.create({
     ...req.body,
-    venueId: req.user.venueId,
+    businessId,
     createdBy: req.user._id,
   });
 
@@ -29,19 +39,20 @@ export const createSupply = asyncHandler(async (req, res) => {
 
   res.status(201).json({
     success: true,
-    supply: supply, // ✅ Changed from 'data' to 'supply' for consistency
+    supply: supply,
   });
 });
 
-// @desc    Get all supplies for venue
+// @desc    Get all supplies for business
 // @route   GET /api/supplies?categoryId=xxx&status=active&search=xxx
 // @access  Private
 export const getAllSupplies = asyncHandler(async (req, res) => {
   const { categoryId, status, lowStock, search, includeArchived } = req.query;
+  const businessId = getBusinessId(req.user);
 
-  // ✅ Base query - exclude archived by default
+  // Base query - exclude archived by default
   let query = { 
-    venueId: req.user.venueId,
+    businessId,
     isArchived: includeArchived === "true" ? { $in: [true, false] } : false
   };
 
@@ -70,7 +81,7 @@ export const getAllSupplies = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     count: supplies.length,
-    supplies: supplies, // ✅ Changed from 'data' to 'supplies'
+    supplies: supplies,
   });
 });
 
@@ -78,9 +89,11 @@ export const getAllSupplies = asyncHandler(async (req, res) => {
 // @route   GET /api/supplies/:id
 // @access  Private
 export const getSupplyById = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const supply = await Supply.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   }).populate("categoryId");
 
   if (!supply) {
@@ -96,11 +109,13 @@ export const getSupplyById = asyncHandler(async (req, res) => {
 
 // @desc    Update supply
 // @route   PATCH /api/supplies/:id
-// @access  Private (Owner, Manager)
+// @access  Private
 export const updateSupply = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   let supply = await Supply.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!supply) {
@@ -108,17 +123,17 @@ export const updateSupply = asyncHandler(async (req, res) => {
     throw new Error("Supply not found");
   }
 
-  // If category is being updated, validate it
+  // If category is being updated, validate it exists in this business
   if (req.body.categoryId && req.body.categoryId !== supply.categoryId.toString()) {
     const SupplyCategory = mongoose.model("SupplyCategory");
     const category = await SupplyCategory.findOne({
       _id: req.body.categoryId,
-      venueId: req.user.venueId,
+      businessId,
     });
 
     if (!category) {
       res.status(400);
-      throw new Error("Invalid category or category does not belong to your venue");
+      throw new Error("Invalid category or category does not belong to your business");
     }
   }
 
@@ -137,11 +152,13 @@ export const updateSupply = asyncHandler(async (req, res) => {
 
 // @desc    Delete supply
 // @route   DELETE /api/supplies/:id
-// @access  Private (Owner)
+// @access  Private
 export const deleteSupply = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const supply = await Supply.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!supply) {
@@ -161,8 +178,10 @@ export const deleteSupply = asyncHandler(async (req, res) => {
 // @route   GET /api/supplies/by-category/:categoryId
 // @access  Private
 export const getSuppliesByCategory = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const supplies = await Supply.find({
-    venueId: req.user.venueId,
+    businessId,
     categoryId: req.params.categoryId,
     isArchived: false,
     status: "active",
@@ -179,9 +198,10 @@ export const getSuppliesByCategory = asyncHandler(async (req, res) => {
 
 // @desc    Update stock level
 // @route   PATCH /api/supplies/:id/stock
-// @access  Private (Owner, Manager, Staff)
+// @access  Private
 export const updateStock = asyncHandler(async (req, res) => {
   const { quantity, type, reference, notes } = req.body;
+  const businessId = getBusinessId(req.user);
 
   if (!quantity || !type) {
     res.status(400);
@@ -197,7 +217,7 @@ export const updateStock = asyncHandler(async (req, res) => {
 
   const supply = await Supply.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!supply) {
@@ -227,9 +247,11 @@ export const updateStock = asyncHandler(async (req, res) => {
 // @route   GET /api/supplies/:id/history
 // @access  Private
 export const getStockHistory = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const supply = await Supply.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   }).populate("stockHistory.recordedBy", "name email");
 
   if (!supply) {
@@ -253,7 +275,9 @@ export const getStockHistory = asyncHandler(async (req, res) => {
 // @route   GET /api/supplies/alerts/low-stock
 // @access  Private
 export const getLowStockSupplies = asyncHandler(async (req, res) => {
-  const supplies = await Supply.getLowStockItems(req.user.venueId);
+  // Ensure model's static method accepts businessId
+  const businessId = getBusinessId(req.user);
+  const supplies = await Supply.getLowStockItems(businessId);
 
   res.status(200).json({
     success: true,
@@ -266,8 +290,12 @@ export const getLowStockSupplies = asyncHandler(async (req, res) => {
 // @route   GET /api/supplies/analytics/summary
 // @access  Private
 export const getSupplyAnalytics = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
 
+  // Convert string ID to ObjectId if needed by Aggregation, 
+  // though Mongoose usually handles this if passing the ID directly.
+  // Using the variable ensures consistency.
+  
   const [
     totalSupplies,
     totalValue,
@@ -276,11 +304,11 @@ export const getSupplyAnalytics = asyncHandler(async (req, res) => {
     categoryBreakdown,
   ] = await Promise.all([
     // Total active supplies
-    Supply.countDocuments({ venueId, status: "active", isArchived: false }),
+    Supply.countDocuments({ businessId, status: "active", isArchived: false }),
 
     // Total inventory value
     Supply.aggregate([
-      { $match: { venueId, status: "active", isArchived: false } },
+      { $match: { businessId, status: "active", isArchived: false } },
       {
         $group: {
           _id: null,
@@ -293,7 +321,7 @@ export const getSupplyAnalytics = asyncHandler(async (req, res) => {
 
     // Low stock items
     Supply.countDocuments({
-      venueId,
+      businessId,
       status: "active",
       isArchived: false,
       $expr: { $lte: ["$currentStock", "$minimumStock"] },
@@ -301,17 +329,17 @@ export const getSupplyAnalytics = asyncHandler(async (req, res) => {
 
     // Out of stock
     Supply.countDocuments({
-      venueId,
+      businessId,
       status: "out_of_stock",
       isArchived: false,
     }),
 
     // Breakdown by category
     Supply.aggregate([
-      { $match: { venueId, status: "active", isArchived: false } },
+      { $match: { businessId, status: "active", isArchived: false } },
       {
         $lookup: {
-          from: "supplycategories",
+          from: "supplycategories", // Ensure collection name matches DB (lowercase usually)
           localField: "categoryId",
           foreignField: "_id",
           as: "category",
@@ -345,11 +373,13 @@ export const getSupplyAnalytics = asyncHandler(async (req, res) => {
 
 // @desc    Archive supply
 // @route   PATCH /api/supplies/:id/archive
-// @access  Private (Owner, Manager)
+// @access  Private
 export const archiveSupply = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const supply = await Supply.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!supply) {
@@ -379,11 +409,13 @@ export const archiveSupply = asyncHandler(async (req, res) => {
 
 // @desc    Restore archived supply
 // @route   PATCH /api/supplies/:id/restore
-// @access  Private (Owner)
+// @access  Private
 export const restoreSupply = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const supply = await Supply.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!supply) {

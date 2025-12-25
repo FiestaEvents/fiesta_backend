@@ -1,4 +1,5 @@
 import { body, param } from "express-validator";
+import { SupplyCategory } from "../models/index.js";
 
 // =========================================================
 // REUSABLE RULES 
@@ -10,13 +11,25 @@ const commonRules = {
     .notEmpty().withMessage("Item name is required")
     .isLength({ min: 2, max: 100 }).withMessage("Name must be between 2 and 100 characters"),
 
+  // ✅ TENANT ISOLATION: Ensure category belongs to Business
   categoryId: body("categoryId")
     .notEmpty().withMessage("Category is required")
-    .isMongoId().withMessage("Invalid category ID"),
+    .isMongoId().withMessage("Invalid category ID")
+    .custom(async (val, { req }) => {
+      const category = await SupplyCategory.findOne({ 
+        _id: val, 
+        businessId: req.user.businessId 
+      });
+      if (!category) {
+        throw new Error("Category not found or does not belong to your business");
+      }
+      return true;
+    }),
 
+  // ✅ CHANGED: isFloat to support Catering (kg/liters) and Florists (meters)
   currentStock: body("currentStock")
     .notEmpty().withMessage("Current stock is required")
-    .isInt({ min: 0 }).withMessage("Current stock must be a non-negative integer"),
+    .isFloat({ min: 0 }).withMessage("Current stock must be a non-negative number"),
 
   unit: body("unit")
     .trim()
@@ -36,20 +49,19 @@ const commonRules = {
     .optional()
     .isObject().withMessage("Storage info must be an object"),
 
-  // --- Nested Fields (Defined as optional here for reuse) ---
+  // --- Nested Fields ---
   "supplier.name": body("supplier.name")
     .optional()
     .trim()
     .isLength({ max: 100 }).withMessage("Supplier name too long"),
 
-  // ✅ FIX: Added { checkFalsy: true } to allow empty strings
   "supplier.phone": body("supplier.phone")
     .optional({ checkFalsy: true }) 
     .trim()
     .isMobilePhone("any").withMessage("Invalid supplier phone"),
 
   "supplier.email": body("supplier.email")
-    .optional({ checkFalsy: true }) // Allows empty string or null
+    .optional({ checkFalsy: true }) 
     .trim()
     .isEmail().withMessage("Invalid supplier email"),
 
@@ -76,7 +88,6 @@ export const supplyIdValidator = [
 
 // =========================================================
 // CREATE VALIDATOR
-// Strict requirements for creation
 // =========================================================
 export const createSupplyValidator = [
   commonRules.name,
@@ -85,13 +96,16 @@ export const createSupplyValidator = [
   commonRules.currentStock,
   commonRules.costPerUnit,
 
-  body("minimumStock").optional().isInt({ min: 0 }),
-  body("maximumStock").optional().isInt({ min: 0 }),
+  body("minimumStock").optional().isFloat({ min: 0 }),
+  body("maximumStock").optional().isFloat({ min: 0 }),
   
-  // venueId is set by server, but validate if sent manually
-  body("venueId").optional().isMongoId().withMessage("Invalid venue ID"),
+  // businessId is set by server, but validate if sent manually (formerly venueId)
+  body("businessId").optional().isMongoId().withMessage("Invalid Business ID"),
 
-  body("pricingType").optional().isIn(["included", "chargeable", "optional"]).withMessage("Invalid pricing type"),
+  body("pricingType")
+    .optional()
+    .isIn(["included", "chargeable", "optional"])
+    .withMessage("Invalid pricing type"),
 
   // Conditional Validation for Create
   body("chargePerUnit")
@@ -115,17 +129,28 @@ export const createSupplyValidator = [
 
 // =========================================================
 // UPDATE VALIDATOR (PUT & PATCH)
-// Everything is optional here to support partial updates
 // =========================================================
 export const updateSupplyValidator = [
   param("id").isMongoId().withMessage("Invalid supply ID"),
 
-  // Top-level fields (Redefined as optional for PATCH compatibility)
-  body("name").optional().trim().isLength({ min: 2, max: 100 }).withMessage("Name invalid"),
-  body("categoryId").optional().isMongoId().withMessage("Invalid category ID"),
-  body("currentStock").optional().isInt({ min: 0 }).withMessage("Invalid stock"),
-  body("minimumStock").optional().isInt({ min: 0 }).withMessage("Invalid min stock"),
-  body("maximumStock").optional().isInt({ min: 0 }).withMessage("Invalid max stock"),
+  // Re-verify category ownership if changing category
+  body("categoryId")
+    .optional()
+    .isMongoId()
+    .withMessage("Invalid category ID")
+    .custom(async (val, { req }) => {
+      const category = await SupplyCategory.findOne({ 
+        _id: val, 
+        businessId: req.user.businessId 
+      });
+      if (!category) throw new Error("Category does not belong to your business");
+      return true;
+    }),
+
+  body("name").optional().trim().isLength({ min: 2, max: 100 }),
+  body("currentStock").optional().isFloat({ min: 0 }),
+  body("minimumStock").optional().isFloat({ min: 0 }),
+  body("maximumStock").optional().isFloat({ min: 0 }),
   body("unit").optional().trim().isLength({ max: 20 }),
   body("costPerUnit").optional().isFloat({ min: 0 }),
   
@@ -134,7 +159,7 @@ export const updateSupplyValidator = [
   
   body("status").optional().isIn(["active", "inactive", "discontinued", "out_of_stock"]),
 
-  // ✅ FIX: Include nested validators to ensure they are checked (and allowed to be empty)
+  // Nested validators
   commonRules.supplier,
   commonRules["supplier.name"],
   commonRules["supplier.phone"],
@@ -156,7 +181,7 @@ export const updateStockValidator = [
 
   body("quantity")
     .notEmpty().withMessage("Quantity is required")
-    .isInt({ min: 1 }).withMessage("Quantity must be a positive integer"),
+    .isFloat({ min: 0.01 }).withMessage("Quantity must be a positive number"), // Changed to isFloat
 
   body("type")
     .notEmpty().withMessage("Type is required")

@@ -12,8 +12,8 @@ import {
   archiveAccount,
   restoreAccount,
   getUserStats,
-
 } from "../controllers/authController.js";
+
 import { authenticate } from "../middleware/auth.js";
 import validateRequest from "../middleware/validateRequest.js";
 import {
@@ -34,11 +34,26 @@ const router = express.Router();
 // PUBLIC ROUTES (No Token Required)
 // ==========================================
 
-router.post("/register", registerValidator, validateRequest, register);
+router.post(
+  "/register", 
+  registerValidator, 
+  validateRequest, 
+  register
+);
 
-router.post("/login", loginValidator, validateRequest, login);
+router.post(
+  "/login", 
+  loginValidator, 
+  validateRequest, 
+  login
+);
 
-router.post("/verify-email", emailValidator, validateRequest, verifyEmail);
+router.post(
+  "/verify-email", 
+  emailValidator, 
+  validateRequest, 
+  verifyEmail
+);
 
 router.post(
   "/forgot-password",
@@ -64,6 +79,7 @@ router.post(
 // ==========================================
 // PROTECTED ROUTES (Token Required)
 // ==========================================
+// Apply authentication middleware to all routes below
 router.use(authenticate);
 
 // Session Management
@@ -71,7 +87,12 @@ router.get("/me", getCurrentUser);
 router.post("/logout", logout);
 
 // Profile Management
-router.put("/profile", updateProfileValidator, validateRequest, updateProfile);
+router.put(
+  "/profile", 
+  updateProfileValidator, 
+  validateRequest, 
+  updateProfile
+);
 
 router.put(
   "/change-password",
@@ -88,8 +109,7 @@ router.patch(
   archiveAccount
 );
 
-router.get(
-  "/stats", getUserStats);
+router.get("/stats", getUserStats);
 
-
+// ✅ USE EXPORT DEFAULT
 export default router;

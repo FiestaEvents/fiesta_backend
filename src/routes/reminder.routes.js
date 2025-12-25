@@ -11,9 +11,11 @@ import {
   dismissReminder,
   getReminderStats,
 } from "../controllers/reminderController.js";
+
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
 import validateRequest from "../middleware/validateRequest.js";
+
 import {
   createReminderValidator,
   updateReminderValidator,
@@ -23,7 +25,7 @@ import {
 
 const router = express.Router();
 
-// Apply authentication to all routes
+// Apply authentication to all routes (Populates req.user.businessId)
 router.use(authenticate);
 
 // ============================================
@@ -33,7 +35,7 @@ router.use(authenticate);
 // Get Upcoming (Dashboard/Widget)
 router.get(
   "/upcoming", 
-  // checkPermission("reminders.read.own"), // Usually allowed for everyone with basic read access
+  // Usually allowed for everyone with basic read access, specific scope handled in controller
   getUpcomingReminders
 );
 

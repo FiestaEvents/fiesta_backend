@@ -1,21 +1,31 @@
 // controllers/supplyCategoryController.js
 import mongoose from "mongoose";
 import { SupplyCategory } from "../models/index.js";
-import asyncHandler from "express-async-handler";
+import asyncHandler from "../middleware/asyncHandler.js"; // Ensure correct path to your asyncHandler
+import ApiError from "../utils/ApiError.js"; // Standardize error handling if available, otherwise native Error works
+
+/**
+ * Helper to safely get Business ID string
+ */
+const getBusinessId = (user) => {
+  if (!user || !user.businessId) return null;
+  return user.businessId._id ? user.businessId._id : user.businessId;
+};
 
 // ============================================
 // CRUD OPERATIONS
 // ============================================
 
-// @desc    Get all supply categories for venue
+// @desc    Get all supply categories for business
 // @route   GET /api/supply-categories
 // @access  Private
 export const getAllCategories = asyncHandler(async (req, res) => {
   const { status, includeArchived } = req.query;
+  const businessId = getBusinessId(req.user);
 
   // Base query - exclude archived by default
   let query = { 
-    venueId: req.user.venueId,
+    businessId,
     isArchived: includeArchived === "true" ? { $in: [true, false] } : false
   };
 
@@ -39,9 +49,11 @@ export const getAllCategories = asyncHandler(async (req, res) => {
 // @route   GET /api/supply-categories/:id
 // @access  Private
 export const getCategoryById = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const category = await SupplyCategory.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!category) {
@@ -57,9 +69,10 @@ export const getCategoryById = asyncHandler(async (req, res) => {
 
 // @desc    Create new category
 // @route   POST /api/supply-categories
-// @access  Private (Owner, Manager)
+// @access  Private (Owner, Manager, Chef, etc.)
 export const createCategory = asyncHandler(async (req, res) => {
   const { name, nameAr, nameFr, description, icon, color, order } = req.body;
+  const businessId = getBusinessId(req.user);
 
   // Validate required fields
   if (!name || name.trim() === "") {
@@ -67,9 +80,9 @@ export const createCategory = asyncHandler(async (req, res) => {
     throw new Error("Category name is required");
   }
 
-  // Check if category with same name already exists (case-insensitive)
+  // Check if category with same name already exists (case-insensitive) in this business
   const existingCategory = await SupplyCategory.findOne({
-    venueId: req.user.venueId,
+    businessId,
     name: { $regex: new RegExp(`^${name.trim()}$`, "i") },
   });
 
@@ -80,7 +93,7 @@ export const createCategory = asyncHandler(async (req, res) => {
 
   // Get the highest order number and increment
   const maxOrderCategory = await SupplyCategory.findOne({
-    venueId: req.user.venueId,
+    businessId,
   })
     .sort({ order: -1 })
     .select("order");
@@ -96,7 +109,7 @@ export const createCategory = asyncHandler(async (req, res) => {
     icon: icon || "Package",
     color: color || "#F18237",
     order: nextOrder,
-    venueId: req.user.venueId,
+    businessId,
     createdBy: req.user._id,
     isDefault: false,
   });
@@ -109,11 +122,13 @@ export const createCategory = asyncHandler(async (req, res) => {
 
 // @desc    Update category
 // @route   PATCH /api/supply-categories/:id
-// @access  Private (Owner, Manager)
+// @access  Private
 export const updateCategory = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   let category = await SupplyCategory.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!category) {
@@ -130,7 +145,7 @@ export const updateCategory = asyncHandler(async (req, res) => {
   // Check for duplicate name if name is being changed
   if (req.body.name && req.body.name !== category.name) {
     const duplicate = await SupplyCategory.findOne({
-      venueId: req.user.venueId,
+      businessId,
       name: { $regex: new RegExp(`^${req.body.name.trim()}$`, "i") },
       _id: { $ne: req.params.id },
     });
@@ -162,11 +177,13 @@ export const updateCategory = asyncHandler(async (req, res) => {
 
 // @desc    Delete category
 // @route   DELETE /api/supply-categories/:id
-// @access  Private (Owner)
+// @access  Private
 export const deleteCategory = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const category = await SupplyCategory.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!category) {
@@ -182,6 +199,10 @@ export const deleteCategory = asyncHandler(async (req, res) => {
 
   // Check if any supplies are using this category
   const Supply = mongoose.model("Supply");
+  
+  // Note: We check specifically for supplies in this category. 
+  // Since categories are business-scoped, checking by categoryId is implicitly safe, 
+  // but we assume Supply logic also scopes to business.
   const suppliesCount = await Supply.countDocuments({
     categoryId: req.params.id,
     isArchived: false,
@@ -208,31 +229,32 @@ export const deleteCategory = asyncHandler(async (req, res) => {
 
 // @desc    Reorder categories
 // @route   PATCH /api/supply-categories/reorder
-// @access  Private (Owner, Manager)
+// @access  Private
 export const reorderCategories = asyncHandler(async (req, res) => {
   const { categories } = req.body; // Array of { id, order }
+  const businessId = getBusinessId(req.user);
 
   if (!Array.isArray(categories) || categories.length === 0) {
     res.status(400);
     throw new Error("Categories array is required with format: [{ id, order }]");
   }
 
-  // Validate all categories belong to the venue
+  // Validate all categories belong to the business
   const categoryIds = categories.map((cat) => cat.id);
-  const venueCategories = await SupplyCategory.find({
+  const businessCategories = await SupplyCategory.find({
     _id: { $in: categoryIds },
-    venueId: req.user.venueId,
+    businessId,
   });
 
-  if (venueCategories.length !== categories.length) {
+  if (businessCategories.length !== categories.length) {
     res.status(400);
-    throw new Error("Some categories do not belong to your venue or do not exist");
+    throw new Error("Some categories do not belong to your business or do not exist");
   }
 
   // Update all categories in bulk
   const bulkOps = categories.map((cat) => ({
     updateOne: {
-      filter: { _id: cat.id, venueId: req.user.venueId },
+      filter: { _id: cat.id, businessId },
       update: { $set: { order: cat.order } },
     },
   }));
@@ -241,7 +263,7 @@ export const reorderCategories = asyncHandler(async (req, res) => {
 
   // Fetch updated categories
   const updatedCategories = await SupplyCategory.find({
-    venueId: req.user.venueId,
+    businessId,
     isArchived: false,
   }).sort({ order: 1, name: 1 });
 
@@ -253,25 +275,28 @@ export const reorderCategories = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Initialize default categories for venue
+// @desc    Initialize default categories for business
 // @route   POST /api/supply-categories/initialize
-// @access  Private (Owner)
+// @access  Private
 export const initializeDefaultCategories = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   // Check if categories already exist
   const existingCount = await SupplyCategory.countDocuments({
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (existingCount > 0) {
     res.status(400);
     throw new Error(
-      `Categories already exist for this venue (${existingCount} categories found). Cannot initialize defaults.`
+      `Categories already exist for this business (${existingCount} categories found). Cannot initialize defaults.`
     );
   }
 
   // Use the static method from the model to create default categories
+  // Note: Ensure SupplyCategory model's initializeDefaults method accepts (businessId, userId)
   const categories = await SupplyCategory.initializeDefaults(
-    req.user.venueId,
+    businessId,
     req.user._id
   );
 
@@ -289,11 +314,13 @@ export const initializeDefaultCategories = asyncHandler(async (req, res) => {
 
 // @desc    Archive category
 // @route   PATCH /api/supply-categories/:id/archive
-// @access  Private (Owner, Manager)
+// @access  Private
 export const archiveCategory = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const category = await SupplyCategory.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!category) {
@@ -314,7 +341,7 @@ export const archiveCategory = asyncHandler(async (req, res) => {
 
   await category.save();
 
-  // Optional: Get count of supplies using this category
+  // Optional: Get count of supplies using this category for info message
   const Supply = mongoose.model("Supply");
   const suppliesCount = await Supply.countDocuments({
     categoryId: req.params.id,
@@ -330,11 +357,13 @@ export const archiveCategory = asyncHandler(async (req, res) => {
 
 // @desc    Restore archived category
 // @route   PATCH /api/supply-categories/:id/restore
-// @access  Private (Owner)
+// @access  Private
 export const restoreCategory = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const category = await SupplyCategory.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!category) {

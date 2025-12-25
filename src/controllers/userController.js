@@ -1,8 +1,34 @@
 import asyncHandler from "../middleware/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import { User, Venue, Role, Permission, ActivityLog } from "../models/index.js";
+import { User, Business, Role, Permission, ActivityLog } from "../models/index.js";
 import mongoose from "mongoose";
+
+/**
+ * Helper to safely get Business ID string
+ */
+const getBusinessId = (user) => {
+  if (!user || !user.businessId) return null;
+  return user.businessId._id ? user.businessId._id : user.businessId;
+};
+
+// Helper to log activity (stub if not imported)
+const logActivity = async (userId, businessId, action, details) => {
+    try {
+        if(ActivityLog) {
+             await ActivityLog.create({
+                userId,
+                businessId,
+                action,
+                details,
+                timestamp: new Date()
+            });
+        }
+    } catch (e) {
+        console.error("Failed to log activity", e);
+    }
+};
+
 /**
  * @desc    Get all users with filtering and pagination
  * @route   GET /api/v1/users
@@ -20,8 +46,8 @@ export const getUsers = asyncHandler(async (req, res) => {
     sortOrder = "desc",
   } = req.query;
 
-  const venueId = req.user.venueId;
-  const query = { venueId, isArchived: isArchived === "true" };
+  const businessId = getBusinessId(req.user);
+  const query = { businessId, isArchived: isArchived === "true" };
 
   // Search filter
   if (search) {
@@ -36,7 +62,7 @@ export const getUsers = asyncHandler(async (req, res) => {
   if (role) {
     const roleDoc = await Role.findOne({
       name: role,
-      venueId,
+      businessId,
       isArchived: false,
     });
     if (roleDoc) {
@@ -95,8 +121,8 @@ export const getUsers = asyncHandler(async (req, res) => {
 export const getArchivedUsers = asyncHandler(async (req, res) => {
   const { search, page = 1, limit = 10 } = req.query;
 
-  const venueId = req.user.venueId;
-  const query = { venueId, isArchived: true };
+  const businessId = getBusinessId(req.user);
+  const query = { businessId, isArchived: true };
 
   // Search filter for archived users
   if (search) {
@@ -143,12 +169,12 @@ export const getArchivedUsers = asyncHandler(async (req, res) => {
  */
 export const getUserById = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
 
-  const user = await User.findOne({ _id: id, venueId })
+  const user = await User.findOne({ _id: id, businessId })
     .select("-password")
     .populate("roleId")
-    .populate("venueId")
+    .populate("businessId")
     .populate("invitedBy", "name email")
     .populate("archivedBy", "name email");
 
@@ -194,21 +220,21 @@ export const createUser = asyncHandler(async (req, res) => {
     isActive = true,
   } = req.body;
 
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
   const invitedBy = req.user._id;
 
   // Check if user already exists (non-archived)
   const existingUser = await User.findOne({
     email,
-    venueId,
+    businessId,
     isArchived: false,
   });
   if (existingUser) {
     throw new ApiError("User with this email already exists", 400);
   }
 
-  // Check if role exists and belongs to venue
-  const role = await Role.findOne({ _id: roleId, venueId, isArchived: false });
+  // Check if role exists and belongs to business
+  const role = await Role.findOne({ _id: roleId, businessId, isArchived: false });
   if (!role) {
     throw new ApiError("Invalid role", 400);
   }
@@ -221,7 +247,7 @@ export const createUser = asyncHandler(async (req, res) => {
     phone,
     roleId,
     roleType,
-    venueId,
+    businessId,
     invitedBy,
     invitedAt: new Date(),
     isActive,
@@ -264,10 +290,10 @@ export const updateUser = asyncHandler(async (req, res) => {
   const { name, phone, roleId, roleType, isActive, customPermissions } =
     req.body;
 
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
 
   // Find user (including archived users for restoration purposes)
-  const user = await User.findOne({ _id: id, venueId });
+  const user = await User.findOne({ _id: id, businessId });
   if (!user) {
     throw new ApiError("User not found", 404);
   }
@@ -288,7 +314,7 @@ export const updateUser = asyncHandler(async (req, res) => {
   if (roleId) {
     const role = await Role.findOne({
       _id: roleId,
-      venueId,
+      businessId,
       isArchived: false,
     });
     if (!role) {
@@ -304,7 +330,8 @@ export const updateUser = asyncHandler(async (req, res) => {
   }
 
   await user.save();
-  await logActivity(req.user._id, req.user.venueId, "update_member", `Updated member ${user.name} (Role/Status changed)`);
+  await logActivity(req.user._id, businessId, "update_member", `Updated member ${user.name} (Role/Status changed)`);
+  
   // Populate updated user data
   await user.populate([
     { path: "roleId", select: "name level" },
@@ -337,11 +364,11 @@ export const updateUser = asyncHandler(async (req, res) => {
  */
 export const archiveUser = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
   const archivedBy = req.user._id;
 
   // Find active user
-  const user = await User.findOne({ _id: id, venueId, isArchived: false });
+  const user = await User.findOne({ _id: id, businessId, isArchived: false });
   if (!user) {
     throw new ApiError("User not found or already archived", 404);
   }
@@ -351,10 +378,10 @@ export const archiveUser = asyncHandler(async (req, res) => {
     throw new ApiError("Cannot archive your own account", 400);
   }
 
-  // Prevent archiving venue owner
-  const venue = await Venue.findOne({ _id: venueId, owner: id });
-  if (venue) {
-    throw new ApiError("Cannot archive venue owner", 400);
+  // Prevent archiving business owner
+  const business = await Business.findOne({ _id: businessId, owner: id });
+  if (business) {
+    throw new ApiError("Cannot archive business owner", 400);
   }
 
   // Archive the user
@@ -386,10 +413,10 @@ export const archiveUser = asyncHandler(async (req, res) => {
  */
 export const restoreUser = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
 
   // Find archived user
-  const user = await User.findOne({ _id: id, venueId, isArchived: true });
+  const user = await User.findOne({ _id: id, businessId, isArchived: true });
   if (!user) {
     throw new ApiError("Archived user not found", 404);
   }
@@ -397,7 +424,7 @@ export const restoreUser = asyncHandler(async (req, res) => {
   // Check if email is still unique among active users
   const existingUser = await User.findOne({
     email: user.email,
-    venueId,
+    businessId,
     isArchived: false,
     _id: { $ne: id },
   });
@@ -448,18 +475,18 @@ export const restoreUser = asyncHandler(async (req, res) => {
  */
 export const permanentDeleteUser = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
 
   // Find archived user
-  const user = await User.findOne({ _id: id, venueId, isArchived: true });
+  const user = await User.findOne({ _id: id, businessId, isArchived: true });
   if (!user) {
     throw new ApiError("Archived user not found", 404);
   }
 
-  // Prevent deleting venue owner
-  const venue = await Venue.findOne({ _id: venueId, owner: id });
-  if (venue) {
-    throw new ApiError("Cannot permanently delete venue owner", 400);
+  // Prevent deleting business owner
+  const business = await Business.findOne({ _id: businessId, owner: id });
+  if (business) {
+    throw new ApiError("Cannot permanently delete business owner", 400);
   }
 
   // Store user info for response before deletion
@@ -487,7 +514,7 @@ export const permanentDeleteUser = asyncHandler(async (req, res) => {
  */
 export const bulkArchiveUsers = asyncHandler(async (req, res) => {
   const { userIds } = req.body;
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
   const archivedBy = req.user._id;
 
   if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
@@ -499,17 +526,17 @@ export const bulkArchiveUsers = asyncHandler(async (req, res) => {
     throw new ApiError("Cannot archive your own account", 400);
   }
 
-  // Check for venue owner in the list
-  const venue = await Venue.findOne({ venueId, owner: { $in: userIds } });
-  if (venue) {
-    throw new ApiError("Cannot archive venue owner", 400);
+  // Check for business owner in the list
+  const business = await Business.findOne({ _id: businessId, owner: { $in: userIds } });
+  if (business) {
+    throw new ApiError("Cannot archive business owner", 400);
   }
 
   // Archive users
   const result = await User.updateMany(
     {
       _id: { $in: userIds },
-      venueId,
+      businessId,
       isArchived: false,
     },
     {
@@ -538,7 +565,7 @@ export const bulkArchiveUsers = asyncHandler(async (req, res) => {
  */
 export const bulkRestoreUsers = asyncHandler(async (req, res) => {
   const { userIds } = req.body;
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
 
   if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
     throw new ApiError("User IDs array is required", 400);
@@ -548,7 +575,7 @@ export const bulkRestoreUsers = asyncHandler(async (req, res) => {
   const result = await User.updateMany(
     {
       _id: { $in: userIds },
-      venueId,
+      businessId,
       isArchived: true,
     },
     {
@@ -580,14 +607,14 @@ export const bulkRestoreUsers = asyncHandler(async (req, res) => {
 export const updateUserStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
 
   if (!["active", "inactive"].includes(status)) {
     throw new ApiError("Status must be either 'active' or 'inactive'", 400);
   }
 
   // Find user (non-archived only)
-  const user = await User.findOne({ _id: id, venueId, isArchived: false });
+  const user = await User.findOne({ _id: id, businessId, isArchived: false });
   if (!user) {
     throw new ApiError("User not found", 404);
   }
@@ -621,16 +648,16 @@ export const updateUserStatus = asyncHandler(async (req, res) => {
 export const updateUserRole = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { roleId } = req.body;
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
 
   // Find user (non-archived only)
-  const user = await User.findOne({ _id: id, venueId, isArchived: false });
+  const user = await User.findOne({ _id: id, businessId, isArchived: false });
   if (!user) {
     throw new ApiError("User not found", 404);
   }
 
   // Check if role exists
-  const role = await Role.findOne({ _id: roleId, venueId, isArchived: false });
+  const role = await Role.findOne({ _id: roleId, businessId, isArchived: false });
   if (!role) {
     throw new ApiError("Invalid role", 400);
   }
@@ -660,12 +687,12 @@ export const updateUserRole = asyncHandler(async (req, res) => {
  * @access  Private (users:read:team)
  */
 export const getUserStats = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
 
   const stats = await User.aggregate([
     {
       $match: {
-        venueId: new mongoose.Types.ObjectId(venueId),
+        businessId: new mongoose.Types.ObjectId(businessId),
       },
     },
     {
@@ -701,7 +728,7 @@ export const getUserStats = asyncHandler(async (req, res) => {
   const roleStats = await Role.aggregate([
     {
       $match: {
-        venueId: new mongoose.Types.ObjectId(venueId),
+        businessId: new mongoose.Types.ObjectId(businessId),
         isArchived: false,
       },
     },
@@ -715,7 +742,7 @@ export const getUserStats = asyncHandler(async (req, res) => {
               $expr: {
                 $and: [
                   { $eq: ["$roleId", "$$roleId"] },
-                  { $eq: ["$venueId", new mongoose.Types.ObjectId(venueId)] },
+                  { $eq: ["$businessId", new mongoose.Types.ObjectId(businessId)] },
                   { $eq: ["$isArchived", false] },
                 ],
               },
@@ -771,14 +798,14 @@ export const getUserStats = asyncHandler(async (req, res) => {
     },
     byRole: roleStats,
     recentActivity: {
-      // You can add recent user activities here
+      // Recent user activities
       last7Days: await User.countDocuments({
-        venueId,
+        businessId,
         isArchived: false,
         createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
       }),
       last30Days: await User.countDocuments({
-        venueId,
+        businessId,
         isArchived: false,
         createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
       }),
@@ -793,9 +820,9 @@ export const getUserStats = asyncHandler(async (req, res) => {
  */
 export const checkArchiveEligibility = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
 
-  const user = await User.findOne({ _id: id, venueId, isArchived: false });
+  const user = await User.findOne({ _id: id, businessId, isArchived: false });
   if (!user) {
     throw new ApiError("User not found or already archived", 404);
   }
@@ -807,17 +834,11 @@ export const checkArchiveEligibility = asyncHandler(async (req, res) => {
     reasons.push("Cannot archive your own account");
   }
 
-  // Check if user is venue owner
-  const venue = await Venue.findOne({ _id: venueId, owner: id });
-  if (venue) {
-    reasons.push("Cannot archive venue owner");
+  // Check if user is business owner
+  const business = await Business.findOne({ _id: businessId, owner: id });
+  if (business) {
+    reasons.push("Cannot archive business owner");
   }
-
-  // Check if user has active events (you can add more business logic checks)
-  // const activeEvents = await Event.countDocuments({ assignedTo: id, status: { $in: ['pending', 'confirmed', 'in-progress'] } });
-  // if (activeEvents > 0) {
-  //   reasons.push(`User has ${activeEvents} active events`);
-  // }
 
   const canArchive = reasons.length === 0;
 
@@ -836,11 +857,15 @@ export const checkArchiveEligibility = asyncHandler(async (req, res) => {
 /**
  * @desc    Get user activity history
  * @route   GET /api/v1/users/:id/activity
+ * @access  Private
  */
 export const getUserActivity = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { page = 1, limit = 10 } = req.query;
 
+  // Ensure user belongs to this business logic if needed, 
+  // currently just fetching by userId as per original logic.
+  
   const logs = await ActivityLog.find({ userId: id })
     .sort({ timestamp: -1 })
     .skip((page - 1) * limit)

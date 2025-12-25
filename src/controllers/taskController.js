@@ -1,7 +1,16 @@
+import mongoose from "mongoose"; // ✅ Added missing import for aggregation
 import asyncHandler from "../middleware/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { Task, User } from "../models/index.js";
+
+/**
+ * Helper to safely get Business ID string
+ */
+const getBusinessId = (user) => {
+  if (!user || !user.businessId) return null;
+  return user.businessId._id ? user.businessId._id : user.businessId;
+};
 
 // ============================================
 // BASIC CRUD
@@ -21,8 +30,10 @@ export const getTasks = asyncHandler(async (req, res) => {
     sortOrder = "asc",
   } = req.query;
 
+  const businessId = getBusinessId(req.user);
+
   const query = {
-    venueId: req.user.venueId,
+    businessId,
     isArchived: isArchived === "true",
   };
 
@@ -56,9 +67,11 @@ export const getTasks = asyncHandler(async (req, res) => {
 });
 
 export const getTask = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const task = await Task.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   }).populate("assignedTo", "name email avatar");
 
   if (!task) throw new ApiError("Task not found", 404);
@@ -67,9 +80,11 @@ export const getTask = asyncHandler(async (req, res) => {
 });
 
 export const createTask = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const task = await Task.create({
     ...req.body,
-    venueId: req.user.venueId,
+    businessId,
     createdBy: req.user._id,
   });
 
@@ -78,8 +93,10 @@ export const createTask = asyncHandler(async (req, res) => {
 });
 
 export const updateTask = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const task = await Task.findOneAndUpdate(
-    { _id: req.params.id, venueId: req.user.venueId },
+    { _id: req.params.id, businessId },
     req.body,
     { new: true, runValidators: true }
   ).populate("assignedTo", "name email avatar");
@@ -90,9 +107,11 @@ export const updateTask = asyncHandler(async (req, res) => {
 });
 
 export const deleteTask = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const task = await Task.findOneAndDelete({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!task) throw new ApiError("Task not found", 404);
@@ -102,9 +121,11 @@ export const deleteTask = asyncHandler(async (req, res) => {
 
 export const bulkDeleteTasks = asyncHandler(async (req, res) => {
   const { ids } = req.body;
+  const businessId = getBusinessId(req.user);
+
   await Task.deleteMany({
     _id: { $in: ids },
-    venueId: req.user.venueId,
+    businessId,
   });
   new ApiResponse(null, "Tasks deleted successfully").send(res);
 });
@@ -115,8 +136,10 @@ export const bulkDeleteTasks = asyncHandler(async (req, res) => {
 
 export const updateStatus = asyncHandler(async (req, res) => {
   const { status } = req.body;
+  const businessId = getBusinessId(req.user);
+
   const task = await Task.findOneAndUpdate(
-    { _id: req.params.id, venueId: req.user.venueId },
+    { _id: req.params.id, businessId },
     { status },
     { new: true }
   );
@@ -125,8 +148,10 @@ export const updateStatus = asyncHandler(async (req, res) => {
 });
 
 export const completeTask = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const task = await Task.findOneAndUpdate(
-    { _id: req.params.id, venueId: req.user.venueId },
+    { _id: req.params.id, businessId },
     { status: "completed" },
     { new: true }
   );
@@ -140,8 +165,10 @@ export const completeTask = asyncHandler(async (req, res) => {
 
 export const assignTask = asyncHandler(async (req, res) => {
   const { userId } = req.body;
+  const businessId = getBusinessId(req.user);
+
   const task = await Task.findOneAndUpdate(
-    { _id: req.params.id, venueId: req.user.venueId },
+    { _id: req.params.id, businessId },
     { assignedTo: userId },
     { new: true }
   ).populate("assignedTo", "name email avatar");
@@ -151,8 +178,10 @@ export const assignTask = asyncHandler(async (req, res) => {
 });
 
 export const unassignTask = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const task = await Task.findOneAndUpdate(
-    { _id: req.params.id, venueId: req.user.venueId },
+    { _id: req.params.id, businessId },
     { $unset: { assignedTo: "" } },
     { new: true }
   );
@@ -161,13 +190,15 @@ export const unassignTask = asyncHandler(async (req, res) => {
 });
 
 // ============================================
-// TAGS (Fixes your specific error)
+// TAGS
 // ============================================
 
 export const addTags = asyncHandler(async (req, res) => {
   const { tags } = req.body; // Expects array of strings
+  const businessId = getBusinessId(req.user);
+
   const task = await Task.findOneAndUpdate(
-    { _id: req.params.id, venueId: req.user.venueId },
+    { _id: req.params.id, businessId },
     { $addToSet: { tags: { $each: tags } } },
     { new: true }
   );
@@ -177,8 +208,10 @@ export const addTags = asyncHandler(async (req, res) => {
 
 export const removeTags = asyncHandler(async (req, res) => {
   const { tags } = req.body;
+  const businessId = getBusinessId(req.user);
+
   const task = await Task.findOneAndUpdate(
-    { _id: req.params.id, venueId: req.user.venueId },
+    { _id: req.params.id, businessId },
     { $pull: { tags: { $in: tags } } },
     { new: true }
   );
@@ -191,8 +224,10 @@ export const removeTags = asyncHandler(async (req, res) => {
 // ============================================
 
 export const archiveTask = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const task = await Task.findOneAndUpdate(
-    { _id: req.params.id, venueId: req.user.venueId },
+    { _id: req.params.id, businessId },
     { isArchived: true },
     { new: true }
   );
@@ -201,8 +236,10 @@ export const archiveTask = asyncHandler(async (req, res) => {
 });
 
 export const unarchiveTask = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const task = await Task.findOneAndUpdate(
-    { _id: req.params.id, venueId: req.user.venueId },
+    { _id: req.params.id, businessId },
     { isArchived: false },
     { new: true }
   );
@@ -211,8 +248,10 @@ export const unarchiveTask = asyncHandler(async (req, res) => {
 });
 
 export const getArchivedTasks = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const tasks = await Task.find({
-    venueId: req.user.venueId,
+    businessId,
     isArchived: true,
   }).populate("assignedTo", "name email avatar");
   new ApiResponse({ tasks }).send(res);
@@ -224,7 +263,9 @@ export const getArchivedTasks = asyncHandler(async (req, res) => {
 
 export const addSubtask = asyncHandler(async (req, res) => {
   const { title } = req.body;
-  const task = await Task.findOne({ _id: req.params.id, venueId: req.user.venueId });
+  const businessId = getBusinessId(req.user);
+
+  const task = await Task.findOne({ _id: req.params.id, businessId });
   if (!task) throw new ApiError("Task not found", 404);
 
   task.subtasks.push({ title, completed: false });
@@ -235,8 +276,9 @@ export const addSubtask = asyncHandler(async (req, res) => {
 export const updateSubtask = asyncHandler(async (req, res) => {
   const { subtaskId } = req.params;
   const { title } = req.body;
+  const businessId = getBusinessId(req.user);
   
-  const task = await Task.findOne({ _id: req.params.id, venueId: req.user.venueId });
+  const task = await Task.findOne({ _id: req.params.id, businessId });
   if (!task) throw new ApiError("Task not found", 404);
   
   const subtask = task.subtasks.id(subtaskId);
@@ -250,7 +292,9 @@ export const updateSubtask = asyncHandler(async (req, res) => {
 
 export const toggleSubtask = asyncHandler(async (req, res) => {
   const { subtaskId } = req.params;
-  const task = await Task.findOne({ _id: req.params.id, venueId: req.user.venueId });
+  const businessId = getBusinessId(req.user);
+
+  const task = await Task.findOne({ _id: req.params.id, businessId });
   if (!task) throw new ApiError("Task not found", 404);
 
   const subtask = task.subtasks.id(subtaskId);
@@ -264,7 +308,9 @@ export const toggleSubtask = asyncHandler(async (req, res) => {
 
 export const deleteSubtask = asyncHandler(async (req, res) => {
   const { subtaskId } = req.params;
-  const task = await Task.findOne({ _id: req.params.id, venueId: req.user.venueId });
+  const businessId = getBusinessId(req.user);
+
+  const task = await Task.findOne({ _id: req.params.id, businessId });
   if (!task) throw new ApiError("Task not found", 404);
 
   task.subtasks.pull(subtaskId);
@@ -278,7 +324,9 @@ export const deleteSubtask = asyncHandler(async (req, res) => {
 // ============================================
 
 export const getTaskBoard = asyncHandler(async (req, res) => {
-  const tasks = await Task.find({ venueId: req.user.venueId, isArchived: false })
+  const businessId = getBusinessId(req.user);
+
+  const tasks = await Task.find({ businessId, isArchived: false })
     .populate("assignedTo", "name email avatar")
     .sort({ priority: -1 });
 
@@ -295,16 +343,25 @@ export const getTaskBoard = asyncHandler(async (req, res) => {
 });
 
 export const getTaskStats = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const stats = await Task.aggregate([
-    { $match: { venueId: new mongoose.Types.ObjectId(req.user.venueId), isArchived: false } },
+    { 
+      $match: { 
+        businessId: new mongoose.Types.ObjectId(businessId), // Ensure ID type consistency
+        isArchived: false 
+      } 
+    },
     { $group: { _id: "$status", count: { $sum: 1 } } }
   ]);
   new ApiResponse({ stats }).send(res);
 });
 
 export const getMyTasks = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const tasks = await Task.find({
-    venueId: req.user.venueId,
+    businessId,
     assignedTo: req.user._id,
     isArchived: false
   });
@@ -312,8 +369,10 @@ export const getMyTasks = asyncHandler(async (req, res) => {
 });
 
 export const getOverdueTasks = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const tasks = await Task.find({
-    venueId: req.user.venueId,
+    businessId,
     dueDate: { $lt: new Date() },
     status: { $nin: ["completed", "cancelled"] },
     isArchived: false
@@ -322,13 +381,15 @@ export const getOverdueTasks = asyncHandler(async (req, res) => {
 });
 
 export const getDueTodayTasks = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const start = new Date();
   start.setHours(0,0,0,0);
   const end = new Date();
   end.setHours(23,59,59,999);
   
   const tasks = await Task.find({
-    venueId: req.user.venueId,
+    businessId,
     dueDate: { $gte: start, $lte: end },
     isArchived: false
   });
@@ -336,8 +397,10 @@ export const getDueTodayTasks = asyncHandler(async (req, res) => {
 });
 
 export const getUpcomingTasks = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const tasks = await Task.find({
-    venueId: req.user.venueId,
+    businessId,
     dueDate: { $gt: new Date() },
     isArchived: false
   }).limit(10);
@@ -346,8 +409,10 @@ export const getUpcomingTasks = asyncHandler(async (req, res) => {
 
 export const searchTasks = asyncHandler(async (req, res) => {
   const { q } = req.query;
+  const businessId = getBusinessId(req.user);
+
   const tasks = await Task.find({
-    venueId: req.user.venueId,
+    businessId,
     isArchived: false,
     $text: { $search: q }
   });

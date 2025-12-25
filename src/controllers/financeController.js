@@ -20,17 +20,17 @@ export const getFinanceRecords = asyncHandler(async (req, res) => {
     search,
     sortBy = "date",
     order = "desc",
-    includeArchived = false, // New parameter to include archived records
+    includeArchived = false,
   } = req.query;
 
-  // Build query
-  const query = { venueId: req.user.venueId };
+  // Build query scoped to Business
+  const businessId = req.businessId || req.user.businessId;
+  const query = { businessId };
 
   if (type) query.type = type;
   if (category) query.category = category;
   if (status) query.status = status;
   
-  // Modified: Only fetch non-archived records by default
   if (!includeArchived) {
     query.isArchived = false;
   }
@@ -50,14 +50,10 @@ export const getFinanceRecords = asyncHandler(async (req, res) => {
     ];
   }
 
-  // Pagination
   const skip = (page - 1) * limit;
-
-  // Sort
   const sortOrder = order === "asc" ? 1 : -1;
   const sortOptions = { [sortBy]: sortOrder };
 
-  // Execute query
   const [records, total] = await Promise.all([
     Finance.find(query)
       .populate("relatedEvent", "title startDate")
@@ -87,9 +83,10 @@ export const getFinanceRecords = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getFinanceRecord = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const record = await Finance.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   })
     .populate("relatedEvent")
     .populate("relatedPartner")
@@ -109,18 +106,19 @@ export const getFinanceRecord = asyncHandler(async (req, res) => {
  * @access  Private (finance.create)
  */
 export const createFinanceRecord = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const recordData = {
     ...req.body,
-    venueId: req.user.venueId,
+    businessId, 
     createdBy: req.user._id,
-    isArchived: false, // Ensure new records are not archived
+    isArchived: false,
   };
 
   // Verify related event if provided
   if (recordData.relatedEvent) {
     const event = await Event.findOne({
       _id: recordData.relatedEvent,
-      venueId: req.user.venueId,
+      businessId, 
     });
 
     if (!event) {
@@ -132,7 +130,7 @@ export const createFinanceRecord = asyncHandler(async (req, res) => {
   if (recordData.relatedPartner) {
     const partner = await Partner.findOne({
       _id: recordData.relatedPartner,
-      venueId: req.user.venueId,
+      businessId, 
     });
 
     if (!partner) {
@@ -165,9 +163,10 @@ export const createFinanceRecord = asyncHandler(async (req, res) => {
  * @access  Private (finance.update.all)
  */
 export const updateFinanceRecord = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const record = await Finance.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!record) {
@@ -182,7 +181,7 @@ export const updateFinanceRecord = asyncHandler(async (req, res) => {
   if (req.body.relatedEvent) {
     const event = await Event.findOne({
       _id: req.body.relatedEvent,
-      venueId: req.user.venueId,
+      businessId,
     });
     if (!event) throw new ApiError("Related event not found", 404);
   }
@@ -190,7 +189,7 @@ export const updateFinanceRecord = asyncHandler(async (req, res) => {
   if (req.body.relatedPartner) {
     const partner = await Partner.findOne({
       _id: req.body.relatedPartner,
-      venueId: req.user.venueId,
+      businessId,
     });
     if (!partner) throw new ApiError("Related partner not found", 404);
   }
@@ -212,9 +211,10 @@ export const updateFinanceRecord = asyncHandler(async (req, res) => {
  * @access  Private (finance.delete.all)
  */
 export const deleteFinanceRecord = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const record = await Finance.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!record) {
@@ -225,7 +225,7 @@ export const deleteFinanceRecord = asyncHandler(async (req, res) => {
     throw new ApiError("Finance record is already archived", 400);
   }
 
-  // Soft delete: Archive the record instead of deleting
+  // Soft delete
   record.isArchived = true;
   record.archivedAt = new Date();
   record.archivedBy = req.user._id;
@@ -240,9 +240,10 @@ export const deleteFinanceRecord = asyncHandler(async (req, res) => {
  * @access  Private (finance.update.all)
  */
 export const restoreFinanceRecord = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const record = await Finance.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!record) {
@@ -281,23 +282,19 @@ export const getArchivedFinanceRecords = asyncHandler(async (req, res) => {
     order = "desc",
   } = req.query;
 
-  // Build query for archived records only
+  const businessId = req.businessId || req.user.businessId;
   const query = { 
-    venueId: req.user.venueId,
+    businessId,
     isArchived: true 
   };
 
   if (type) query.type = type;
   if (category) query.category = category;
 
-  // Pagination
   const skip = (page - 1) * limit;
-
-  // Sort
   const sortOrder = order === "asc" ? 1 : -1;
   const sortOptions = { [sortBy]: sortOrder };
 
-  // Execute query
   const [records, total] = await Promise.all([
     Finance.find(query)
       .populate("relatedEvent", "title startDate")
@@ -327,13 +324,13 @@ export const getArchivedFinanceRecords = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getFinancialSummary = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+  const businessId = req.businessId || req.user.businessId;
   const { startDate, endDate, groupBy = "month" } = req.query;
 
   const dateFilter = { 
-    venueId, 
+    businessId, 
     status: "completed",
-    isArchived: false // Only count non-archived records
+    isArchived: false 
   };
   
   if (startDate || endDate) {
@@ -371,7 +368,7 @@ export const getFinancialSummary = asyncHandler(async (req, res) => {
     { $sort: { totalAmount: -1 } },
   ]);
 
-  // Time series data
+  // Time series
   let groupByFormat;
   switch (groupBy) {
     case "day":
@@ -405,7 +402,6 @@ export const getFinancialSummary = asyncHandler(async (req, res) => {
     { $sort: { "_id.period": 1 } },
   ]);
 
-  // Calculate totals
   let totalIncome = 0;
   let totalExpense = 0;
   let incomeCount = 0;
@@ -423,9 +419,8 @@ export const getFinancialSummary = asyncHandler(async (req, res) => {
     }
   });
 
-  // Get archived records count
   archivedCount = await Finance.countDocuments({
-    venueId,
+    businessId,
     isArchived: true,
   });
 
@@ -484,13 +479,13 @@ export const getFinancialSummary = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getCashFlowReport = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+  const businessId = req.businessId || req.user.businessId;
   const { startDate, endDate, groupBy = "month" } = req.query;
 
   const dateFilter = { 
-    venueId, 
+    businessId, 
     status: "completed",
-    isArchived: false // Only count non-archived records
+    isArchived: false
   };
   
   if (startDate || endDate) {
@@ -499,7 +494,6 @@ export const getCashFlowReport = asyncHandler(async (req, res) => {
     if (endDate) dateFilter.date.$lte = new Date(endDate);
   }
 
-  // Determine grouping format
   let groupByFormat;
   switch (groupBy) {
     case "day":
@@ -529,7 +523,6 @@ export const getCashFlowReport = asyncHandler(async (req, res) => {
       groupByFormat = { $dateToString: { format: "%Y-%m", date: "$date" } };
   }
 
-  // Cash flow by period
   const cashFlow = await Finance.aggregate([
     { $match: dateFilter },
     {
@@ -545,7 +538,6 @@ export const getCashFlowReport = asyncHandler(async (req, res) => {
     { $sort: { "_id.period": 1 } },
   ]);
 
-  // Transform data for easier consumption
   const cashFlowByPeriod = {};
   let runningBalance = 0;
 
@@ -568,7 +560,6 @@ export const getCashFlowReport = asyncHandler(async (req, res) => {
     }
   });
 
-  // Calculate net and running balance
   const cashFlowArray = Object.values(cashFlowByPeriod).sort((a, b) =>
     a.period.localeCompare(b.period)
   );
@@ -579,7 +570,6 @@ export const getCashFlowReport = asyncHandler(async (req, res) => {
     period.balance = runningBalance;
   });
 
-  // Calculate growth rate
   if (cashFlowArray.length >= 2) {
     const currentPeriod = cashFlowArray[cashFlowArray.length - 1];
     const previousPeriod = cashFlowArray[cashFlowArray.length - 2];
@@ -599,19 +589,19 @@ export const getCashFlowReport = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get expense breakdown by category (non-archived only)
+ * @desc    Get expense breakdown by category
  * @route   GET /api/v1/finance/expenses/breakdown
  * @access  Private
  */
 export const getExpenseBreakdown = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+  const businessId = req.businessId || req.user.businessId;
   const { startDate, endDate } = req.query;
 
   const dateFilter = { 
-    venueId, 
+    businessId, 
     type: "expense", 
     status: "completed",
-    isArchived: false // Only count non-archived records
+    isArchived: false 
   };
   
   if (startDate || endDate) {
@@ -633,7 +623,6 @@ export const getExpenseBreakdown = asyncHandler(async (req, res) => {
     { $sort: { totalAmount: -1 } },
   ]);
 
-  // Calculate total and percentages
   const totalExpenses = breakdown.reduce((sum, item) => sum + item.totalAmount, 0);
 
   const breakdownWithPercentages = breakdown.map((item) => ({
@@ -651,19 +640,19 @@ export const getExpenseBreakdown = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get income breakdown by category (non-archived only)
+ * @desc    Get income breakdown by category
  * @route   GET /api/v1/finance/income/breakdown
  * @access  Private
  */
 export const getIncomeBreakdown = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+  const businessId = req.businessId || req.user.businessId;
   const { startDate, endDate } = req.query;
 
   const dateFilter = { 
-    venueId, 
+    businessId, 
     type: "income", 
     status: "completed",
-    isArchived: false // Only count non-archived records
+    isArchived: false
   };
   
   if (startDate || endDate) {
@@ -685,7 +674,6 @@ export const getIncomeBreakdown = asyncHandler(async (req, res) => {
     { $sort: { totalAmount: -1 } },
   ]);
 
-  // Calculate total and percentages
   const totalIncome = breakdown.reduce((sum, item) => sum + item.totalAmount, 0);
 
   const breakdownWithPercentages = breakdown.map((item) => ({
@@ -703,18 +691,18 @@ export const getIncomeBreakdown = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get profit and loss statement (non-archived only)
+ * @desc    Get profit and loss statement
  * @route   GET /api/v1/finance/profit-loss
  * @access  Private
  */
 export const getProfitLossStatement = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+  const businessId = req.businessId || req.user.businessId;
   const { startDate, endDate } = req.query;
 
   const dateFilter = { 
-    venueId, 
+    businessId, 
     status: "completed",
-    isArchived: false // Only count non-archived records
+    isArchived: false 
   };
   
   if (startDate || endDate) {
@@ -723,7 +711,6 @@ export const getProfitLossStatement = asyncHandler(async (req, res) => {
     if (endDate) dateFilter.date.$lte = new Date(endDate);
   }
 
-  // Get all income
   const incomeByCategory = await Finance.aggregate([
     { $match: { ...dateFilter, type: "income" } },
     {
@@ -734,7 +721,6 @@ export const getProfitLossStatement = asyncHandler(async (req, res) => {
     },
   ]);
 
-  // Get all expenses
   const expensesByCategory = await Finance.aggregate([
     { $match: { ...dateFilter, type: "expense" } },
     {
@@ -745,7 +731,6 @@ export const getProfitLossStatement = asyncHandler(async (req, res) => {
     },
   ]);
 
-  // Calculate totals
   const totalRevenue = incomeByCategory.reduce((sum, item) => sum + item.amount, 0);
   const totalExpenses = expensesByCategory.reduce((sum, item) => sum + item.amount, 0);
 
@@ -759,7 +744,7 @@ export const getProfitLossStatement = asyncHandler(async (req, res) => {
     .reduce((sum, item) => sum + item.amount, 0);
 
   const directCosts = expensesByCategory
-    .filter((e) => ["partner_payment", "equipment"].includes(e._id))
+    .filter((e) => ["partner_payment", "equipment", "supplies", "fuel"].includes(e._id))
     .reduce((sum, item) => sum + item.amount, 0);
 
   const grossProfit = totalRevenue - directCosts;
@@ -794,12 +779,12 @@ export const getProfitLossStatement = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get financial trends (non-archived only)
+ * @desc    Get financial trends
  * @route   GET /api/v1/finance/trends
  * @access  Private
  */
 export const getFinancialTrends = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+  const businessId = req.businessId || req.user.businessId;
   const { months = 12 } = req.query;
 
   const startDate = new Date();
@@ -808,9 +793,9 @@ export const getFinancialTrends = asyncHandler(async (req, res) => {
   const trends = await Finance.aggregate([
     {
       $match: {
-        venueId,
+        businessId,
         status: "completed",
-        isArchived: false, // Only count non-archived records
+        isArchived: false,
         date: { $gte: startDate },
       },
     },
@@ -826,7 +811,6 @@ export const getFinancialTrends = asyncHandler(async (req, res) => {
     { $sort: { "_id.month": 1 } },
   ]);
 
-  // Transform data
   const trendsByMonth = {};
 
   trends.forEach((item) => {
@@ -842,7 +826,6 @@ export const getFinancialTrends = asyncHandler(async (req, res) => {
     }
   });
 
-  // Calculate net for each month
   const trendsArray = Object.values(trendsByMonth).map((month) => {
     month.net = month.income - month.expense;
     return month;
@@ -861,12 +844,12 @@ export const getFinancialTrends = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get tax summary (non-archived only)
+ * @desc    Get tax summary
  * @route   GET /api/v1/finance/tax-summary
  * @access  Private
  */
 export const getTaxSummary = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+  const businessId = req.businessId || req.user.businessId;
   const { year } = req.query;
 
   const currentYear = year || new Date().getFullYear();
@@ -876,9 +859,9 @@ export const getTaxSummary = asyncHandler(async (req, res) => {
   const taxData = await Finance.aggregate([
     {
       $match: {
-        venueId,
+        businessId,
         status: "completed",
-        isArchived: false, // Only count non-archived records
+        isArchived: false,
         date: { $gte: startDate, $lte: endDate },
       },
     },
@@ -891,12 +874,11 @@ export const getTaxSummary = asyncHandler(async (req, res) => {
     },
   ]);
 
-  // Get tax-specific records (including archived for completeness)
   const taxRecords = await Finance.find({
-    venueId,
+    businessId,
     category: "taxes",
     date: { $gte: startDate, $lte: endDate },
-    isArchived: false, // Only show non-archived tax records
+    isArchived: false,
   }).sort({ date: -1 });
 
   let totalIncome = 0;
@@ -908,7 +890,6 @@ export const getTaxSummary = asyncHandler(async (req, res) => {
     if (item._id === "expense") totalExpense = item.totalAmount;
   });
 
-  // Tax payments
   totalTaxPaid = taxRecords.reduce((sum, record) => sum + record.amount, 0);
 
   const taxableIncome = totalIncome - totalExpense;

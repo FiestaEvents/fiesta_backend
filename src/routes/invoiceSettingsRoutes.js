@@ -1,7 +1,4 @@
 import express from "express";
-import { authenticate } from "../middleware/auth.js";
-import { checkPermission } from "../middleware/checkPermission.js";
-import validateRequest from "../middleware/validateRequest.js";
 import {
   getInvoiceSettings,
   updateInvoiceSettings,
@@ -9,11 +6,15 @@ import {
   applyTemplate,
   resetToDefaults,
 } from "../controllers/invoiceSettingsController.js";
+
+import { authenticate } from "../middleware/auth.js";
+import { checkPermission } from "../middleware/checkPermission.js";
+import validateRequest from "../middleware/validateRequest.js";
 import { invoiceSettingsValidator } from "../validators/invoiceValidator.js";
 
 const router = express.Router();
 
-// Apply authentication to all routes
+// Apply authentication to all routes (Populates req.user.businessId)
 router.use(authenticate);
 
 // ==========================================
@@ -23,14 +24,15 @@ router.use(authenticate);
 // Get Settings
 router.get(
   "/",
-  checkPermission("venue.read"), // Settings are usually venue-level
+  // Uses generic 'business' permission instead of specific 'venue'
+  checkPermission("business.read"), 
   getInvoiceSettings
 );
 
 // Update Settings
 router.put(
   "/",
-  checkPermission("venue.update"),
+  checkPermission("business.update"),
   invoiceSettingsValidator,
   validateRequest,
   updateInvoiceSettings
@@ -43,7 +45,7 @@ router.put(
 // Preview changes (without saving)
 router.post(
   "/preview",
-  checkPermission("venue.read"),
+  checkPermission("business.read"),
   invoiceSettingsValidator, // Validate payload before previewing
   validateRequest,
   previewInvoice
@@ -52,14 +54,14 @@ router.post(
 // Apply a specific template style
 router.post(
   "/apply-template",
-  checkPermission("venue.update"),
+  checkPermission("business.update"),
   applyTemplate
 );
 
 // Reset to system defaults
 router.post(
   "/reset",
-  checkPermission("venue.update"),
+  checkPermission("business.update"),
   resetToDefaults
 );
 

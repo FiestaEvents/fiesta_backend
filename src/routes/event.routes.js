@@ -1,4 +1,3 @@
-//src/routes/event.routes.js
 import express from "express";
 import {
   getEvents,
@@ -13,13 +12,15 @@ import {
   returnEventSupplies,
   markSuppliesDelivered,
 } from "../controllers/eventController.js";
+
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
 import validateRequest from "../middleware/validateRequest.js";
+
 import {
   createEventValidator,
   updateEventValidator,
-  getEventValidator, // Used for ID validation
+  getEventValidator,
   listEventsValidator,
 } from "../validators/eventValidator.js";
 
@@ -43,10 +44,9 @@ router.get(
 
 // 2. Events by Client
 router.get(
-  "/client/:clientId", // Changed path slightly for clarity (/api/v1/events/client/:id)
+  "/client/:clientId", 
   checkPermission("events.read.all"),
-  // Assuming you might want to validate clientId here, 
-  // otherwise Mongoose will throw if invalid ID
+  // Note: Add clientId validator if needed here
   getEventsByClient
 );
 

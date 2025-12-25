@@ -10,7 +10,7 @@ import taskRoutes from "./task.routes.js";
 import reminderRoutes from "./reminder.routes.js";
 import roleRoutes from "./role.routes.js";
 import teamRoutes from "./team.routes.js";
-import venueRoutes from "./venue.routes.js";
+import businessRoutes from "./busines.routes.js";
 import userRoutes from "./user.routes.js";
 import uploadRoutes from "./uploadRoutes.js";
 import invoiceRoutes from "./invoices.routes.js";
@@ -18,6 +18,7 @@ import invoiceSettingsRoutes from "./invoiceSettingsRoutes.js";
 import contractRoutes from "./contract.routes.js";
 import supplyRoutes from "./supply.routes.js";
 import supplyCategoryRoutes from "./supplyCategory.routes.js";
+import portfolioRoutes from "./portfolioRoutes.js"
 const router = express.Router();
 
 router.use("/auth", authRoutes);
@@ -30,7 +31,7 @@ router.use("/tasks", taskRoutes);
 router.use("/reminders", reminderRoutes);
 router.use("/roles", roleRoutes);
 router.use("/team", teamRoutes);
-router.use("/venues", venueRoutes);
+router.use("/Business", businessRoutes);
 router.use("/upload", uploadRoutes);
 router.use("/users", userRoutes);
 router.use("/invoices", invoiceRoutes);
@@ -38,4 +39,5 @@ router.use("/invoices/settings", invoiceSettingsRoutes);
 router.use("/contracts", contractRoutes);
 router.use("/supplies", supplyRoutes);
 router.use("/supply-categories", supplyCategoryRoutes);
+router.use('/portfolio', portfolioRoutes)
 export default router;

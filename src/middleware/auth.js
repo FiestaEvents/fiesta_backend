@@ -1,19 +1,20 @@
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 import asyncHandler from "./asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
-import User from "../models/User.js";
+import { User } from "../models/index.js";
 import config from "../config/env.js";
 
+/**
+ * Protect routes - Verify JWT and load User & Business Context
+ */
 export const authenticate = asyncHandler(async (req, res, next) => {
   let token;
 
-  // 1. Extract Token
-  // Priority: Check HttpOnly Cookie first (Secure)
+  // 1. Get token
   if (req.cookies && req.cookies.jwt) {
     token = req.cookies.jwt;
-  }
-  // Fallback: Check Authorization Header (For Postman/Testing)
-  else if (
+  } else if (
     req.headers.authorization &&
     req.headers.authorization.startsWith("Bearer")
   ) {
@@ -21,62 +22,72 @@ export const authenticate = asyncHandler(async (req, res, next) => {
   }
 
   if (!token) {
-    throw new ApiError("Not authorized to access this route", 401);
+    throw new ApiError("Not authorized to access this route. Please login.", 401);
   }
 
   try {
-    // 2. Verify Token
+    // 2. Verify token
     const decoded = jwt.verify(token, config.jwt.secret);
 
-    // 3. Fetch User with DEEP POPULATION
-    // We populate Role -> Permissions, plus Custom Permissions
+    // 3. Find User with DEEP POPULATION
+    // We need permissions for RBAC and businessId for Tenant Isolation
     const user = await User.findById(decoded.id)
       .populate({
         path: "roleId",
-        populate: {
-          path: "permissions",
-          model: "Permission",
-        },
+        populate: { path: "permissions", model: "Permission" },
       })
+      .populate("businessId") // ✅ Critical: Populates the full Business object
       .populate("customPermissions.granted")
-      .populate("customPermissions.revoked")
-      .select("-password");
+      .populate("customPermissions.revoked");
 
     if (!user) {
-      throw new ApiError("User not found", 404);
+      throw new ApiError("The user belonging to this token no longer exists.", 401);
     }
 
-    if (!user.isActive) {
-      throw new ApiError("User account is inactive", 403);
+    if (!user.isActive || user.isArchived) {
+      throw new ApiError("User account is inactive or archived.", 403);
     }
 
-    // 4. Calculate Effective Permissions ONCE
+    // 4. Calculate Effective Permissions
     let effectivePermissions = [];
 
-    // A. Start with Role Permissions
+    // A. Role Permissions
     if (user.roleId && user.roleId.permissions) {
-      effectivePermissions = user.roleId.permissions.map((p) => p.name);
+      // Handle case where permissions might be objects or just IDs
+      effectivePermissions = user.roleId.permissions.map((p) => p.name || p);
     }
 
-    // B. Add Custom Granted Permissions
+    // B. Custom Granted
     if (user.customPermissions?.granted?.length > 0) {
-      const grantedNames = user.customPermissions.granted.map((p) => p.name);
+      const grantedNames = user.customPermissions.granted.map((p) => p.name || p);
       effectivePermissions = [...effectivePermissions, ...grantedNames];
     }
 
-    // C. Remove Custom Revoked Permissions
+    // C. Custom Revoked
     if (user.customPermissions?.revoked?.length > 0) {
-      const revokedNames = user.customPermissions.revoked.map((p) => p.name);
+      const revokedNames = user.customPermissions.revoked.map((p) => p.name || p);
       effectivePermissions = effectivePermissions.filter(
         (perm) => !revokedNames.includes(perm)
       );
     }
 
-    // Attach calculated data to request
+    // --- DEBUGGING LOGS (Remove in Production) ---
+    // console.log("🔍 [Auth] User:", user.email);
+    // console.log("🔍 [Auth] Business:", user.businessId ? user.businessId._id : "NULL");
+    
+    if (!user.businessId && !user.isSuperAdmin) {
+       // Allow request to proceed but warn, or block specific routes later
+       console.warn(`⚠️ Warning: User ${user.email} has no Business linked.`);
+    }
+    // ---------------------------------------------
+
+    // 5. Attach Context to Request
     req.user = user;
     req.user.permissionsList = [...new Set(effectivePermissions)]; // Unique array
-    req.venue = user.venueId; // Helper for venue-scoped queries
-
+    
+    // ✅ This fixes "Cannot read properties of undefined (reading '_id')"
+    req.business = user.businessId; 
+    
     next();
   } catch (error) {
     if (error.name === "JsonWebTokenError") {
@@ -88,10 +99,10 @@ export const authenticate = asyncHandler(async (req, res, next) => {
   }
 });
 
-// Helper to ensure venue exists attached (if needed separately)
-export const attachVenue = asyncHandler(async (req, res, next) => {
-  if (req.user && req.user.venueId) {
-    req.venue = req.user.venueId;
+export const authorizeSuperAdmin = (req, res, next) => {
+  if (req.user && req.user.isSuperAdmin) {
+    next();
+  } else {
+    throw new ApiError("Not authorized as Super Admin", 403);
   }
-  next();
-});
+};

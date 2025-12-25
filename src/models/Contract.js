@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+// Categories for external partners (suppliers/vendors)
 const PARTNER_CATEGORIES = [
   "driver", "bakery", "catering", "decoration", "photography", 
   "music", "security", "cleaning", "audio_visual", "floral", 
@@ -8,7 +9,7 @@ const PARTNER_CATEGORIES = [
 
 const contractSchema = new mongoose.Schema(
   {
-    contractNumber: { type: String, required: true, unique: true, index: true },
+    contractNumber: { type: String, required: true }, // Unique per Business via compound index
     title: { type: String, required: true, trim: true },
     
     // BUSINESS LOGIC: Differentiates Income (Client) vs Expense (Partner)
@@ -21,22 +22,32 @@ const contractSchema = new mongoose.Schema(
     
     status: {
       type: String,
-      enum: ["draft", "sent", "viewed", "signed", "cancelled", "expired"],
+      enum: ["draft", "sent", "viewed", "signed", "cancelled", "expired", "active"],
       default: "draft",
     },
 
-    venue: { type: mongoose.Schema.Types.ObjectId, ref: "Venue", required: true },
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venue
+    // =========================================================
+    business: { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: "Business", 
+      required: true 
+    },
+
     event: { type: mongoose.Schema.Types.ObjectId, ref: "Event" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 
+    // The "Other Side" of the contract (Client or Vendor)
     party: {
       type: { type: String, enum: ["individual", "company"], default: "individual" },
       name: { type: String, required: true },
-      identifier: { type: String, required: true },
+      identifier: { type: String, required: true }, // Tax ID or CIN
       representative: String,
       address: { type: String, required: true },
       phone: String,
       email: String,
+      // Useful if contractType === 'partner'
       category: { 
         type: String, 
         enum: PARTNER_CATEGORIES,
@@ -82,7 +93,7 @@ const contractSchema = new mongoose.Schema(
     },
     
     signatures: {
-      venueSignedAt: Date,
+      businessSignedAt: Date, // Renamed from venueSignedAt
       clientSignedAt: Date,
       clientSignerIp: String,
       digitalSignatureToken: String,
@@ -91,10 +102,19 @@ const contractSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Auto-generate Contract Number (CNT-YY-0001)
+// Ensure Contract Numbers are unique PER BUSINESS
+contractSchema.index({ business: 1, contractNumber: 1 }, { unique: true });
+
+// Dashboard performance indexes
+contractSchema.index({ business: 1, status: 1 });
+contractSchema.index({ business: 1, contractType: 1 });
+
+// Auto-generate Contract Number (CNT-YY-0001) scoped to the Business
 contractSchema.pre("validate", async function (next) {
   if (this.isNew && !this.contractNumber) {
-    const count = await this.constructor.countDocuments({ venue: this.venue });
+    // Count existing contracts for THIS business only
+    const count = await mongoose.model("Contract").countDocuments({ business: this.business });
+    
     const year = new Date().getFullYear().toString().slice(-2);
     // Format: CNT-25-0001
     this.contractNumber = `CNT-${year}-${(count + 1).toString().padStart(4, "0")}`;

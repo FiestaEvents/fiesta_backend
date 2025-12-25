@@ -1,8 +1,9 @@
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+
 import {
   User,
-  Venue,
+  Business,
   Role,
   Permission,
   Client,
@@ -12,7 +13,7 @@ import {
   Finance,
   Task,
   Reminder,
-  VenueSpace,
+  Space,
   Invoice,
   InvoiceSettings,
   Contract,
@@ -61,28 +62,13 @@ const clearDatabase = async () => {
   console.log("\n🗑️  Clearing database...");
 
   const models = [
-    User,
-    Venue,
-    Role,
-    Permission,
-    Client,
-    Partner,
-    Event,
-    Payment,
-    Finance,
-    Task,
-    Reminder,
-    VenueSpace,
-    Invoice,
-    InvoiceSettings,
-    Contract,
-    ContractSettings,
-    Supply,
-    SupplyCategory,
+    User, Business, Role, Permission, Client, Partner, Event,
+    Payment, Finance, Task, Reminder, Space, Invoice,
+    InvoiceSettings, Contract, ContractSettings, Supply, SupplyCategory,
   ];
 
   for (const model of models) {
-    await model.deleteMany({});
+    if (model) await model.deleteMany({});
   }
 
   console.log("✅ Database cleared");
@@ -96,150 +82,31 @@ const seedPermissions = async () => {
   console.log("\n📋 Seeding permissions...");
 
   const standardModules = [
-    "events",
-    "clients",
-    "partners",
-    "supplies",
-    "finance",
-    "payments",
-    "invoices",
-    "contracts",
-    "tasks",
-    "reminders",
-    "users",
-    "roles",
+    "events", "clients", "partners", "supplies", "finance",
+    "payments", "invoices", "contracts", "tasks", "reminders",
+    "users", "roles", "business", "portfolio"
   ];
 
   let permissionsList = [];
 
-  // Standard CRUD
   standardModules.forEach((module) => {
     const capitalized = module.charAt(0).toUpperCase() + module.slice(1);
     permissionsList.push(
-      {
-        name: `${module}.create`,
-        displayName: `Create ${capitalized}`,
-        module,
-        action: "create",
-        scope: "all",
-      },
-      {
-        name: `${module}.read.all`,
-        displayName: `View All ${capitalized}`,
-        module,
-        action: "read",
-        scope: "all",
-      },
-      {
-        name: `${module}.update.all`,
-        displayName: `Edit All ${capitalized}`,
-        module,
-        action: "update",
-        scope: "all",
-      },
-      {
-        name: `${module}.delete.all`,
-        displayName: `Delete ${capitalized}`,
-        module,
-        action: "delete",
-        scope: "all",
-      }
+      { name: `${module}.create`, displayName: `Create ${capitalized}`, module, action: "create", scope: "all" },
+      { name: `${module}.read.all`, displayName: `View All ${capitalized}`, module, action: "read", scope: "all" },
+      { name: `${module}.update.all`, displayName: `Edit All ${capitalized}`, module, action: "update", scope: "all" },
+      { name: `${module}.delete.all`, displayName: `Delete ${capitalized}`, module, action: "delete", scope: "all" }
     );
   });
 
-  // Extras
   const extraPermissions = [
-    {
-      name: "events.read.own",
-      displayName: "View Own Events",
-      module: "events",
-      action: "read",
-      scope: "own",
-    },
-    {
-      name: "events.update.own",
-      displayName: "Edit Own Events",
-      module: "events",
-      action: "update",
-      scope: "own",
-    },
-    {
-      name: "tasks.read.own",
-      displayName: "View Own Tasks",
-      module: "tasks",
-      action: "read",
-      scope: "own",
-    },
-    {
-      name: "tasks.update.own",
-      displayName: "Edit Own Tasks",
-      module: "tasks",
-      action: "update",
-      scope: "own",
-    },
-    {
-      name: "reminders.read.own",
-      displayName: "View Own Reminders",
-      module: "reminders",
-      action: "read",
-      scope: "own",
-    },
-    {
-      name: "reminders.update.own",
-      displayName: "Edit Own Reminders",
-      module: "reminders",
-      action: "update",
-      scope: "own",
-    },
-    {
-      name: "events.export",
-      displayName: "Export Events",
-      module: "events",
-      action: "export",
-      scope: "all",
-    },
-    {
-      name: "finance.export",
-      displayName: "Export Finance",
-      module: "finance",
-      action: "export",
-      scope: "all",
-    },
-    {
-      name: "reports.read.all",
-      displayName: "View Reports",
-      module: "reports",
-      action: "read",
-      scope: "all",
-    },
-    {
-      name: "venue.read",
-      displayName: "View Venue Settings",
-      module: "venue",
-      action: "read",
-      scope: "all",
-    },
-    {
-      name: "venue.update",
-      displayName: "Edit Venue Settings",
-      module: "venue",
-      action: "update",
-      scope: "all",
-    },
-    {
-      name: "settings.read",
-      displayName: "View Global Settings",
-      module: "settings",
-      action: "read",
-      scope: "all",
-    },
-    {
-      name: "settings.update",
-      displayName: "Edit Global Settings",
-      module: "settings",
-      action: "update",
-      scope: "all",
-    },
+    { name: "events.read.own", displayName: "View Own Events", module: "events", action: "read", scope: "own" },
+    { name: "events.update.own", displayName: "Edit Own Events", module: "events", action: "update", scope: "own" },
+    { name: "tasks.read.own", displayName: "View Own Tasks", module: "tasks", action: "read", scope: "own" },
+    { name: "tasks.update.own", displayName: "Edit Own Tasks", module: "tasks", action: "update", scope: "own" },
+    { name: "reminders.read.own", displayName: "View Own Reminders", module: "reminders", action: "read", scope: "own" },
+    { name: "reminders.update.own", displayName: "Edit Own Reminders", module: "reminders", action: "update", scope: "own" },
+    { name: "settings.read", displayName: "View Global Settings", module: "settings", action: "read", scope: "all" },
   ];
 
   permissionsList = [...permissionsList, ...extraPermissions];
@@ -249,15 +116,18 @@ const seedPermissions = async () => {
 };
 
 // =========================================================
-// 2. VENUES
+// 2. BUSINESSES
 // =========================================================
 
-const seedVenues = async () => {
-  console.log("\n🏛️  Seeding venues...");
+// Accepts a pre-generated ownerId to satisfy validation
+const seedBusinesses = async (ownerId) => {
+  console.log("\n🏛️  Seeding businesses...");
 
-  const venues = await Venue.create([
+  const businesses = await Business.create([
     {
       name: "Grand Palace Events",
+      category: "venue",
+      owner: ownerId, // ✅ Validation Fix: Pass the ID here
       description: "Luxurious event venue in the heart of Tunis",
       address: {
         street: "Avenue Habib Bourguiba",
@@ -267,77 +137,43 @@ const seedVenues = async () => {
         country: "Tunisia",
       },
       contact: { phone: "71123456", email: "contact@grandpalace.tn" },
-      capacity: { min: 50, max: 500 },
-      pricing: { basePrice: 5000 },
-      operatingHours: {
-        monday: { open: "09:00", close: "23:00", closed: false },
-        sunday: { open: "10:00", close: "22:00", closed: false },
-        // ... assumes defaults for others in model or just partial here
+      venueDetails: {
+        capacity: { min: 50, max: 500 },
+        amenities: ["Wifi", "Parking", "Catering Kitchen"],
+        pricing: { basePrice: 5000 },
+        operatingHours: {
+          monday: { open: "09:00", close: "23:00", closed: false },
+          sunday: { open: "10:00", close: "22:00", closed: false },
+        },
       },
       subscription: {
-        plan: "annual",
+        plan: "pro", // ✅ Validation Fix: Changed from 'annual' to 'pro'
         status: "active",
         startDate: new Date("2024-01-01"),
         endDate: new Date("2025-12-31"),
-        amount: 5000,
-        currency: "TND",
-        paymentMethod: "bank_transfer",
       },
       isActive: true,
-      timeZone: "Africa/Tunis",
     },
   ]);
 
-  console.log(`✅ Created ${venues.length} venues`);
-  return venues;
+  console.log(`✅ Created ${businesses.length} businesses`);
+  return businesses;
 };
 
 // =========================================================
 // 3. ROLES
 // =========================================================
 
-const seedRoles = async (venue, permissions) => {
+const seedRoles = async (business, permissions) => {
   console.log("\n👥 Seeding roles...");
 
   const allPermissionIds = permissions.map((p) => p._id);
-
-  const managerPerms = permissions
-    .filter((p) => {
-      if (p.module === "roles") return false;
-      if (p.module === "users" && p.action === "delete") return false;
-      if (p.module === "settings") return false;
-      if (p.module === "venue" && p.action === "delete") return false;
-      return true;
-    })
-    .map((p) => p._id);
-
-  const staffPerms = permissions
-    .filter((p) => {
-      const operationalModules = [
-        "events",
-        "clients",
-        "partners",
-        "tasks",
-        "reminders",
-        "supplies",
-      ];
-      if (operationalModules.includes(p.module) && p.action === "read")
-        return true;
-      if (["tasks", "reminders"].includes(p.module) && p.action === "update")
-        return true;
-      return false;
-    })
-    .map((p) => p._id);
-
-  const viewerPerms = permissions
-    .filter((p) => p.action === "read" && p.scope === "all")
-    .map((p) => p._id);
 
   const roles = await Role.create([
     {
       name: "Owner",
       description: "Full access to all features",
-      venueId: venue._id,
+      businessId: business._id,
       isSystemRole: true,
       permissions: allPermissionIds,
       level: 100,
@@ -345,26 +181,18 @@ const seedRoles = async (venue, permissions) => {
     {
       name: "Manager",
       description: "Can manage operations, finance, and staff",
-      venueId: venue._id,
+      businessId: business._id,
       isSystemRole: true,
-      permissions: managerPerms,
+      permissions: allPermissionIds.slice(0, 20),
       level: 75,
     },
     {
       name: "Staff",
       description: "Can view schedules and manage tasks",
-      venueId: venue._id,
+      businessId: business._id,
       isSystemRole: true,
-      permissions: staffPerms,
+      permissions: [],
       level: 50,
-    },
-    {
-      name: "Viewer",
-      description: "Read-only access",
-      venueId: venue._id,
-      isSystemRole: true,
-      permissions: viewerPerms,
-      level: 25,
     },
   ]);
 
@@ -376,7 +204,7 @@ const seedRoles = async (venue, permissions) => {
 // 4. USERS
 // =========================================================
 
-const seedUsers = async (venue, roles) => {
+const seedUsers = async (business, roles, ownerId) => {
   console.log("\n👤 Seeding users...");
 
   const ownerRole = roles.find((r) => r.name === "Owner");
@@ -385,13 +213,14 @@ const seedUsers = async (venue, roles) => {
 
   const users = await User.create([
     {
+      _id: ownerId, // ✅ Use the pre-generated ID to match the Business owner field
       name: "Ahmed Slayem",
       email: "owner@demo.com",
       password: "password123",
       phone: "98123456",
       roleId: ownerRole._id,
       roleType: "owner",
-      venueId: venue._id,
+      businessId: business._id,
       isActive: true,
     },
     {
@@ -401,7 +230,7 @@ const seedUsers = async (venue, roles) => {
       phone: "98234567",
       roleId: managerRole._id,
       roleType: "manager",
-      venueId: venue._id,
+      businessId: business._id,
       isActive: true,
     },
     {
@@ -411,13 +240,10 @@ const seedUsers = async (venue, roles) => {
       phone: "98345678",
       roleId: staffRole._id,
       roleType: "staff",
-      venueId: venue._id,
+      businessId: business._id,
       isActive: true,
     },
   ]);
-
-  venue.owner = users[0]._id;
-  await venue.save();
 
   console.log(`✅ Created ${users.length} users`);
   return users;
@@ -427,31 +253,37 @@ const seedUsers = async (venue, roles) => {
 // 5. SPACES
 // =========================================================
 
-const seedVenueSpaces = async (venue, owner) => {
-  console.log("\n🏢 Seeding venue spaces...");
+const seedSpaces = async (business, owner) => {
+  console.log("\n🏢 Seeding spaces...");
 
-  const spaces = await VenueSpace.create([
+  const spaces = await Space.create([
     {
       name: "Grand Ballroom",
+      type: "room",
       description: "Our largest and most elegant space",
       capacity: { min: 100, max: 500 },
       basePrice: 8000,
-      venueId: venue._id,
+      businessId: business._id,
       owner: owner._id,
       isActive: true,
     },
     {
       name: "Garden Terrace",
+      type: "room",
       description: "Beautiful outdoor space",
       capacity: { min: 50, max: 200 },
       basePrice: 5000,
-      venueId: venue._id,
+      businessId: business._id,
       owner: owner._id,
       isActive: true,
     },
   ]);
 
-  console.log(`✅ Created ${spaces.length} venue spaces`);
+  // Update business venueDetails
+  business.venueDetails.spaces = spaces.map(s => s._id);
+  await business.save();
+
+  console.log(`✅ Created ${spaces.length} spaces`);
   return spaces;
 };
 
@@ -459,7 +291,7 @@ const seedVenueSpaces = async (venue, owner) => {
 // 6. CLIENTS
 // =========================================================
 
-const seedClients = async (venue, createdBy) => {
+const seedClients = async (business, createdBy) => {
   console.log("\n👥 Seeding clients...");
 
   const clients = await Client.create([
@@ -467,7 +299,7 @@ const seedClients = async (venue, createdBy) => {
       name: "Sarah & Karim Wedding",
       email: "sarah.karim@email.com",
       phone: "98111222",
-      venueId: venue._id,
+      businessId: business._id,
       status: "active",
       tags: ["wedding", "vip"],
       createdBy: createdBy._id,
@@ -476,7 +308,7 @@ const seedClients = async (venue, createdBy) => {
       name: "TechCorp Tunisia",
       email: "events@techcorp.tn",
       phone: "71333444",
-      venueId: venue._id,
+      businessId: business._id,
       status: "active",
       company: "TechCorp Tunisia",
       tags: ["corporate", "recurring"],
@@ -492,7 +324,7 @@ const seedClients = async (venue, createdBy) => {
 // 7. PARTNERS
 // =========================================================
 
-const seedPartners = async (venue, createdBy) => {
+const seedPartners = async (business, createdBy) => {
   console.log("\n🤝 Seeding partners...");
 
   const partners = await Partner.create([
@@ -500,7 +332,7 @@ const seedPartners = async (venue, createdBy) => {
       name: "Elite Catering Services",
       email: "contact@elitecatering.tn",
       phone: "71123456",
-      venueId: venue._id,
+      businessId: business._id,
       category: "catering",
       status: "active",
       createdBy: createdBy._id,
@@ -509,7 +341,7 @@ const seedPartners = async (venue, createdBy) => {
       name: "Studio Lumière",
       email: "booking@studiolumiere.tn",
       phone: "98222333",
-      venueId: venue._id,
+      businessId: business._id,
       category: "photography",
       status: "active",
       createdBy: createdBy._id,
@@ -524,15 +356,14 @@ const seedPartners = async (venue, createdBy) => {
 // 8. SUPPLIES
 // =========================================================
 
-const seedSupplies = async (venue, createdBy) => {
+const seedSupplies = async (business, createdBy) => {
   console.log("\n📦 Seeding supplies...");
 
   const categories = await SupplyCategory.initializeDefaults(
-    venue._id,
+    business._id,
     createdBy._id
   );
-  const bevCat =
-    categories.find((c) => c.name === "Beverages") || categories[0];
+  const bevCat = categories.find((c) => c.name === "Beverages") || categories[0];
 
   const supplies = await Supply.create([
     {
@@ -542,19 +373,17 @@ const seedSupplies = async (venue, createdBy) => {
       currentStock: 200,
       costPerUnit: 1.2,
       pricingType: "included",
-      venueId: venue._id,
+      businessId: business._id,
       createdBy: createdBy._id,
     },
     {
       name: "Banquet Chairs",
-      categoryId:
-        categories.find((c) => c.name === "Equipment")?._id ||
-        categories[0]._id,
+      categoryId: categories.find((c) => c.name === "Equipment")?._id || categories[0]._id,
       unit: "piece",
       currentStock: 300,
       costPerUnit: 0,
       pricingType: "included",
-      venueId: venue._id,
+      businessId: business._id,
       createdBy: createdBy._id,
     },
   ]);
@@ -567,14 +396,7 @@ const seedSupplies = async (venue, createdBy) => {
 // 9. EVENTS
 // =========================================================
 
-const seedEvents = async (
-  venue,
-  spaces,
-  clients,
-  partners,
-  supplies,
-  createdBy
-) => {
+const seedEvents = async (business, spaces, clients, partners, supplies, createdBy) => {
   console.log("\n🎉 Seeding events...");
 
   const events = await Event.create([
@@ -583,8 +405,8 @@ const seedEvents = async (
       type: "wedding",
       status: "confirmed",
       clientId: clients[0]._id,
-      venueId: venue._id,
-      venueSpaceId: spaces[0]._id,
+      businessId: business._id,
+      resourceId: spaces[0]._id,
       startDate: generateFutureDate(45),
       endDate: generateFutureDate(45),
       startTime: "18:00",
@@ -598,8 +420,8 @@ const seedEvents = async (
       type: "corporate",
       status: "confirmed",
       clientId: clients[1]._id,
-      venueId: venue._id,
-      venueSpaceId: spaces[0]._id,
+      businessId: business._id,
+      resourceId: spaces[0]._id,
       startDate: generateFutureDate(90),
       endDate: generateFutureDate(90),
       startTime: "19:00",
@@ -618,18 +440,14 @@ const seedEvents = async (
 // 10. FINANCIALS & CONTRACTS
 // =========================================================
 
-// =========================================================
-// 10. FINANCIALS & CONTRACTS (Fixed Reminder Fields)
-// =========================================================
-
-const seedFinancialsAndContracts = async (venue, events, clients, createdBy) => {
+const seedFinancialsAndContracts = async (business, events, clients, createdBy) => {
   console.log("\n💰 Seeding financials and contracts...");
 
   // 1. INVOICES
-  await InvoiceSettings.getOrCreate(venue._id);
+  await InvoiceSettings.getOrCreate(business._id);
   
   await Invoice.create({
-    venue: venue._id,
+    business: business._id,
     invoiceType: "client",
     status: "sent",
     client: clients[0]._id,
@@ -646,7 +464,7 @@ const seedFinancialsAndContracts = async (venue, events, clients, createdBy) => 
   });
 
   // 2. CONTRACTS
-  await ContractSettings.getOrCreate(venue._id);
+  await ContractSettings.getOrCreate(business._id);
   
   const contractData = [
     {
@@ -654,7 +472,7 @@ const seedFinancialsAndContracts = async (venue, events, clients, createdBy) => 
       contractType: "client",
       status: "sent",
       version: 1,
-      venue: venue._id,
+      business: business._id,
       event: events[0]._id,
       createdBy: createdBy._id,
       party: { 
@@ -690,53 +508,6 @@ const seedFinancialsAndContracts = async (venue, events, clients, createdBy) => 
         specialConditions: "Client agrees to vacate premises by midnight.",
       },
     },
-    {
-      title: "Contrat de Prestation - TechCorp Annual Gala",
-      contractType: "client",
-      status: "signed",
-      version: 1,
-      venue: venue._id,
-      event: events[1]._id,
-      createdBy: createdBy._id,
-      party: { 
-        type: "company", 
-        name: "TechCorp Tunisia",
-        phone: "71333444",
-        identifier: "MF12345678",
-        address: "Centre Urbain Nord, Tunis 1082, Tunisia"
-      },
-      logistics: {
-        startDate: events[1].startDate,
-        endDate: events[1].endDate,
-        checkInTime: "18:00",
-        checkOutTime: "23:59"
-      },
-      financials: {
-        currency: "TND",
-        amountHT: 8000,
-        vatRate: 19,
-        taxAmount: 1520,
-        stampDuty: 1.0,
-        totalTTC: 9520,
-      },
-      paymentTerms: {
-        depositAmount: 0,
-        securityDeposit: 0,
-        dueDate: generateFutureDate(85),
-        isWithholdingTaxApplicable: true,
-      },
-      legal: {
-        cancellationPolicy: "flexible",
-        jurisdiction: "Tribunal de Tunis",
-        specialConditions: "Retenue à la source applicable (1.5%).",
-      },
-      signatures: {
-        venueSignedAt: new Date(),
-        venueSignerIp: "192.168.1.1",
-        clientSignedAt: new Date(),
-        clientSignerIp: "192.168.1.100",
-      },
-    },
   ];
 
   for (const data of contractData) {
@@ -752,7 +523,7 @@ const seedFinancialsAndContracts = async (venue, events, clients, createdBy) => 
     method: "bank_transfer",
     status: "completed",
     description: "Deposit",
-    venueId: venue._id,
+    businessId: business._id,
     processedBy: createdBy._id,
   });
 
@@ -763,24 +534,23 @@ const seedFinancialsAndContracts = async (venue, events, clients, createdBy) => 
     priority: "high",
     dueDate: generateFutureDate(30),
     assignedTo: createdBy._id,
-    venueId: venue._id,
+    businessId: business._id,
     createdBy: createdBy._id,
   });
 
-  // 5. REMINDERS (✅ FIXED)
+  // 5. REMINDERS
   const targetDate = generateFutureDate(20);
   await Reminder.create({
     title: "Send final invoice",
     description: "Ensure the final invoice is sent to the client 10 days before the event",
     type: "payment",
     priority: "high",
-    // ✅ Schema expects separate Date and Time fields
     reminderDate: targetDate, 
     reminderTime: "09:00", 
     status: "active",
-    venueId: venue._id,
+    businessId: business._id,
     createdBy: createdBy._id,
-    assignedTo: [createdBy._id] // Good practice to assign it
+    assignedTo: [createdBy._id]
   });
 
   console.log("✅ Financials & Contracts Seeded");
@@ -798,19 +568,22 @@ const seedDatabase = async () => {
     await connectDB();
     await clearDatabase();
 
+    // 1. Generate IDs for core entities upfront to resolve circular dependency
+    const ownerId = new mongoose.Types.ObjectId();
+
     const permissions = await seedPermissions();
-    const venues = await seedVenues();
-    const roles = await seedRoles(venues[0], permissions);
-    const users = await seedUsers(venues[0], roles);
+    const businesses = await seedBusinesses(ownerId); // Pass ownerId
+    const roles = await seedRoles(businesses[0], permissions);
+    const users = await seedUsers(businesses[0], roles, ownerId); // Pass ownerId
 
     const owner = users[0];
-    const spaces = await seedVenueSpaces(venues[0], owner);
-    const clients = await seedClients(venues[0], owner);
-    const partners = await seedPartners(venues[0], owner);
-    const { supplies } = await seedSupplies(venues[0], owner);
+    const spaces = await seedSpaces(businesses[0], owner);
+    const clients = await seedClients(businesses[0], owner);
+    const partners = await seedPartners(businesses[0], owner);
+    const { supplies } = await seedSupplies(businesses[0], owner);
 
     const events = await seedEvents(
-      venues[0],
+      businesses[0],
       spaces,
       clients,
       partners,
@@ -818,7 +591,7 @@ const seedDatabase = async () => {
       owner
     );
 
-    await seedFinancialsAndContracts(venues[0], events, clients, owner);
+    await seedFinancialsAndContracts(businesses[0], events, clients, owner);
 
     console.log("\n" + "═".repeat(60));
     console.log("\n✅ DATABASE SEEDED SUCCESSFULLY!\n");

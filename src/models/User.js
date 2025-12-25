@@ -16,12 +16,12 @@ const userSchema = new mongoose.Schema(
       trim: true,
       match: [/^\S+@\S+\.\S+$/, "Please provide a valid email"],
     },
-password: { 
-  type: String, 
-  required: [true, "Password is required"],
-  minlength: [6, "Password must be at least 6 characters"],
-  select: false,
-},
+    password: { 
+      type: String, 
+      required: [true, "Password is required"],
+      minlength: [6, "Password must be at least 6 characters"],
+      select: false,
+    },
     phone: { 
       type: String,
       trim: true,
@@ -35,18 +35,28 @@ password: {
       enum: ["owner", "manager", "staff", "viewer", "custom"],
       default: "viewer",
     },
-    venueId: {
+    
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venueId
+    // =========================================================
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
-      required: [true, "Venue is required"],
+      ref: "Business",
+      required: [true, "Business association is required"],
+      index: true, // Critical for performance
     },
+    
     isActive: { type: Boolean, default: true },
+    
+    // Soft Delete Logic
     isArchived: { type: Boolean, default: false },
     archivedAt: { type: Date },
     archivedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    
+    // RBAC Overrides
     customPermissions: {
       granted: [
         {
@@ -61,15 +71,19 @@ password: {
         },
       ],
     },
+    
     avatar: { type: String },
     lastLogin: { type: Date },
-    isActive: { type: Boolean, default: true },
+    
+    // Invitation Tracking
     invitedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
     invitedAt: { type: Date },
     acceptedAt: { type: Date },
+    
+    // Password Reset
     resetPasswordToken: String,
     resetPasswordExpire: Date,
   },
@@ -78,6 +92,7 @@ password: {
   }
 );
 
+// Hash password before saving
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) {
     return next();
@@ -86,10 +101,12 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
+// Compare password method
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
+// Calculate effective permissions (Role + Custom Granted - Custom Revoked)
 userSchema.methods.getPermissions = async function () {
   await this.populate({
     path: "roleId",
@@ -115,6 +132,7 @@ userSchema.methods.getPermissions = async function () {
   return [...new Set(permissions)];
 };
 
+// Check specific permission by name
 userSchema.methods.hasPermission = async function (permissionName) {
   const Permission = mongoose.model("Permission");
   const permission = await Permission.findOne({ name: permissionName });

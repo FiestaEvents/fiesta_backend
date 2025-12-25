@@ -1,7 +1,4 @@
 import express from "express";
-import { authenticate } from "../middleware/auth.js";
-import { checkPermission } from "../middleware/checkPermission.js";
-import validateRequest from "../middleware/validateRequest.js";
 import {
   getAllInvoices, 
   createInvoice, 
@@ -14,6 +11,7 @@ import {
   markAsPaid, 
   cancelInvoice
 } from "../controllers/invoiceController.js";
+
 import {
   getInvoiceSettings, 
   updateInvoiceSettings,
@@ -21,6 +19,11 @@ import {
   resetToDefaults, 
   applyTemplate
 } from "../controllers/invoiceSettingsController.js";
+
+import { authenticate } from "../middleware/auth.js";
+import { checkPermission } from "../middleware/checkPermission.js";
+import validateRequest from "../middleware/validateRequest.js";
+
 import {
   createInvoiceValidator,
   updateInvoiceValidator,
@@ -30,7 +33,7 @@ import {
 
 const router = express.Router();
 
-// Apply Middleware
+// Apply Middleware (Populates req.user.businessId)
 router.use(authenticate);
 
 // ====================================================
@@ -38,11 +41,11 @@ router.use(authenticate);
 // ====================================================
 router.route("/settings")
   .get(
-    checkPermission("venue.read"), // Settings are venue-level
+    checkPermission("business.read"), 
     getInvoiceSettings
   )
   .put(
-    checkPermission("venue.update"),
+    checkPermission("business.update"),
     invoiceSettingsValidator,
     validateRequest,
     updateInvoiceSettings
@@ -50,21 +53,21 @@ router.route("/settings")
 
 router.post(
   "/settings/preview",
-  checkPermission("venue.read"),
-  invoiceSettingsValidator, // Validate payload to preview
+  checkPermission("business.read"),
+  invoiceSettingsValidator,
   validateRequest,
   previewInvoice
 );
 
 router.post(
   "/settings/reset",
-  checkPermission("venue.update"),
+  checkPermission("business.update"),
   resetToDefaults
 );
 
 router.post(
   "/settings/apply-template",
-  checkPermission("venue.update"),
+  checkPermission("business.update"),
   applyTemplate
 );
 
@@ -113,7 +116,7 @@ router.post(
 
 router.post(
   "/:id/mark-paid",
-  checkPermission("payments.create"), // Paying an invoice creates a payment
+  checkPermission("payments.create"), 
   invoiceIdValidator,
   validateRequest,
   markAsPaid

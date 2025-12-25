@@ -9,18 +9,20 @@ import {
   getArchivedClients,
   getClientStats,
 } from "../controllers/clientController.js";
+
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
 import validateRequest from "../middleware/validateRequest.js";
+
 import {
   createClientValidator,
   updateClientValidator,
-  getClientValidator, // Used for ID validation on GET/DELETE/RESTORE
+  getClientValidator,
 } from "../validators/clientValidator.js";
 
 const router = express.Router();
 
-// Apply authentication to all routes
+// Apply authentication to all routes (Populates req.user.businessId)
 router.use(authenticate);
 
 // ==========================================
@@ -49,7 +51,7 @@ router
   .route("/")
   .get(
     checkPermission("clients.read.all"), 
-    getClients // Add getClientsValidator if you have query params validation
+    getClients
   )
   .post(
     checkPermission("clients.create"),
@@ -65,7 +67,7 @@ router
 // Restore Client
 router.patch(
   "/:id/restore",
-  checkPermission("clients.delete.all"), // Usually requires same perm as archive
+  checkPermission("clients.delete.all"),
   getClientValidator, // Validates ID
   validateRequest,
   restoreClient

@@ -3,7 +3,7 @@ import asyncHandler from "../middleware/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import { User, Role, TeamInvitation, Permission } from "../models/index.js";
-import { sendInvitationEmail } from "../services/emailService.js";
+// import { sendInvitationEmail } from "../services/emailService.js"; // Uncomment when email service is ready
 
 // ✅ CONFIG: Get Frontend URL
 const getFrontendUrl = () => 
@@ -22,13 +22,23 @@ const getCookieOptions = () => {
 };
 
 /**
+ * Helper to safely get Business ID string
+ */
+const getBusinessId = (user) => {
+  if (!user || !user.businessId) return null;
+  return user.businessId._id ? user.businessId._id : user.businessId;
+};
+
+/**
  * @desc    Get all team members
  * @route   GET /api/v1/team
  * @access  Private
  */
 export const getTeamMembers = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10, status, roleId, search } = req.query;
-  const query = { venueId: req.user.venueId };
+  const businessId = getBusinessId(req.user);
+
+  const query = { businessId };
 
   if (status) query.isActive = status === "active";
   if (roleId) query.roleId = roleId;
@@ -70,9 +80,11 @@ export const getTeamMembers = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getTeamMember = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const user = await User.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   })
     .populate("roleId")
     .populate("invitedBy", "name email")
@@ -90,15 +102,18 @@ export const getTeamMember = asyncHandler(async (req, res) => {
  */
 export const inviteTeamMember = asyncHandler(async (req, res) => {
   const { email, roleId, message } = req.body;
-  const { venueId } = req.user;
+  const businessId = getBusinessId(req.user);
 
-  const existingUser = await User.findOne({ email, venueId });
-  if (existingUser) throw new ApiError("User already exists in this venue", 400);
+  // 1. Check if user already exists in this business
+  const existingUser = await User.findOne({ email, businessId });
+  if (existingUser) throw new ApiError("User already exists in this business", 400);
 
-  const role = await Role.findOne({ _id: roleId, venueId });
+  // 2. Validate Role
+  const role = await Role.findOne({ _id: roleId, businessId });
   if (!role) throw new ApiError("Invalid role", 404);
 
-  const existingInvitation = await TeamInvitation.findOne({ email, venueId, status: "pending" });
+  // 3. Check for pending invitation
+  const existingInvitation = await TeamInvitation.findOne({ email, businessId, status: "pending" });
   if (existingInvitation) throw new ApiError("Pending invitation already exists", 400);
 
   // Set explicit expiry (e.g., 48 hours)
@@ -106,7 +121,7 @@ export const inviteTeamMember = asyncHandler(async (req, res) => {
 
   const invitation = new TeamInvitation({
     email,
-    venueId,
+    businessId, // Linked to generic Business
     roleId,
     invitedBy: req.user._id,
     message,
@@ -115,16 +130,17 @@ export const inviteTeamMember = asyncHandler(async (req, res) => {
 
   const rawToken = invitation.generateInvitationToken 
     ? invitation.generateInvitationToken() 
-    : invitation.token; 
+    : invitation.token; // Fallback if method not on instance
 
   await invitation.save();
 
   const invitationLink = `${getFrontendUrl()}/accept-invite?token=${rawToken}`;
 
   try {
+    // await sendInvitationEmail(email, invitationLink, req.user.name, message);
     console.log(`📧 Invitation Link: ${invitationLink}`);
   } catch (error) {
-    console.warn("⚠️ Email service failed.");
+    console.warn("⚠️ Email service failed:", error.message);
   }
 
   new ApiResponse(
@@ -140,8 +156,10 @@ export const inviteTeamMember = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getPendingInvitations = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const invitations = await TeamInvitation.find({
-    venueId: req.user.venueId,
+    businessId,
     status: "pending",
   })
     .populate("roleId", "name description")
@@ -154,7 +172,7 @@ export const getPendingInvitations = asyncHandler(async (req, res) => {
 /**
  * @desc    Accept invitation
  * @route   POST /api/v1/team/invitations/accept
- * @access  Public
+ * @access  Public (No Auth Middleware)
  */
 export const acceptInvitation = asyncHandler(async (req, res) => {
   const { token, name, password } = req.body;
@@ -164,6 +182,7 @@ export const acceptInvitation = asyncHandler(async (req, res) => {
   const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
   // 1. Find Invitation with Deep Population for Permissions
+  // Note: We populate 'businessId' to get the business name
   const invitation = await TeamInvitation.findOne({
     token: hashedToken,
     status: "pending",
@@ -172,7 +191,7 @@ export const acceptInvitation = asyncHandler(async (req, res) => {
       path: "roleId",
       populate: { path: "permissions", model: "Permission" } 
     })
-    .populate("venueId");
+    .populate("businessId"); // generic Business model
 
   if (!invitation) throw new ApiError("Invalid or expired invitation", 400);
 
@@ -183,8 +202,9 @@ export const acceptInvitation = asyncHandler(async (req, res) => {
   }
 
   // 2. Validate User Existence via Invitation Email (Security)
+  // Ensure we don't duplicate global users if email is unique globally
   const existingUser = await User.findOne({ email: invitation.email });
-  if (existingUser) throw new ApiError("User already exists", 400);
+  if (existingUser) throw new ApiError("User account with this email already exists", 400);
 
   // 3. Create User (Enforcing invitation.email)
   const user = await User.create({
@@ -195,7 +215,7 @@ export const acceptInvitation = asyncHandler(async (req, res) => {
     roleType: invitation.roleId.isSystemRole 
       ? invitation.roleId.name.toLowerCase() 
       : "custom",
-    venueId: invitation.venueId._id,
+    businessId: invitation.businessId._id, // Assign to Business
     invitedBy: invitation.invitedBy,
     invitedAt: invitation.createdAt,
     acceptedAt: new Date(),
@@ -208,6 +228,7 @@ export const acceptInvitation = asyncHandler(async (req, res) => {
   await invitation.save();
 
   // 5. Generate Token
+  // Dynamic import to avoid circular dependency if tokenService imports User
   const { generateToken } = await import("../utils/tokenService.js");
   const authToken = generateToken(user._id);
 
@@ -236,13 +257,13 @@ export const acceptInvitation = asyncHandler(async (req, res) => {
           type: user.roleType,
           level: invitation.roleId.level,
         },
-        venue: {
-          id: invitation.venueId._id,
-          name: invitation.venueId.name,
+        business: {
+          id: invitation.businessId._id,
+          name: invitation.businessId.name,
+          category: invitation.businessId.category, // e.g. 'venue', 'catering'
         },
         permissions: permissionsList, // ✅ Strings only
       },
-      // Note: We don't need to send token in body anymore, but keeping it doesn't hurt
       token: authToken, 
     },
     "Invitation accepted successfully",
@@ -265,7 +286,7 @@ export const validateInvitationToken = asyncHandler(async (req, res) => {
     token: hashedToken,
     status: "pending",
   })
-    .populate("venueId", "name")
+    .populate("businessId", "name category") // Populate generic Business
     .populate("roleId", "name")
     .populate("invitedBy", "name");
 
@@ -280,7 +301,8 @@ export const validateInvitationToken = asyncHandler(async (req, res) => {
   new ApiResponse({
     valid: true,
     email: invitation.email,
-    venueName: invitation.venueId?.name || "Unknown Venue",
+    businessName: invitation.businessId?.name || "Unknown Business",
+    businessCategory: invitation.businessId?.category || "generic",
     roleName: invitation.roleId?.name || "Member",
     inviterName: invitation.invitedBy?.name || "Administrator"
   }).send(res);
@@ -292,14 +314,17 @@ export const validateInvitationToken = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const resendInvitation = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const invitation = await TeamInvitation.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
     status: "pending",
   }).populate("roleId");
 
   if (!invitation) throw new ApiError("Invitation not found", 404);
 
+  // Generate new token
   const rawToken = crypto.randomBytes(32).toString("hex");
   
   invitation.token = crypto.createHash("sha256").update(rawToken).digest("hex");
@@ -318,9 +343,11 @@ export const resendInvitation = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const cancelInvitation = asyncHandler(async (req, res) => {
+  const businessId = getBusinessId(req.user);
+
   const invitation = await TeamInvitation.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
     status: "pending",
   });
 
@@ -341,14 +368,15 @@ export const cancelInvitation = asyncHandler(async (req, res) => {
  */
 export const updateTeamMember = asyncHandler(async (req, res) => {
   const { roleId, isActive, customPermissions } = req.body;
+  const businessId = getBusinessId(req.user);
 
-  const user = await User.findOne({ _id: req.params.id, venueId: req.user.venueId });
+  const user = await User.findOne({ _id: req.params.id, businessId });
   if (!user) throw new ApiError("Team member not found", 404);
 
   if (user.roleType === "owner") throw new ApiError("Cannot modify owner", 403);
 
   if (roleId) {
-    const role = await Role.findOne({ _id: roleId, venueId: req.user.venueId });
+    const role = await Role.findOne({ _id: roleId, businessId });
     if (!role) throw new ApiError("Invalid role", 404);
     user.roleId = roleId;
     user.roleType = role.isSystemRole ? role.name.toLowerCase() : "custom";
@@ -369,10 +397,12 @@ export const updateTeamMember = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const removeTeamMember = asyncHandler(async (req, res) => {
-  const user = await User.findOne({ _id: req.params.id, venueId: req.user.venueId });
+  const businessId = getBusinessId(req.user);
+
+  const user = await User.findOne({ _id: req.params.id, businessId });
   if (!user) throw new ApiError("Team member not found", 404);
   
-  if (user.roleType === "owner") throw new ApiError("Cannot remove venue owner", 400);
+  if (user.roleType === "owner") throw new ApiError("Cannot remove business owner", 400);
   if (user._id.toString() === req.user._id.toString()) throw new ApiError("Cannot remove yourself", 400);
 
   user.isActive = false; // Soft delete
@@ -387,11 +417,12 @@ export const removeTeamMember = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getTeamStats = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+  const businessId = getBusinessId(req.user);
+  
   const [totalMembers, activeMembers, pendingInvitations] = await Promise.all([
-    User.countDocuments({ venueId }),
-    User.countDocuments({ venueId, isActive: true }),
-    TeamInvitation.countDocuments({ venueId, status: "pending" }),
+    User.countDocuments({ businessId }),
+    User.countDocuments({ businessId, isActive: true }),
+    TeamInvitation.countDocuments({ businessId, status: "pending" }),
   ]);
 
   new ApiResponse({ totalMembers, activeMembers, pendingInvitations }).send(res);

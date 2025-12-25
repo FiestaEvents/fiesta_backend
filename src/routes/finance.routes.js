@@ -15,19 +15,20 @@ import {
   restoreFinanceRecord,
   getArchivedFinanceRecords,
 } from "../controllers/financeController.js";
+
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
 import validateRequest from "../middleware/validateRequest.js";
+
 import {
   createFinanceValidator,
   updateFinanceValidator,
   financeIdValidator,
-  // dateRangeValidator, // Optional: if you have query params for reports
 } from "../validators/financeValidator.js";
 
 const router = express.Router();
 
-// Apply authentication to all routes
+// Apply authentication to all routes (Populates req.user.businessId)
 router.use(authenticate);
 
 // ==========================================
@@ -87,7 +88,7 @@ router.get(
 // Restore logic (Moved before generic /:id to prevent collision)
 router.patch(
   "/:id/restore",
-  checkPermission("finance.delete.all"), // Using delete permission as it reverses archiving
+  checkPermission("finance.delete.all"), 
   financeIdValidator,
   validateRequest,
   restoreFinanceRecord
@@ -105,7 +106,7 @@ router
   )
   .post(
     checkPermission("finance.create"),
-    createFinanceValidator, // abstracted validation logic
+    createFinanceValidator,
     validateRequest,
     createFinanceRecord
   );
@@ -120,7 +121,7 @@ router
   )
   .put(
     checkPermission("finance.update.all"),
-    updateFinanceValidator, // checks ID and body
+    updateFinanceValidator,
     validateRequest,
     updateFinanceRecord
   )

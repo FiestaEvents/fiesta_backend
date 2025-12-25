@@ -9,9 +9,11 @@ import {
   restorePartner,
   getArchivedPartners,
 } from "../controllers/partnerController.js";
+
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
 import validateRequest from "../middleware/validateRequest.js";
+
 import {
   createPartnerValidator,
   updatePartnerValidator,
@@ -20,7 +22,7 @@ import {
 
 const router = express.Router();
 
-// Apply authentication to all routes
+// Apply authentication to all routes (Populates req.user.businessId)
 router.use(authenticate);
 
 // ==========================================
@@ -46,7 +48,7 @@ router.get(
 // ==========================================
 router.patch(
   "/:id/restore",
-  checkPermission("partners.delete.all"), // Restore often requires delete privileges
+  checkPermission("partners.delete.all"), // Restore often requires delete/admin privileges
   partnerIdValidator,
   validateRequest,
   restorePartner

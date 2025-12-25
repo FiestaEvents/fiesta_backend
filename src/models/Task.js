@@ -31,13 +31,16 @@ const taskSchema = new mongoose.Schema(
       enum: [
         "event_preparation",
         "marketing",
-        "maintenance",
+        "maintenance",        // Venues (Repairs) & Drivers (Vehicle Check)
         "client_followup",
         "partner_coordination",
         "administrative",
         "finance",
-        "setup",
+        "setup",              // DJs, Decorators
         "cleanup",
+        "post_production",    // NEW: Photographers/Videographers (Editing)
+        "delivery",           // NEW: Caterers, Drivers
+        "inventory_check",    // NEW: General stock check
         "other",
       ],
       default: "other",
@@ -77,24 +80,31 @@ const taskSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
-    // Essential for Tenancy & Audit
-    venueId: {
+    
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venueId
+    // =========================================================
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
+      ref: "Business",
       required: true,
       index: true,
     },
+    
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
   },
   {
-    timestamps: true, // Automatically manages createdAt and updatedAt
+    timestamps: true,
   }
 );
 
-// Basic Search Index
+// Search Index
 taskSchema.index({ title: "text", description: "text" });
+
+// Compound index for efficiently fetching a Business's tasks
+taskSchema.index({ businessId: 1, status: 1, dueDate: 1 });
 
 export default mongoose.model("Task", taskSchema);

@@ -25,25 +25,28 @@ import {
 
 const router = express.Router();
 
-// Apply authentication to all routes
+// Apply authentication to all routes (Populates req.user.businessId)
 router.use(authenticate);
 
 // ============================================
 // ANALYTICS & ALERTS (Static paths first)
 // ============================================
+
+// Get low stock alerts for the dashboard
 router.get(
   "/alerts/low-stock",
   checkPermission("supplies.read.all"),
   getLowStockSupplies
 );
 
+// Get inventory valuation and category breakdown
 router.get(
   "/analytics/summary",
   checkPermission("supplies.read.all"),
   getSupplyAnalytics
 );
 
-// Category-specific queries
+// Get supplies filtered by specific category
 router.get(
   "/by-category/:categoryId",
   checkPermission("supplies.read.all"),
@@ -53,6 +56,8 @@ router.get(
 // ============================================
 // STOCK OPERATIONS (Sub-routes)
 // ============================================
+
+// Adjust stock (Purchase, Usage, Waste, etc.)
 router.patch(
   "/:id/stock",
   checkPermission("supplies.update.all"),
@@ -61,6 +66,7 @@ router.patch(
   updateStock
 );
 
+// View history of stock movements
 router.get(
   "/:id/history",
   checkPermission("supplies.read.all"),
@@ -72,6 +78,7 @@ router.get(
 // ============================================
 // ARCHIVE / RESTORE
 // ============================================
+
 router.patch(
   "/:id/archive",
   checkPermission("supplies.delete.all"),

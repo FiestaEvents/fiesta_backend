@@ -1,147 +1,99 @@
 import { body } from "express-validator";
 
 // =========================================================
-// CONFIGURATION & CONSTANTS
+// CONFIGURATION
 // =========================================================
 const LIMITS = {
   NAME: { min: 2, max: 50 },
   EMAIL: { max: 100 },
   PASSWORD: { min: 8, max: 128 },
   PHONE: { max: 20 },
-  VENUE_NAME: { min: 2, max: 100 },
+  BUSINESS_NAME: { min: 2, max: 100 },
   DESC: { max: 500 },
   ADDRESS: { max: 200 },
   CITY_STATE_COUNTRY: { max: 100 },
   URL: { max: 500 },
 };
 
+const VALID_CATEGORIES = [
+  "venue", "photography", "videography", "catering", "bakery", 
+  "florist", "decoration", "music", "entertainment", "driver", 
+  "security", "planning", "makeup", "hair", "attire", "other"
+];
+
 // =========================================================
-// REUSABLE VALIDATION RULES
+// RULES
 // =========================================================
 const commonRules = {
   email: body("email")
     .trim()
     .notEmpty().withMessage("Email is required")
     .isEmail().withMessage("Please provide a valid email")
-    .normalizeEmail()
-    .isLength({ max: LIMITS.EMAIL.max }).withMessage(`Email too long (max ${LIMITS.EMAIL.max} chars)`),
+    .normalizeEmail(),
 
   name: body("name")
     .trim()
     .notEmpty().withMessage("Name is required")
+    // ✅ CRITICAL: No .custom() check here!
     .isLength(LIMITS.NAME).withMessage(`Name must be between ${LIMITS.NAME.min} and ${LIMITS.NAME.max} characters`),
 
-  // Enforces strong password constraints (for Register/Reset/Change)
-  strongPassword: (fieldName = "password") => 
-    body(fieldName)
-      .notEmpty().withMessage(`${fieldName} is required`)
-      .isLength(LIMITS.PASSWORD).withMessage(`Password must be between ${LIMITS.PASSWORD.min} and ${LIMITS.PASSWORD.max} characters`),
+  strongPassword: (field = "password") => body(field)
+    .notEmpty().withMessage("Password is required")
+    .isLength(LIMITS.PASSWORD).withMessage("Password too short"),
 
-  // Simple check for login (just existence)
-  simplePassword: (fieldName = "password") =>
-    body(fieldName).notEmpty().withMessage(`${fieldName} is required`),
-
-  confirmPassword: (compareField = "password") =>
-    body("confirmPassword")
-      .notEmpty().withMessage("Please confirm your password")
-      .custom((value, { req }) => {
-        if (value !== req.body[compareField]) throw new Error("Passwords do not match");
-        return true;
-      }),
-
-  phone: body("phone")
-    .optional()
-    .trim()
-    .isMobilePhone("any").withMessage("Invalid phone number")
-    .isLength({ max: LIMITS.PHONE.max }).withMessage(`Phone too long (max ${LIMITS.PHONE.max} chars)`),
+  phone: body("phone").optional().trim(),
 };
 
 // =========================================================
-// ROUTE SPECIFIC VALIDATORS
+// EXPORTS
 // =========================================================
 
 export const registerValidator = [
   commonRules.name,
   commonRules.email,
   commonRules.strongPassword("password"),
-  commonRules.confirmPassword("password"),
-  commonRules.phone,
-
-  body("venueName")
+  
+  // Business Name
+  body("businessName")
     .trim()
-    .notEmpty().withMessage("Venue name is required")
-    .isLength(LIMITS.VENUE_NAME).withMessage(`Venue name must be between ${LIMITS.VENUE_NAME.min} and ${LIMITS.VENUE_NAME.max} chars`),
+    .notEmpty().withMessage("Business Name is required")
+    .isLength(LIMITS.BUSINESS_NAME).withMessage("Business name invalid"),
 
-  body("description")
-    .optional()
+  // Category
+  body("category")
     .trim()
-    .isLength({ max: LIMITS.DESC.max }).withMessage("Description too long"),
+    .notEmpty().withMessage("Category is required")
+    .isIn(VALID_CATEGORIES).withMessage("Invalid category"),
 
-  body("address.street").optional().trim().isLength({ max: LIMITS.ADDRESS.max }),
-  body("address.city").optional().trim().isLength({ max: LIMITS.CITY_STATE_COUNTRY.max }),
-  body("address.state").optional().trim().isLength({ max: LIMITS.CITY_STATE_COUNTRY.max }),
-  body("address.country").optional().trim().isLength({ max: LIMITS.CITY_STATE_COUNTRY.max }),
-  body("address.zipCode").optional().trim().isPostalCode("any").withMessage("Invalid zip code"),
+  // Optional fields (No unique checks)
+  body("description").optional().trim(),
+  body("address.street").optional().trim(),
+  body("serviceRadius").optional().isNumeric(),
+  body("pricingModel").optional().isIn(['fixed', 'hourly']),
+  body("spaces").optional().isArray()
 ];
 
 export const loginValidator = [
   commonRules.email,
-  commonRules.simplePassword("password"),
+  body("password").notEmpty().withMessage("Password is required"),
 ];
 
-export const emailValidator = [
-  commonRules.email,
-];
-
-export const forgotPasswordValidator = [
-  commonRules.email,
-];
-
+// Other validators...
+export const emailValidator = [commonRules.email];
+export const forgotPasswordValidator = [commonRules.email];
 export const resetPasswordValidator = [
   commonRules.strongPassword("password"),
-  commonRules.confirmPassword("password"),
-  
-  body("token")
-    .notEmpty().withMessage("Reset token is required")
-    .isLength({ min: 64, max: 64 }).withMessage("Invalid token length")
-    .matches(/^[A-Fa-f0-9]+$/).withMessage("Invalid token format"),
+  body("token").notEmpty()
 ];
-
-export const restoreAccountValidator = [
-  commonRules.email,
-];
-
+export const restoreAccountValidator = [commonRules.email];
 export const updateProfileValidator = [
-  body("name")
-    .optional()
-    .trim()
-    .isLength(LIMITS.NAME).withMessage(`Name must be between ${LIMITS.NAME.min} and ${LIMITS.NAME.max} characters`),
-
-  commonRules.phone,
-
-  body("avatar")
-    .optional({ checkFalsy: true }) 
-    .isURL().withMessage("Avatar must be a valid URL")
-    .isLength({ max: LIMITS.URL.max }),
+  body("name").optional().trim().isLength(LIMITS.NAME),
+  commonRules.phone
 ];
-
 export const changePasswordValidator = [
-  commonRules.simplePassword("currentPassword"),
-  
+  body("currentPassword").notEmpty(),
   commonRules.strongPassword("newPassword")
-    .custom((value, { req }) => {
-      if (value === req.body.currentPassword) {
-        throw new Error("New password must be different from current password");
-      }
-      return true;
-    }),
-
-  commonRules.confirmPassword("newPassword"),
 ];
-
 export const archiveAccountValidator = [
-  body("confirmation")
-    .notEmpty().withMessage("Confirmation is required")
-    .equals("I understand this action is irreversible")
-    .withMessage("Confirmation phrase does not match"),
+  body("confirmation").equals("I understand this action is irreversible")
 ];

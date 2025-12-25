@@ -4,6 +4,50 @@ import ApiResponse from "../utils/ApiResponse.js";
 import { Payment, Event, Client } from "../models/index.js";
 
 /**
+ * @desc    Helper function to update event payment summary
+ */
+const updateEventPaymentSummary = async (eventId) => {
+  const event = await Event.findById(eventId);
+  if (!event) return;
+
+  // Get all non-archived completed income payments for this event
+  const allPayments = await Payment.find({
+    event: eventId,
+    status: "completed",
+    type: "income",
+    isArchived: false,
+  });
+
+  // Calculate total net amount paid
+  const totalPaid = allPayments.reduce((sum, p) => sum + p.netAmount, 0);
+
+  // Update Event Model field: paymentInfo (matches the new Schema)
+  if (!event.paymentInfo) {
+    event.paymentInfo = {
+      paidAmount: 0,
+      status: 'unpaid',
+      transactions: []
+    };
+  }
+
+  event.paymentInfo.paidAmount = totalPaid;
+  event.paymentInfo.transactions = allPayments.map(p => p._id);
+
+  // Check against pricing.totalPriceAfterTax (matches new Schema)
+  const totalEventCost = event.pricing ? event.pricing.totalPriceAfterTax : 0;
+
+  if (totalEventCost > 0 && totalPaid >= totalEventCost) {
+    event.paymentInfo.status = "paid";
+  } else if (totalPaid > 0) {
+    event.paymentInfo.status = "partial";
+  } else {
+    event.paymentInfo.status = "unpaid";
+  }
+
+  await event.save();
+};
+
+/**
  * @desc    Get all payments (non-archived by default) with SEARCH support
  * @route   GET /api/v1/payments
  * @access  Private
@@ -19,12 +63,13 @@ export const getPayments = asyncHandler(async (req, res) => {
     clientId,
     startDate,
     endDate,
-    search, // ✅ Extract search param
+    search,
     includeArchived = false,
   } = req.query;
 
-  // Build query
-  const query = { venueId: req.user.venueId };
+  // Build query scoped to Business
+  const businessId = req.businessId || req.user.businessId;
+  const query = { businessId };
 
   // --- START SEARCH LOGIC ---
   if (search) {
@@ -32,14 +77,14 @@ export const getPayments = asyncHandler(async (req, res) => {
 
     // 1. Find matching Clients (by name or email)
     const matchingClients = await Client.find({
-      venueId: req.user.venueId,
+      businessId, 
       $or: [{ name: searchRegex }, { email: searchRegex }],
     }).select("_id");
     const clientIds = matchingClients.map((c) => c._id);
 
     // 2. Find matching Events (by title)
     const matchingEvents = await Event.find({
-      venueId: req.user.venueId,
+      businessId, 
       title: searchRegex,
     }).select("_id");
     const eventIds = matchingEvents.map((e) => e._id);
@@ -60,7 +105,7 @@ export const getPayments = asyncHandler(async (req, res) => {
   if (eventId) query.event = eventId;
   if (clientId) query.client = clientId;
 
-  if (!includeArchived) {
+  if (includeArchived !== "true" && includeArchived !== true) {
     query.isArchived = false;
   }
 
@@ -71,10 +116,8 @@ export const getPayments = asyncHandler(async (req, res) => {
     if (endDate) query.createdAt.$lte = new Date(endDate);
   }
 
-  // Pagination
   const skip = (page - 1) * limit;
 
-  // Execute query
   const [payments, total] = await Promise.all([
     Payment.find(query)
       .populate("event", "title startDate")
@@ -104,9 +147,10 @@ export const getPayments = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getPayment = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const payment = await Payment.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   })
     .populate("event")
     .populate("client")
@@ -126,18 +170,19 @@ export const getPayment = asyncHandler(async (req, res) => {
  * @access  Private (payments.create)
  */
 export const createPayment = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const paymentData = {
     ...req.body,
-    venueId: req.user.venueId,
+    businessId, 
     processedBy: req.user._id,
-    isArchived: false, // Ensure new payments are not archived
+    isArchived: false,
   };
 
   // Verify event exists if provided
   if (paymentData.event) {
     const event = await Event.findOne({
       _id: paymentData.event,
-      venueId: req.user.venueId,
+      businessId,
     });
 
     if (!event) {
@@ -154,7 +199,7 @@ export const createPayment = asyncHandler(async (req, res) => {
   if (paymentData.client) {
     const client = await Client.findOne({
       _id: paymentData.client,
-      venueId: req.user.venueId,
+      businessId,
     });
 
     if (!client) {
@@ -164,7 +209,7 @@ export const createPayment = asyncHandler(async (req, res) => {
 
   const payment = await Payment.create(paymentData);
 
-  // Update event payment summary if payment is for an event and not archived
+  // Update event payment info if payment is for an event and not archived
   if (payment.event && payment.type === "income" && !payment.isArchived) {
     await updateEventPaymentSummary(payment.event);
   }
@@ -183,9 +228,10 @@ export const createPayment = asyncHandler(async (req, res) => {
  * @access  Private (payments.update.all)
  */
 export const updatePayment = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const payment = await Payment.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!payment) {
@@ -204,7 +250,7 @@ export const updatePayment = asyncHandler(async (req, res) => {
   Object.assign(payment, req.body);
   await payment.save();
 
-  // Update event payment summary if applicable
+  // Update event payment info if applicable
   if (payment.event && payment.type === "income") {
     await updateEventPaymentSummary(payment.event);
   }
@@ -223,9 +269,10 @@ export const updatePayment = asyncHandler(async (req, res) => {
  * @access  Private (payments.delete.all)
  */
 export const deletePayment = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const payment = await Payment.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!payment) {
@@ -236,13 +283,13 @@ export const deletePayment = asyncHandler(async (req, res) => {
     throw new ApiError("Payment is already archived", 400);
   }
 
-  // Soft delete: Archive the payment instead of deleting
+  // Soft delete
   payment.isArchived = true;
   payment.archivedAt = new Date();
   payment.archivedBy = req.user._id;
   await payment.save();
 
-  // Update event payment summary if this payment was associated with an event
+  // Update event payment info if this payment was associated with an event
   if (payment.event && payment.type === "income") {
     await updateEventPaymentSummary(payment.event);
   }
@@ -256,9 +303,10 @@ export const deletePayment = asyncHandler(async (req, res) => {
  * @access  Private (payments.update.all)
  */
 export const restorePayment = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const payment = await Payment.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!payment) {
@@ -274,7 +322,7 @@ export const restorePayment = asyncHandler(async (req, res) => {
   payment.archivedBy = undefined;
   await payment.save();
 
-  // Update event payment summary if this payment is associated with an event
+  // Update event payment info
   if (payment.event && payment.type === "income") {
     await updateEventPaymentSummary(payment.event);
   }
@@ -293,12 +341,12 @@ export const restorePayment = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getPaymentStats = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+  const businessId = req.businessId || req.user.businessId;
   const { startDate, endDate } = req.query;
 
   const dateFilter = { 
-    venueId,
-    isArchived: false // Only count non-archived payments
+    businessId,
+    isArchived: false
   };
   
   if (startDate || endDate) {
@@ -334,7 +382,6 @@ export const getPaymentStats = asyncHandler(async (req, res) => {
     },
   ]);
 
-  // Calculate totals
   const totals = {
     totalIncome: 0,
     totalExpense: 0,
@@ -358,9 +405,8 @@ export const getPaymentStats = asyncHandler(async (req, res) => {
     }
   });
 
-  // Get archived payments count
   totals.archivedPayments = await Payment.countDocuments({
-    venueId,
+    businessId,
     isArchived: true,
   });
 
@@ -380,10 +426,11 @@ export const getPaymentStats = asyncHandler(async (req, res) => {
  */
 export const processRefund = asyncHandler(async (req, res) => {
   const { refundAmount, refundReason } = req.body;
+  const businessId = req.businessId || req.user.businessId;
 
   const payment = await Payment.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   });
 
   if (!payment) {
@@ -409,7 +456,6 @@ export const processRefund = asyncHandler(async (req, res) => {
 
   await payment.save();
 
-  // Update event payment summary if applicable
   if (payment.event && payment.type === "income") {
     await updateEventPaymentSummary(payment.event);
   }
@@ -432,30 +478,24 @@ export const getArchivedPayments = asyncHandler(async (req, res) => {
     order = "desc",
   } = req.query;
 
-  // Build query for archived payments only
+  const businessId = req.businessId || req.user.businessId;
   const query = { 
-    venueId: req.user.venueId,
+    businessId,
     isArchived: true 
   };
 
   if (type) query.type = type;
   if (method) query.method = method;
 
-  // Pagination
   const skip = (page - 1) * limit;
 
-  // Sort
-  const sortOrder = order === "asc" ? 1 : -1;
-  const sortOptions = { [sortBy]: sortOrder };
-
-  // Execute query
   const [payments, total] = await Promise.all([
     Payment.find(query)
       .populate("event", "title startDate")
       .populate("client", "name email")
       .populate("processedBy", "name email")
       .populate("archivedBy", "name email")
-      .sort(sortOptions)
+      .sort({ [sortBy]: order === "asc" ? 1 : -1 })
       .skip(skip)
       .limit(parseInt(limit)),
     Payment.countDocuments(query),
@@ -471,46 +511,3 @@ export const getArchivedPayments = asyncHandler(async (req, res) => {
     },
   }).send(res);
 });
-
-/**
- * @desc    Helper function to update event payment summary
- */
-const updateEventPaymentSummary = async (eventId) => {
-  const event = await Event.findById(eventId);
-  if (!event) return;
-
-  // Get all non-archived completed income payments for this event
-  const allPayments = await Payment.find({
-    event: eventId,
-    status: "completed",
-    type: "income",
-    isArchived: false,
-  });
-
-  const totalPaid = allPayments.reduce((sum, p) => sum + p.netAmount, 0);
-
-  // ✅ FIX: Initialize paymentSummary if it is missing
-  if (!event.paymentSummary) {
-    event.paymentSummary = {
-      paidAmount: 0,
-      status: 'pending'
-    };
-  }
-
-  // Now it is safe to assign
-  event.paymentSummary.paidAmount = totalPaid;
-
-  // ✅ FIX: Safety check for pricing object as well
-  const totalEventCost = event.pricing ? event.pricing.totalAmount : 0;
-
-  // Update payment status
-  if (totalEventCost > 0 && totalPaid >= totalEventCost) {
-    event.paymentSummary.status = "paid";
-  } else if (totalPaid > 0) {
-    event.paymentSummary.status = "partial";
-  } else {
-    event.paymentSummary.status = "pending";
-  }
-
-  await event.save();
-};

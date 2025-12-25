@@ -38,6 +38,7 @@ const inviteLimiter = rateLimit({
 // ==========================================
 
 // 1. Validate Invitation Token (Moved UP here to avoid 401 error)
+// Used when a user clicks the link in their email
 router.get(
   "/invitations/validate", 
   inviteLimiter, 
@@ -45,6 +46,7 @@ router.get(
 );
 
 // 2. Accept Invitation
+// Creates the user account and links it to the Business
 router.post(
   "/invitations/accept",
   [
@@ -61,6 +63,7 @@ router.post(
 // ==========================================
 // 🔒 PROTECTED ROUTES (Login Required)
 // ==========================================
+// All routes below require req.user to be populated with businessId
 router.use(authenticate);
 
 // --- Statistics ---

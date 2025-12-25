@@ -1,7 +1,4 @@
-import Invoice from "../models/Invoice.js";
-import InvoiceSettings from "../models/InvoiceSettings.js";
-import Venue from "../models/Venue.js";
-import Client from "../models/Client.js";
+import { Invoice, InvoiceSettings, Business, Client } from "../models/index.js";
 import { generateInvoicePDF } from "../utils/generateInvoicePDF.js";
 import { sendInvoiceEmail } from "../utils/sendEmail.js";
 
@@ -12,12 +9,13 @@ export const getAllInvoices = async (req, res) => {
       limit = 10, 
       invoiceType, 
       status, 
-      search // ✅ Extract search parameter
+      search
     } = req.query;
     
-    const venueId = req.user.venueId;
+    // ARCHITECTURE UPDATE: Use businessId
+    const businessId = req.businessId || req.user.businessId;
 
-    const query = { venue: venueId, isArchived: { $ne: true } };
+    const query = { business: businessId, isArchived: { $ne: true } };
 
     // --- START SEARCH LOGIC ---
     if (search) {
@@ -25,7 +23,7 @@ export const getAllInvoices = async (req, res) => {
 
       // 1. Find matching Clients (if searching for a name/company)
       const matchingClients = await Client.find({
-        venueId: venueId,
+        businessId: businessId, // Updated
         $or: [
           { name: searchRegex }, 
           { company: searchRegex }, 
@@ -78,8 +76,15 @@ export const getAllInvoices = async (req, res) => {
 
 export const getInvoiceById = async (req, res) => {
   try {
-    const invoice = await Invoice.findOne({ _id: req.params.id, venue: req.user.venueId })
-      .populate("client").populate("partner").populate("event");
+    const businessId = req.businessId || req.user.businessId;
+    const invoice = await Invoice.findOne({ 
+      _id: req.params.id, 
+      business: businessId // Updated
+    })
+      .populate("client")
+      .populate("partner")
+      .populate("event");
+      
     if(!invoice) return res.status(404).json({message: "Not Found"});
     res.json({ success: true, invoice });
   } catch (error) {
@@ -89,13 +94,12 @@ export const getInvoiceById = async (req, res) => {
 
 export const getInvoiceStats = async (req, res) => {
   try {
-    const venueId = req.user.venueId;
+    const businessId = req.businessId || req.user.businessId;
     const stats = await Invoice.aggregate([
-      { $match: { venue: venueId, isArchived: { $ne: true } } },
+      { $match: { business: businessId, isArchived: { $ne: true } } },
       { $group: { _id: "$status", count: { $sum: 1 }, total: { $sum: "$totalAmount" } } }
     ]);
     
-    // Safe reduction
     const safeTotal = (status) => stats.find(s => s._id === status)?.total || 0;
     const safeCount = (status) => stats.find(s => s._id === status)?.count || 0;
 
@@ -116,6 +120,7 @@ export const getInvoiceStats = async (req, res) => {
 // --- WRITE ---
 export const createInvoice = async (req, res) => {
   try {
+    const businessId = req.businessId || req.user.businessId;
     // Link Client data
     let recipientData = {};
     if (req.body.client) {
@@ -133,7 +138,7 @@ export const createInvoice = async (req, res) => {
     const invoice = await Invoice.create({
       ...req.body,
       ...recipientData,
-      venue: req.user.venueId,
+      business: businessId, // Updated
       createdBy: req.user._id
     });
     res.status(201).json({ success: true, invoice });
@@ -144,8 +149,9 @@ export const createInvoice = async (req, res) => {
 
 export const updateInvoice = async (req, res) => {
   try {
+    const businessId = req.businessId || req.user.businessId;
     const invoice = await Invoice.findOneAndUpdate(
-      { _id: req.params.id, venue: req.user.venueId },
+      { _id: req.params.id, business: businessId },
       req.body,
       { new: true }
     );
@@ -157,7 +163,11 @@ export const updateInvoice = async (req, res) => {
 
 export const deleteInvoice = async (req, res) => {
   try {
-    await Invoice.findOneAndUpdate({ _id: req.params.id }, { isArchived: true });
+    const businessId = req.businessId || req.user.businessId;
+    await Invoice.findOneAndUpdate(
+      { _id: req.params.id, business: businessId }, 
+      { isArchived: true }
+    );
     res.json({ success: true, message: "Archived" });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -167,11 +177,20 @@ export const deleteInvoice = async (req, res) => {
 // --- ACTIONS ---
 export const downloadInvoice = async (req, res) => {
   try {
-    const invoice = await Invoice.findById(req.params.id).populate("client partner");
-    const venue = await Venue.findById(req.user.venueId);
-    const settings = await InvoiceSettings.findOne({ venue: req.user.venueId });
+    const businessId = req.businessId || req.user.businessId;
+    const invoice = await Invoice.findOne({ 
+      _id: req.params.id, 
+      business: businessId 
+    }).populate("client partner");
+    
+    if (!invoice) return res.status(404).json({ message: "Invoice not found" });
 
-    const pdfBuffer = await generateInvoicePDF(invoice, venue, req.query.language, settings);
+    // Fetch Business instead of Venue
+    const business = await Business.findById(businessId);
+    // Note: Model schema for InvoiceSettings uses 'businessId' field, query updated to match
+    const settings = await InvoiceSettings.findOne({ businessId: businessId });
+
+    const pdfBuffer = await generateInvoicePDF(invoice, business, req.query.language, settings);
 
     res.set({
       "Content-Type": "application/pdf",
@@ -187,19 +206,25 @@ export const downloadInvoice = async (req, res) => {
 
 export const sendInvoice = async (req, res) => {
   try {
-    const invoice = await Invoice.findById(req.params.id).populate("client partner");
+    const businessId = req.businessId || req.user.businessId;
+    const invoice = await Invoice.findOne({
+      _id: req.params.id,
+      business: businessId
+    }).populate("client partner");
+    
+    if(!invoice) return res.status(404).json({ message: "Invoice not found" });
     if(!invoice.recipientEmail) return res.status(400).json({ message: "No recipient email" });
 
-    const venue = await Venue.findById(req.user.venueId);
-    const settings = await InvoiceSettings.findOne({ venue: req.user.venueId });
+    const business = await Business.findById(businessId);
+    const settings = await InvoiceSettings.findOne({ businessId: businessId });
     
     // 1. Generate PDF
-    const pdfBuffer = await generateInvoicePDF(invoice, venue, 'fr', settings);
+    const pdfBuffer = await generateInvoicePDF(invoice, business, 'fr', settings);
     
     // 2. Send Email
     const sent = await sendInvoiceEmail({
       to: invoice.recipientEmail,
-      subject: `Invoice ${invoice.invoiceNumber} from ${venue.name}`,
+      subject: `Invoice ${invoice.invoiceNumber} from ${business.name}`,
       text: req.body.message || "Please find your invoice attached.",
       pdfBuffer,
       filename: `${invoice.invoiceNumber}.pdf`
@@ -220,11 +245,15 @@ export const sendInvoice = async (req, res) => {
 
 export const markAsPaid = async (req, res) => {
   try {
-    await Invoice.findByIdAndUpdate(req.params.id, {
-      status: 'paid',
-      'paymentStatus.amountPaid': req.body.amount || 0, // Logic simplified for now
-      'paymentStatus.amountDue': 0
-    });
+    const businessId = req.businessId || req.user.businessId;
+    await Invoice.findOneAndUpdate(
+      { _id: req.params.id, business: businessId },
+      {
+        status: 'paid',
+        'paymentStatus.amountPaid': req.body.amount || 0,
+        'paymentStatus.amountDue': 0
+      }
+    );
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -233,7 +262,11 @@ export const markAsPaid = async (req, res) => {
 
 export const cancelInvoice = async (req, res) => {
   try {
-    await Invoice.findByIdAndUpdate(req.params.id, { status: 'cancelled' });
+    const businessId = req.businessId || req.user.businessId;
+    await Invoice.findOneAndUpdate(
+      { _id: req.params.id, business: businessId },
+      { status: 'cancelled' }
+    );
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ message: error.message });

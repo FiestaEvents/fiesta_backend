@@ -36,7 +36,7 @@ const server = httpServer.listen(config.port, async () => {
   console.log(`
   ╔═══════════════════════════════════════════════════════╗
   ║                                                       ║
-  ║   🎉  Venue Management API Server                     ║
+  ║   🎉  Fiesta Multi-Vertical Platform                  ║
   ║                                                       ║
   ║   🚀  Server running on port ${config.port}                   ║
   ║   🌍  Environment: ${config.env.toUpperCase().padEnd(11)}      ║

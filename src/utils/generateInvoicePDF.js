@@ -19,17 +19,24 @@ const fetchImageBuffer = async (src) => {
     return null;
   } catch (err) {
     console.error("Error fetching logo for PDF:", err.message);
-    return null;
+    return null; // Fail gracefully, don't crash PDF generation
   }
 };
 
-export const generateInvoicePDF = async (invoice, venue, language = "fr", settings = null) => {
+/**
+ * Generate Invoice PDF
+ * @param {Object} invoice - Invoice data model
+ * @param {Object} business - Business data model (formerly venue)
+ * @param {String} language - Language code ('fr', 'en', 'ar')
+ * @param {Object} settings - PDF configuration settings
+ */
+export const generateInvoicePDF = async (invoice, business, language = "fr", settings = null) => {
   // 1. Prepare Data & Defaults
   const t = pdfTranslations[language] || pdfTranslations.fr;
   const s = {
     colors: settings?.branding?.colors || { primary: "#F18237", text: "#1F2937", secondary: "#374151" },
     fonts: settings?.branding?.fonts || { size: 10 },
-    layout: settings?.layout || { sections: [] },
+    layout: settings?.layout || { sections: [] }, // If empty, uses default order
     table: settings?.table || { columns: {}, headerColor: "#F18237" },
     labels: settings?.labels || {},
     logoUrl: settings?.branding?.logo?.url
@@ -64,11 +71,12 @@ export const generateInvoicePDF = async (invoice, venue, language = "fr", settin
           // Logo (Left)
           if (logoBuffer) {
             try {
+              // Fit logo within 150x60 box
               doc.image(logoBuffer, 50, startY, { height: 60, fit: [150, 60], align: 'left' });
             } catch (e) { console.error("PDF Image Error", e); }
           } else {
-            // Fallback text logo
-            doc.fillColor(primaryColor).fontSize(16).font(fontBold).text(venue.name, 50, startY);
+            // Fallback text logo if no image
+            doc.fillColor(primaryColor).fontSize(16).font(fontBold).text(business.name, 50, startY);
           }
 
           // Title (Right)
@@ -78,7 +86,7 @@ export const generateInvoicePDF = async (invoice, venue, language = "fr", settin
           doc.fillColor(secondaryColor).fontSize(10).font(fontRegular)
              .text(`# ${invoice.invoiceNumber}`, 50, startY + 40, { align: "right" });
 
-          // Move cursor down safely
+          // Move cursor down safely (account for logo height)
           doc.y = Math.max(startY + 80, doc.y + 20);
         },
 
@@ -89,15 +97,17 @@ export const generateInvoicePDF = async (invoice, venue, language = "fr", settin
           const leftColX = 50;
           const rightColX = 350;
 
-          // FROM (Left)
+          // FROM (Left) - Business Details
           doc.fillColor(secondaryColor).fontSize(8).font(fontBold).text((s.labels.from || "FROM").toUpperCase(), leftColX, startY);
           doc.moveDown(0.5);
-          doc.fillColor(textColor).fontSize(11).font(fontBold).text(venue.name);
+          doc.fillColor(textColor).fontSize(11).font(fontBold).text(business.name);
           doc.fontSize(baseFontSize).font(fontRegular).fillColor(secondaryColor);
-          if (venue.address) doc.text(venue.address);
-          if (settings?.companyInfo?.matriculeFiscale) doc.text(`MF: ${settings.companyInfo.matriculeFiscale}`);
+          if (business.address) doc.text(business.address); // Generic address field
+          // Check both nested companyInfo and generic settings for tax ID
+          const taxId = settings?.companyInfo?.matriculeFiscale || business.settings?.taxId;
+          if (taxId) doc.text(`MF: ${taxId}`);
 
-          // TO (Right)
+          // TO (Right) - Client Details
           doc.text((s.labels.to || "BILL TO").toUpperCase(), rightColX, startY);
           doc.moveDown(0.5);
           doc.fillColor(textColor).fontSize(11).font(fontBold).text(invoice.recipientName, rightColX);
@@ -123,28 +133,27 @@ export const generateInvoicePDF = async (invoice, venue, language = "fr", settin
           const tableTop = doc.y;
           const tableWidth = 500;
           
-          // Determine visible columns based on settings
-          const cols = s.table.columns;
+          // Determine visible columns based on settings (or default to all)
+          const cols = s.table.columns || { description: true, quantity: true, rate: true, total: true };
           
           // Dynamic Layout Calculations
           let xPositions = { desc: 60 };
-          let widths = { desc: 200 }; // base width for description
-
-          // Adjust positions based on active columns
-          let currentX = 260; // Start placing numbers after description
-          if (cols.quantity) { xPositions.qty = currentX; currentX += 50; }
-          if (cols.rate) { xPositions.rate = currentX; currentX += 80; }
-          if (cols.total) { xPositions.total = 450; } // Total always right aligned
+          
+          // Adjust positions based on active columns logic (Simplified for readability)
+          // Default layout: Desc (Left) | Qty (Center) | Rate (Right) | Total (Right)
+          xPositions.qty = 310;
+          xPositions.rate = 390;
+          xPositions.total = 450;
 
           // Header Background
           doc.rect(50, tableTop, tableWidth, 25).fill(s.table.headerColor || primaryColor);
           doc.fillColor("#FFFFFF").fontSize(9).font(fontBold);
 
           // Header Text
-          if (cols.description) doc.text(s.labels.item || "Item", xPositions.desc, tableTop + 8);
-          if (cols.quantity) doc.text(s.labels.quantity || "Qty", xPositions.qty, tableTop + 8, { width: 40, align: 'center' });
-          if (cols.rate) doc.text(s.labels.rate || "Price", xPositions.rate, tableTop + 8, { width: 70, align: 'right' });
-          if (cols.total) doc.text(s.labels.total || "Total", xPositions.total, tableTop + 8, { width: 90, align: 'right' });
+          if (cols.description !== false) doc.text(s.labels.item || "Item", xPositions.desc, tableTop + 8);
+          if (cols.quantity !== false) doc.text(s.labels.quantity || "Qty", xPositions.qty, tableTop + 8, { width: 40, align: 'center' });
+          if (cols.rate !== false) doc.text(s.labels.rate || "Price", xPositions.rate, tableTop + 8, { width: 70, align: 'right' });
+          if (cols.total !== false) doc.text(s.labels.total || "Total", xPositions.total, tableTop + 8, { width: 90, align: 'right' });
 
           // Items Loop
           let y = tableTop + 30;
@@ -159,10 +168,10 @@ export const generateInvoicePDF = async (invoice, venue, language = "fr", settin
             doc.fillColor(textColor);
             
             // Render Columns
-            if (cols.description) doc.text(item.description, xPositions.desc, y, { width: 200 });
-            if (cols.quantity) doc.text(item.quantity.toString(), xPositions.qty, y, { width: 40, align: 'center' });
-            if (cols.rate) doc.text(item.rate.toFixed(2), xPositions.rate, y, { width: 70, align: 'right' });
-            if (cols.total) doc.text(item.amount.toFixed(2), xPositions.total, y, { width: 90, align: 'right' });
+            if (cols.description !== false) doc.text(item.description, xPositions.desc, y, { width: 240 });
+            if (cols.quantity !== false) doc.text(item.quantity.toString(), xPositions.qty, y, { width: 40, align: 'center' });
+            if (cols.rate !== false) doc.text(item.rate.toFixed(2), xPositions.rate, y, { width: 70, align: 'right' });
+            if (cols.total !== false) doc.text(item.amount.toFixed(2), xPositions.total, y, { width: 90, align: 'right' });
 
             y += 20; // Row Height
             
@@ -184,6 +193,8 @@ export const generateInvoicePDF = async (invoice, venue, language = "fr", settin
           const valueX = 450;
           const valueWidth = 90;
 
+          const currency = invoice.currency || business.settings?.currency || 'DT';
+
           const drawRow = (label, value, isBold = false, color = textColor, fontSize = baseFontSize) => {
              doc.font(isBold ? fontBold : fontRegular).fontSize(fontSize).fillColor(color);
              doc.text(label, labelX, doc.y, { width: 140, align: 'right' });
@@ -202,10 +213,10 @@ export const generateInvoicePDF = async (invoice, venue, language = "fr", settin
           }
 
           doc.moveDown(0.5);
-          // Grand Total
+          // Grand Total Box
           doc.rect(labelX, doc.y - 5, 250, 25).fill(primaryColor);
-          doc.y += 5; // center vertical
-          drawRow(s.labels.total || "Total", `${invoice.totalAmount.toFixed(2)} ${invoice.currency || 'DT'}`, true, "#FFFFFF", 12);
+          doc.y += 5; // center text vertically
+          drawRow(s.labels.total || "Total", `${invoice.totalAmount.toFixed(2)} ${currency}`, true, "#FFFFFF", 12);
           
           doc.moveDown(2);
         },
@@ -220,6 +231,7 @@ export const generateInvoicePDF = async (invoice, venue, language = "fr", settin
           doc.strokeColor("#E5E7EB").lineWidth(1).moveTo(50, doc.y).lineTo(545, doc.y).stroke();
           doc.moveDown(2);
 
+          // Payment Instructions
           if (s.labels.paymentInstructions || settings?.paymentTerms?.bankDetails) {
             doc.font(fontBold).fontSize(9).fillColor(secondaryColor).text((s.labels.paymentInstructions || "PAYMENT INFO").toUpperCase());
             doc.moveDown(0.5);
@@ -242,20 +254,19 @@ export const generateInvoicePDF = async (invoice, venue, language = "fr", settin
 
       // --- MAIN EXECUTION LOOP ---
       // 1. Get Sections Order from Settings
-      const sections = s.layout.sections.sort((a, b) => a.order - b.order);
+      const sections = s.layout.sections.length > 0 
+          ? s.layout.sections.sort((a, b) => a.order - b.order) 
+          : []; // If empty, we trigger fallback below
 
       // 2. Render Loop
-      for (const section of sections) {
-        if (!section.visible) continue; // Skip hidden sections
-
-        const renderer = renderers[section.id];
-        if (renderer) {
-          renderer();
-        }
-      }
-
-      // If no sections defined (legacy fallback), run standard order
-      if (!s.layout.sections.length) {
+      if (sections.length > 0) {
+          for (const section of sections) {
+            if (!section.visible) continue; // Skip hidden sections
+            const renderer = renderers[section.id];
+            if (renderer) renderer();
+          }
+      } else {
+        // Fallback: Standard Invoice Order
         renderers.header();
         renderers.details();
         renderers.items();

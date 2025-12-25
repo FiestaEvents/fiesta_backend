@@ -6,11 +6,11 @@ const permissionSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      trim: true,
+      trim: true, // e.g., "events.create.all"
     },
     displayName: {
       type: String,
-      required: true,
+      required: true, // e.g., "Create All Events"
     },
     description: {
       type: String,
@@ -20,21 +20,25 @@ const permissionSchema = new mongoose.Schema(
       type: String,
       required: true,
       enum: [
-        "events",
+        "events",       // Core Job/Event management
         "clients",
         "partners",
         "finance",
         "payments",
         "invoices",   
         "contracts",  
-        "supplies",   
+        "supplies",     // Consumables (Food, Paper, etc.)
+        "inventory",    // Assets (Cameras, Vehicles, Sound Equipment)
+        "portfolio",    // For Photographers/Creatives to manage galleries
         "tasks",
         "reminders",
         "users",
         "roles",
-        "venue",
+        "business",     // Generalizes 'venue' (Profile, Operating Hours)
+        "venue",        // KEPT FOR MIGRATION: Specific venue features (Spaces)
+        "resources",    // Replaces 'venue' spaces for generic booking (Rooms, Vehicles)
         "reports",
-        "settings",
+        "settings",     // Global app settings
       ],
     },
     action: {
@@ -57,6 +61,7 @@ const permissionSchema = new mongoose.Schema(
   }
 );
 
+// Prevent duplicate permissions (e.g., cannot have two "events.create.all")
 permissionSchema.index({ module: 1, action: 1, scope: 1 }, { unique: true });
 
 export default mongoose.model("Permission", permissionSchema);

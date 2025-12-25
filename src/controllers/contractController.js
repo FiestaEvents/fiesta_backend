@@ -1,17 +1,15 @@
-import Contract from "../models/Contract.js";
-import ContractSettings from "../models/ContractSettings.js";
+import { Contract, ContractSettings, Business } from "../models/index.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import Venue from "../models/Venue.js";
 import { generateContractPDF } from "../utils/generateContractPDF.js";
 
 // ============================================
 // HELPER: Generate Contract Number based on Settings
 // ============================================
-const generateContractNumber = async (venueId) => {
+const generateContractNumber = async (businessId) => {
   // 1. Fetch Settings
-  const settings = await ContractSettings.findOne({ venue: venueId });
+  const settings = await ContractSettings.findOne({ business: businessId });
   const structure = settings?.structure || {
     prefix: "CTR",
     separator: "-",
@@ -27,7 +25,7 @@ const generateContractNumber = async (venueId) => {
   const yearToUse = structure.yearFormat === "YY" ? yearShort : yearFull;
 
   // 2. Count existing docs for this year/sequence
-  const query = { venue: venueId };
+  const query = { business: businessId };
   if (structure.includeYear && structure.resetSequenceYearly) {
     query.createdAt = {
       $gte: new Date(yearFull, 0, 1),
@@ -87,7 +85,8 @@ export const getContracts = asyncHandler(async (req, res) => {
     sortOrder = "desc",
   } = req.query;
 
-  const query = { venue: req.user.venueId };
+  const businessId = req.businessId || req.user.businessId;
+  const query = { business: businessId };
 
   if (status) query.status = status;
   if (contractType) query.contractType = contractType;
@@ -116,7 +115,7 @@ export const getContracts = asyncHandler(async (req, res) => {
   ]);
 
   res.status(200).json(
-    new ApiResponse(200, {
+    new ApiResponse({
       contracts,
       pagination: {
         current: parseInt(page),
@@ -131,16 +130,17 @@ export const getContracts = asyncHandler(async (req, res) => {
 // @desc    Get single contract
 // @route   GET /api/contracts/:id
 export const getContractById = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const contract = await Contract.findOne({
     _id: req.params.id,
-    venue: req.user.venueId,
+    business: businessId,
   })
     .populate("event", "title startDate endDate type")
     .populate("createdBy", "name email");
 
   if (!contract) throw new ApiError("Contract not found", 404); 
 
-  res.status(200).json(new ApiResponse(200, { contract }));
+  res.status(200).json(new ApiResponse({ contract }));
 });
 
 // @desc    Create contract
@@ -159,7 +159,6 @@ export const createContract = asyncHandler(async (req, res) => {
   } = req.body;
 
   if (!party || !party.name) {
-    // ✅ FIXED: Message first, Status Code second
     throw new ApiError("Party details are required", 400);
   }
 
@@ -183,10 +182,11 @@ export const createContract = asyncHandler(async (req, res) => {
     ...calculatedStats,
   };
 
-  const contractNumber = await generateContractNumber(req.user.venueId);
+  const businessId = req.businessId || req.user.businessId;
+  const contractNumber = await generateContractNumber(businessId);
 
   const contract = await Contract.create({
-    venue: req.user.venueId,
+    business: businessId,
     contractNumber,
     contractType,
     event: eventId || undefined,
@@ -203,15 +203,16 @@ export const createContract = asyncHandler(async (req, res) => {
 
   res
     .status(201)
-    .json(new ApiResponse(201, { contract }, "Contract created successfully"));
+    .json(new ApiResponse({ contract }, "Contract created successfully"));
 });
 
 // @desc    Update contract
 // @route   PUT /api/contracts/:id
 export const updateContract = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   let contract = await Contract.findOne({
     _id: req.params.id,
-    venue: req.user.venueId,
+    business: businessId,
   });
 
   if (!contract) throw new ApiError("Contract not found", 404); 
@@ -267,20 +268,21 @@ export const updateContract = asyncHandler(async (req, res) => {
     }
   });
 
-  contract.version += 1;
+  contract.version += 1; // Assuming version field exists on schema or handled by plugins
   await contract.save();
 
   res
     .status(200)
-    .json(new ApiResponse(200, { contract }, "Contract updated successfully"));
+    .json(new ApiResponse({ contract }, "Contract updated successfully"));
 });
 
 // @desc    Delete contract
 // @route   DELETE /api/contracts/:id
 export const deleteContract = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const contract = await Contract.findOne({
     _id: req.params.id,
-    venue: req.user.venueId,
+    business: businessId,
   });
 
   if (!contract) throw new ApiError("Contract not found", 404); 
@@ -288,7 +290,7 @@ export const deleteContract = asyncHandler(async (req, res) => {
     throw new ApiError("Cannot delete signed contract", 400); 
 
   await contract.deleteOne();
-  res.status(200).json(new ApiResponse(200, null, "Contract deleted"));
+  res.status(200).json(new ApiResponse(null, "Contract deleted"));
 });
 
 // ============================================
@@ -298,29 +300,31 @@ export const deleteContract = asyncHandler(async (req, res) => {
 // @desc    Archive contract
 // @route   PATCH /api/contracts/:id/archive
 export const archiveContract = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const contract = await Contract.findOneAndUpdate(
-    { _id: req.params.id, venue: req.user.venueId },
+    { _id: req.params.id, business: businessId },
     { status: "cancelled" },
     { new: true }
   );
 
   if (!contract) throw new ApiError("Contract not found", 404); 
 
-  res.status(200).json(new ApiResponse(200, { contract }, "Contract archived"));
+  res.status(200).json(new ApiResponse({ contract }, "Contract archived"));
 });
 
 // @desc    Restore contract
 // @route   PATCH /api/contracts/:id/restore
 export const restoreContract = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const contract = await Contract.findOneAndUpdate(
-    { _id: req.params.id, venue: req.user.venueId },
+    { _id: req.params.id, business: businessId },
     { status: "draft" },
     { new: true }
   );
 
   if (!contract) throw new ApiError("Contract not found", 404); 
 
-  res.status(200).json(new ApiResponse(200, { contract }, "Contract restored"));
+  res.status(200).json(new ApiResponse({ contract }, "Contract restored"));
 });
 
 // ============================================
@@ -330,24 +334,26 @@ export const restoreContract = asyncHandler(async (req, res) => {
 // @desc    Send contract
 // @route   POST /api/contracts/:id/send
 export const sendContract = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const contract = await Contract.findOne({
     _id: req.params.id,
-    venue: req.user.venueId,
+    business: businessId,
   });
   if (!contract) throw new ApiError("Contract not found", 404);
 
   contract.status = "sent";
   await contract.save();
 
-  res.status(200).json(new ApiResponse(200, { contract }, "Contract sent"));
+  res.status(200).json(new ApiResponse({ contract }, "Contract sent"));
 });
 
 // @desc    Duplicate contract
 // @route   POST /api/contracts/:id/duplicate
 export const duplicateContract = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const original = await Contract.findOne({
     _id: req.params.id,
-    venue: req.user.venueId,
+    business: businessId,
   }).lean();
 
   if (!original) throw new ApiError("Contract not found", 404); 
@@ -361,19 +367,20 @@ export const duplicateContract = asyncHandler(async (req, res) => {
 
   original.status = "draft";
   original.title = `${original.title} (Copie)`;
-  original.contractNumber = await generateContractNumber(req.user.venueId);
+  original.contractNumber = await generateContractNumber(businessId);
   original.createdBy = req.user._id;
 
   const newContract = await Contract.create(original);
 
   res
     .status(201)
-    .json(new ApiResponse(201, { contract: newContract }, "Contract duplicated"));
+    .json(new ApiResponse({ contract: newContract }, "Contract duplicated"));
 });
 
 // @desc    Mark contract as viewed
 // @route   PATCH /api/contracts/:id/view
 export const markContractViewed = asyncHandler(async (req, res) => {
+  // Public viewing might not have auth context if accessed via shared link
   const contract = await Contract.findById(req.params.id);
   if (!contract) throw new ApiError("Contract not found", 404); 
 
@@ -382,7 +389,7 @@ export const markContractViewed = asyncHandler(async (req, res) => {
     await contract.save();
   }
 
-  res.status(200).json(new ApiResponse(200, { contract }));
+  res.status(200).json(new ApiResponse({ contract }));
 });
 
 // @desc    Sign contract
@@ -405,7 +412,7 @@ export const signContract = asyncHandler(async (req, res) => {
 
   res
     .status(200)
-    .json(new ApiResponse(200, { contract }, "Contract signed successfully"));
+    .json(new ApiResponse({ contract }, "Contract signed successfully"));
 });
 
 // ============================================
@@ -415,23 +422,24 @@ export const signContract = asyncHandler(async (req, res) => {
 // @desc    Get contract settings
 // @route   GET /api/contracts/settings
 export const getContractSettings = asyncHandler(async (req, res) => {
-  const settings = await ContractSettings.getOrCreate(req.user.venueId);
-  res.status(200).json(new ApiResponse(200, { settings }));
+  const businessId = req.businessId || req.user.businessId;
+  const settings = await ContractSettings.getOrCreate(businessId);
+  res.status(200).json(new ApiResponse({ settings }));
 });
 
 // @desc    Update contract settings
 // @route   PUT /api/contracts/settings
 export const updateContractSettings = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+  const businessId = req.businessId || req.user.businessId;
 
   // 1. Find existing settings
-  let settings = await ContractSettings.findOne({ venue: venueId });
+  let settings = await ContractSettings.findOne({ business: businessId });
 
   if (!settings) {
-    settings = await ContractSettings.getOrCreate(venueId);
+    settings = await ContractSettings.getOrCreate(businessId);
   }
 
-  // 2. Update fields directly on the document
+  // 2. Update fields
   const fieldsToUpdate = [
     "companyInfo",
     "branding",
@@ -451,12 +459,12 @@ export const updateContractSettings = asyncHandler(async (req, res) => {
     }
   }
 
-  // 3. Save with validation disabled for speed
+  // 3. Save
   await settings.save({ validateBeforeSave: false });
 
   res
     .status(200)
-    .json(new ApiResponse(200, { settings }, "Settings updated successfully"));
+    .json(new ApiResponse({ settings }, "Settings updated successfully"));
 });
 
 // ============================================
@@ -466,8 +474,9 @@ export const updateContractSettings = asyncHandler(async (req, res) => {
 // @desc    Get contract stats
 // @route   GET /api/contracts/stats
 export const getContractStats = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
   const stats = await Contract.aggregate([
-    { $match: { venue: req.user.venueId } },
+    { $match: { business: businessId } },
     {
       $group: {
         _id: null,
@@ -524,7 +533,6 @@ export const getContractStats = asyncHandler(async (req, res) => {
 
   res.status(200).json(
     new ApiResponse(
-      200,
       stats[0] || {
         total: 0,
         draft: 0,
@@ -543,22 +551,24 @@ export const getContractStats = asyncHandler(async (req, res) => {
 // @desc    Download PDF
 // @route   GET /api/contracts/:id/download
 export const downloadContractPdf = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
+
   // 1. Fetch Contract
   const contract = await Contract.findOne({
     _id: req.params.id,
-    venue: req.user.venueId,
+    business: businessId,
   });
 
   if (!contract) throw new ApiError("Contract not found", 404);
 
   // 2. Fetch Settings (for styling)
-  const settings = await ContractSettings.findOne({ venue: req.user.venueId });
+  const settings = await ContractSettings.findOne({ business: businessId });
 
-  // 3. Fetch Venue (for fallback info)
-  const venue = await Venue.findById(req.user.venueId);
+  // 3. Fetch Business
+  const business = await Business.findById(businessId);
 
   // 4. Generate PDF
-  const pdfBuffer = await generateContractPDF(contract, venue, settings);
+  const pdfBuffer = await generateContractPDF(contract, business, settings);
 
   // 5. Send Response
   res.setHeader("Content-Type", "application/pdf");

@@ -35,9 +35,14 @@ app.use(
       "http://localhost:5173",
       "https://fiesta.events"   
     ],
-    credentials: true, // Required for Cookies
+    credentials: true, 
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-venue-id"] 
+    allowedHeaders: [
+      "Content-Type", 
+      "Authorization", 
+      "x-business-id", 
+      "x-venue-id"    
+    ] 
   })
 );
 
@@ -88,7 +93,7 @@ app.use("/api/v1", routes);
 
 // Welcome route
 app.get("/", (req, res) => {
-  res.json({ success: true, message: "Venue Management API" });
+  res.json({ success: true, message: "Fiesta Business Management API" });
 });
 
 // 404 handler

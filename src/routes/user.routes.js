@@ -31,14 +31,14 @@ import {
 
 const router = express.Router();
 
-// Apply authentication to all routes (Deep Populates permissions)
+// Apply authentication to all routes (Populates req.user.businessId)
 router.use(authenticate);
 
 // ==========================================
 // STATIC ROUTES (Must come before /:id)
 // ==========================================
 
-// Stats
+// User Statistics (Total, Active, By Role)
 router.get(
   "/stats", 
   checkPermission("users.read.all"), 
@@ -48,7 +48,7 @@ router.get(
 // Archived Users List
 router.get(
   "/archived/list",
-  checkPermission("users.read.all"), // Using read permission to view list
+  checkPermission("users.read.all"), // Viewing archive list requires read permissions
   getArchivedUsersValidator,
   validateRequest,
   getArchivedUsers
@@ -75,7 +75,7 @@ router.patch(
 // MAIN USER ROUTES
 // ==========================================
 
-// Get All Users (with filters)
+// Get All Users (with filters for Role, Status, Search)
 router.get(
   "/",
   checkPermission("users.read.all"),
@@ -84,7 +84,7 @@ router.get(
   getUsers
 );
 
-// Create User (Direct admin creation)
+// Create User (Direct admin creation, distinct from invitation flow)
 router.post(
   "/",
   checkPermission("users.create"),
@@ -97,7 +97,7 @@ router.post(
 // DYNAMIC ROUTES (/:id)
 // ==========================================
 
-// Get Single User
+// Get Single User Profile & Permissions
 router.get(
   "/:id",
   checkPermission("users.read.all"),
@@ -106,7 +106,7 @@ router.get(
   getUserById
 );
 
-// Update User
+// Update User Details
 router.put(
   "/:id",
   checkPermission("users.update.all"),
@@ -115,7 +115,7 @@ router.put(
   updateUser
 );
 
-// Archive Single User
+// Archive Single User (Soft Delete)
 router.patch(
   "/:id/archive",
   checkPermission("users.delete.all"),
@@ -133,7 +133,7 @@ router.patch(
   restoreUser
 );
 
-// Permanent Delete
+// Permanent Delete (Hard Delete - Restricted)
 router.delete(
   "/:id/permanent",
   checkPermission("users.delete.all"),
@@ -142,7 +142,11 @@ router.delete(
   permanentDeleteUser
 );
 
+// User Activity Logs
 router.get(
-  "/:id/activity", checkPermission("users.read.all"), getUserActivity);
+  "/:id/activity", 
+  checkPermission("users.read.all"), 
+  getUserActivity
+);
   
 export default router;

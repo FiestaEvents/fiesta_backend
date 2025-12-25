@@ -19,13 +19,14 @@ import {
 const router = express.Router();
 
 // Apply authentication to all routes
+// This ensures req.user is populated with businessId before hitting controllers
 router.use(authenticate);
 
 // ==========================================
 // STATIC ROUTES (Must come before /:id)
 // ==========================================
 
-// Get all available system permissions (for UI selection)
+// Get all available system permissions (Generic for all business types)
 router.get(
   "/permissions",
   checkPermission("roles.read.all"),

@@ -65,10 +65,12 @@ const supplyCategorySchema = new mongoose.Schema(
       ref: "User",
     },
     
-    // Venue Reference (Multi-tenancy)
-    venueId: {
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venueId
+    // =========================================================
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
+      ref: "Business",
       required: true,
       index: true,
     },
@@ -83,13 +85,16 @@ const supplyCategorySchema = new mongoose.Schema(
   }
 );
 
-// Ensure unique category name per venue
-supplyCategorySchema.index({ venueId: 1, name: 1 }, { unique: true });
+// Ensure unique category name per business
+supplyCategorySchema.index({ businessId: 1, name: 1 }, { unique: true });
 
 // ======================================================
-// STATIC: Initialize Default Categories for New Venue
+// STATIC: Initialize Default Categories for New Business
 // ======================================================
-supplyCategorySchema.statics.initializeDefaults = async function (venueId, userId) {
+supplyCategorySchema.statics.initializeDefaults = async function (businessId, userId) {
+  // NOTE: In future phases, you can filter this list based on business.category
+  // e.g., if (business.category === 'driver') use different defaults.
+  
   const defaultCategories = [
     {
       name: "Beverages",
@@ -115,7 +120,7 @@ supplyCategorySchema.statics.initializeDefaults = async function (venueId, userI
       name: "Food",
       nameAr: "الطعام",
       nameFr: "Nourriture",
-      description: "Wedding snacks, canapés",
+      description: "Wedding snacks, canapés, ingredients",
       icon: "UtensilsCrossed",
       color: "#EF4444",
       order: 3,
@@ -155,7 +160,7 @@ supplyCategorySchema.statics.initializeDefaults = async function (venueId, userI
       name: "Equipment",
       nameAr: "المعدات",
       nameFr: "Équipement",
-      description: "Chairs, tables, audio equipment",
+      description: "Chairs, tables, audio equipment, cameras",
       icon: "Wrench",
       color: "#10B981",
       order: 7,
@@ -187,7 +192,7 @@ supplyCategorySchema.statics.initializeDefaults = async function (venueId, userI
     defaultCategories.map((cat) =>
       this.create({
         ...cat,
-        venueId,
+        businessId: businessId,
         createdBy: userId,
       })
     )
@@ -203,14 +208,15 @@ supplyCategorySchema.query.active = function () {
   return this.where({ status: "active", isArchived: false });
 };
 
-supplyCategorySchema.query.byVenue = function (venueId) {
-  return this.where({ venueId });
+supplyCategorySchema.query.byBusiness = function (businessId) {
+  return this.where({ businessId });
 };
 
 // ======================================================
 // PRE-DELETE: Prevent deletion if supplies exist
 // ======================================================
 supplyCategorySchema.pre("deleteOne", { document: true }, async function (next) {
+  // Use mongoose.model to avoid circular dependency import issues
   const Supply = mongoose.model("Supply");
   const count = await Supply.countDocuments({ 
     categoryId: this._id,
@@ -228,8 +234,4 @@ supplyCategorySchema.pre("deleteOne", { document: true }, async function (next) 
   next();
 });
 
-// Create the model
-const SupplyCategory = mongoose.model("SupplyCategory", supplyCategorySchema);
-
-// Export as default
-export default SupplyCategory;
+export default mongoose.model("SupplyCategory", supplyCategorySchema);

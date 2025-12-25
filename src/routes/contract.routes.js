@@ -21,9 +21,11 @@ import {
   getContractStats,
   downloadContractPdf,
 } from "../controllers/contractController.js";
+
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
 import validateRequest from "../middleware/validateRequest.js";
+
 import {
   createContractValidator,
   updateContractValidator,
@@ -33,7 +35,7 @@ import {
 
 const router = express.Router();
 
-// Apply authentication to all routes
+// Apply authentication to all routes (Populates req.user.businessId)
 router.use(authenticate);
 
 // ============================================
@@ -42,12 +44,13 @@ router.use(authenticate);
 router
   .route("/settings")
   .get(
-    checkPermission("venue.read"), // Settings usually fall under venue permissions
+    // Updated to 'business.read' to match generic architecture
+    checkPermission("business.read"), 
     getContractSettings
   )
   .put(
-    checkPermission("venue.update"),
-    contractSettingsValidator, // Validate settings payload
+    checkPermission("business.update"),
+    contractSettingsValidator,
     validateRequest,
     updateContractSettings
   );

@@ -19,8 +19,11 @@ export const getClients = asyncHandler(async (req, res) => {
     includeArchived = false,
   } = req.query;
 
+  // Use the business context attached by authMiddleware
+  const businessId = req.businessId || req.user.businessId;
+
   // Build query
-  const query = { venueId: req.user.venueId };
+  const query = { businessId };
 
   if (status) query.status = status;
 
@@ -61,9 +64,9 @@ export const getClients = asyncHandler(async (req, res) => {
   // Get event count for each client (excluding archived events)
   const clientsWithEventCount = await Promise.all(
     clients.map(async (client) => {
-      const eventCount = await Event.countDocuments({ 
+      const eventCount = await Event.countDocuments({
         clientId: client._id,
-        isArchived: { $ne: true }
+        isArchived: { $ne: true },
       });
       return {
         ...client.toObject(),
@@ -89,9 +92,11 @@ export const getClients = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getClient = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
+
   const client = await Client.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
+    businessId,
   })
     .populate("createdBy", "name email")
     .populate("archivedBy", "name email");
@@ -100,63 +105,72 @@ export const getClient = asyncHandler(async (req, res) => {
     throw new ApiError("Client not found", 404);
   }
 
-  // ✅ Get client's events with payment information (excluding archived events)
-  const events = await Event.find({ 
+  // ✅ Get client's events with payment information
+  const events = await Event.find({
     clientId: client._id,
-    isArchived: { $ne: true }
+    isArchived: { $ne: true },
   })
-    .select("title type startDate endDate status pricing paymentSummary guestCount paymentInfo")
-    .populate("paymentInfo.transactions", "amount status method paidDate createdAt")
+    .select(
+      "title type startDate endDate status pricing paymentSummary guestCount paymentInfo"
+    )
+    .populate(
+      "paymentInfo.transactions",
+      "amount status method paidDate createdAt"
+    )
     .sort({ startDate: -1 })
     .limit(50);
 
   // Calculate comprehensive stats (excluding archived events)
   const totalSpentResult = await Event.aggregate([
-    { $match: { 
-      clientId: client._id,
-      isArchived: { $ne: true }
-    } },
+    {
+      $match: {
+        clientId: client._id,
+        isArchived: { $ne: true },
+      },
+    },
     { $group: { _id: null, total: { $sum: "$pricing.totalAmount" } } },
   ]);
 
   const paymentStats = await Event.aggregate([
-    { $match: { 
-      clientId: client._id,
-      isArchived: { $ne: true }
-    } },
+    {
+      $match: {
+        clientId: client._id,
+        isArchived: { $ne: true },
+      },
+    },
     {
       $group: {
         _id: null,
         totalRevenue: { $sum: "$pricing.totalAmount" },
-        totalPaid: { $sum: "$paymentSummary.paidAmount" },
+        totalPaid: { $sum: "$paymentInfo.paidAmount" },
         upcomingEvents: {
           $sum: {
             $cond: [
-              { 
+              {
                 $and: [
-                  { $gt: ["$startDate", new Date()] }, 
-                  { $ne: ["$status", "cancelled"] }
-                ] 
+                  { $gt: ["$startDate", new Date()] },
+                  { $ne: ["$status", "cancelled"] },
+                ],
               },
               1,
-              0
-            ]
-          }
-        }
-      }
-    }
+              0,
+            ],
+          },
+        },
+      },
+    },
   ]);
 
   const stats = paymentStats[0] || {
     totalRevenue: 0,
     totalPaid: 0,
-    upcomingEvents: 0
+    upcomingEvents: 0,
   };
 
   // Get recent payments
-  const recentPayments = await Payment.find({ 
+  const recentPayments = await Payment.find({
     client: client._id,
-    type: 'income'
+    type: "income",
   })
     .select("amount method status paidDate reference description")
     .sort({ paidDate: -1 })
@@ -173,8 +187,8 @@ export const getClient = asyncHandler(async (req, res) => {
         totalPaid: stats.totalPaid,
         upcomingEvents: stats.upcomingEvents,
         totalEvents: events.length,
-        pendingAmount: stats.totalRevenue - stats.totalPaid
-      }
+        pendingAmount: stats.totalRevenue - stats.totalPaid,
+      },
     },
   }).send(res);
 });
@@ -185,11 +199,13 @@ export const getClient = asyncHandler(async (req, res) => {
  * @access  Private (clients.create)
  */
 export const createClient = asyncHandler(async (req, res) => {
-  // Check if client with email already exists in this venue (excluding archived)
+  const businessId = req.businessId || req.user.businessId;
+
+  // Check if client with email already exists in this business (excluding archived)
   const existingClient = await Client.findOne({
     email: req.body.email,
-    venueId: req.user.venueId,
-    isArchived: { $ne: true }
+    businessId,
+    isArchived: { $ne: true },
   });
 
   if (existingClient) {
@@ -198,7 +214,7 @@ export const createClient = asyncHandler(async (req, res) => {
 
   const client = await Client.create({
     ...req.body,
-    venueId: req.user.venueId,
+    businessId,
     createdBy: req.user._id,
   });
 
@@ -211,23 +227,25 @@ export const createClient = asyncHandler(async (req, res) => {
  * @access  Private (clients.update.all)
  */
 export const updateClient = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
+
   const client = await Client.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
-    isArchived: { $ne: true }
+    businessId,
+    isArchived: { $ne: true },
   });
 
   if (!client) {
     throw new ApiError("Client not found", 404);
   }
 
-  // Check if email is being changed and if it's already in use (excluding archived)
+  // Check if email is being changed and if it's already in use
   if (req.body.email && req.body.email !== client.email) {
     const existingClient = await Client.findOne({
       email: req.body.email,
-      venueId: req.user.venueId,
+      businessId,
       _id: { $ne: client._id },
-      isArchived: { $ne: true }
+      isArchived: { $ne: true },
     });
 
     if (existingClient) {
@@ -247,10 +265,12 @@ export const updateClient = asyncHandler(async (req, res) => {
  * @access  Private (clients.delete.all)
  */
 export const archiveClient = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
+
   const client = await Client.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
-    isArchived: { $ne: true }
+    businessId,
+    isArchived: { $ne: true },
   });
 
   if (!client) {
@@ -258,9 +278,15 @@ export const archiveClient = asyncHandler(async (req, res) => {
   }
 
   // Archive the client instead of deleting
-  const archivedClient = await Client.archiveClient(req.params.id, req.user._id);
+  const archivedClient = await Client.archiveClient(
+    req.params.id,
+    req.user._id
+  );
 
-  new ApiResponse({ client: archivedClient }, "Client archived successfully").send(res);
+  new ApiResponse(
+    { client: archivedClient },
+    "Client archived successfully"
+  ).send(res);
 });
 
 /**
@@ -269,10 +295,12 @@ export const archiveClient = asyncHandler(async (req, res) => {
  * @access  Private (clients.delete.all)
  */
 export const restoreClient = asyncHandler(async (req, res) => {
+  const businessId = req.businessId || req.user.businessId;
+
   const client = await Client.findOne({
     _id: req.params.id,
-    venueId: req.user.venueId,
-    isArchived: true
+    businessId,
+    isArchived: true,
   });
 
   if (!client) {
@@ -281,7 +309,10 @@ export const restoreClient = asyncHandler(async (req, res) => {
 
   const restoredClient = await Client.restoreClient(req.params.id);
 
-  new ApiResponse({ client: restoredClient }, "Client restored successfully").send(res);
+  new ApiResponse(
+    { client: restoredClient },
+    "Client restored successfully"
+  ).send(res);
 });
 
 /**
@@ -290,16 +321,14 @@ export const restoreClient = asyncHandler(async (req, res) => {
  * @access  Private (clients.read.all)
  */
 export const getArchivedClients = asyncHandler(async (req, res) => {
-  const {
-    page = 1,
-    limit = 10,
-    search,
-  } = req.query;
+  const { page = 1, limit = 10, search } = req.query;
+
+  const businessId = req.businessId || req.user.businessId;
 
   // Build query for archived clients
-  const query = { 
-    venueId: req.user.venueId,
-    isArchived: true 
+  const query = {
+    businessId,
+    isArchived: true,
   };
 
   // Search by name, email, or phone
@@ -342,22 +371,31 @@ export const getArchivedClients = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getClientStats = asyncHandler(async (req, res) => {
-  const venueId = req.user.venueId;
+  const businessId = req.businessId || req.user.businessId;
 
   // Exclude archived clients from stats
   const [totalClients, activeClients, inactiveClients] = await Promise.all([
-    Client.countDocuments({ venueId, isArchived: { $ne: true } }),
-    Client.countDocuments({ venueId, status: "active", isArchived: { $ne: true } }),
-    Client.countDocuments({ venueId, status: "inactive", isArchived: { $ne: true } }),
+    Client.countDocuments({ businessId, isArchived: { $ne: true } }),
+    Client.countDocuments({
+      businessId,
+      status: "active",
+      isArchived: { $ne: true },
+    }),
+    Client.countDocuments({
+      businessId,
+      status: "inactive",
+      isArchived: { $ne: true },
+    }),
   ]);
 
   // Top clients by revenue (excluding archived events)
   const topClients = await Event.aggregate([
-    { 
-      $match: { 
-        venueId,
-        isArchived: { $ne: true }
-      } 
+    {
+      $match: {
+        // Ensure businessId is an ObjectId if coming from string
+        businessId: businessId,
+        isArchived: { $ne: true },
+      },
     },
     {
       $group: {
@@ -379,8 +417,8 @@ export const getClientStats = asyncHandler(async (req, res) => {
     { $unwind: "$client" },
     {
       $match: {
-        "client.isArchived": { $ne: true }
-      }
+        "client.isArchived": { $ne: true },
+      },
     },
     {
       $project: {
@@ -399,9 +437,9 @@ export const getClientStats = asyncHandler(async (req, res) => {
   startOfMonth.setHours(0, 0, 0, 0);
 
   const newClientsThisMonth = await Client.countDocuments({
-    venueId,
+    businessId,
     isArchived: { $ne: true },
-    createdAt: { $gte: startOfMonth }
+    createdAt: { $gte: startOfMonth },
   });
 
   new ApiResponse({

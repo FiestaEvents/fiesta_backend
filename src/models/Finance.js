@@ -33,12 +33,12 @@ const financeSchema = new mongoose.Schema(
       required: [true, "Amount is required"],
       min: [0, "Amount cannot be negative"],
     },
-      isArchived: { type: Boolean, default: false },
-  archivedAt: { type: Date },
-  archivedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-  },
+    isArchived: { type: Boolean, default: false },
+    archivedAt: { type: Date },
+    archivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
     date: {
       type: Date,
       required: [true, "Date is required"],
@@ -86,9 +86,10 @@ const financeSchema = new mongoose.Schema(
       type: String,
       maxlength: [1000, "Notes cannot exceed 1000 characters"],
     },
-    venueId: {
+    // ✅ CHANGED: Linked to generic Business entity instead of Venue
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
+      ref: "Business",
       required: true,
     },
     createdBy: {
@@ -101,7 +102,8 @@ const financeSchema = new mongoose.Schema(
   }
 );
 
-financeSchema.index({ venueId: 1, type: 1, date: -1 });
+// ✅ UPDATED INDEXES
+financeSchema.index({ businessId: 1, type: 1, date: -1 });
 financeSchema.index({ category: 1, date: -1 });
 
 export default mongoose.model("Finance", financeSchema);

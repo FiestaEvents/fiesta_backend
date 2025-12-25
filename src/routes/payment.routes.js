@@ -10,9 +10,11 @@ import {
   restorePayment,
   getArchivedPayments,
 } from "../controllers/paymentController.js";
+
 import { authenticate } from "../middleware/auth.js";
 import { checkPermission } from "../middleware/checkPermission.js";
 import validateRequest from "../middleware/validateRequest.js";
+
 import {
   createPaymentValidator,
   updatePaymentValidator,
@@ -21,7 +23,7 @@ import {
 
 const router = express.Router();
 
-// Apply authentication to all routes
+// Apply authentication to all routes (Populates req.user.businessId)
 router.use(authenticate);
 
 // ==========================================

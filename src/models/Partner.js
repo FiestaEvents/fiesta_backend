@@ -19,11 +19,16 @@ const partnerSchema = new mongoose.Schema(
       required: [true, "Phone is required"],
       trim: true,
     },
-    venueId: {
+    
+    // =========================================================
+    // ARCHITECTURE UPDATE: Replaces venueId
+    // =========================================================
+    businessId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Venue",
+      ref: "Business",
       required: true,
     },
+    
     category: {
       type: String,
       enum: [
@@ -32,6 +37,7 @@ const partnerSchema = new mongoose.Schema(
         "catering",
         "decoration",
         "photography",
+        "videography", 
         "music",
         "security",
         "cleaning",
@@ -39,6 +45,7 @@ const partnerSchema = new mongoose.Schema(
         "floral",
         "entertainment",
         "hairstyling",
+        "makeup",
         "other",
       ],
       required: [true, "Category is required"],
@@ -49,21 +56,29 @@ const partnerSchema = new mongoose.Schema(
       enum: ["active", "inactive"],
       default: "active",
     },
+    
+    // Archive / Soft Delete
     isArchived: { type: Boolean, default: false },
     archivedAt: { type: Date },
     archivedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    
     priceType: {
       type: String,
       enum: ["fixed", "hourly"],
       default: "fixed",
     },
+    
     location: { type: String },
     specialties: { type: String },
+    
+    // Financials (Default rates for this partner)
     hourlyRate: { type: Number, min: 0 },
     fixedRate: { type: Number, min: 0 },
+    
+    // Performance Tracking
     rating: {
       type: Number,
       min: 0,
@@ -74,6 +89,7 @@ const partnerSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    
     address: {
       street: String,
       city: String,
@@ -95,6 +111,7 @@ const partnerSchema = new mongoose.Schema(
   }
 );
 
-partnerSchema.index({ venueId: 1, category: 1, status: 1 });
+// Updated Index
+partnerSchema.index({ businessId: 1, category: 1, status: 1 });
 
 export default mongoose.model("Partner", partnerSchema);

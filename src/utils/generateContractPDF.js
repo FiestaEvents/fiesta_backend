@@ -1,9 +1,11 @@
 import PDFDocument from "pdfkit";
+// Ensure fetch is available in Node environment (Node 18+ has native fetch)
+// If older node, you might need: import fetch from 'node-fetch';
 
 // Helper: Format Currency
-const formatCurrency = (amount) => {
+const formatCurrency = (amount, currency = 'TND') => {
   return new Intl.NumberFormat('fr-TN', {
-    style: 'currency', currency: 'TND', minimumFractionDigits: 3
+    style: 'currency', currency: currency, minimumFractionDigits: 3
   }).format(amount || 0);
 };
 
@@ -13,7 +15,13 @@ const formatDate = (date) => {
   return new Date(date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 };
 
-export const generateContractPDF = async (contract, venue, settings) => {
+/**
+ * Generate Contract PDF
+ * @param {Object} contract - The contract data model
+ * @param {Object} business - The business data model (formerly venue)
+ * @param {Object} settings - The pdf/contract settings object
+ */
+export const generateContractPDF = async (contract, business, settings) => {
   return new Promise(async (resolve, reject) => {
     try {
       const doc = new PDFDocument({ size: "A4", margin: 50, bufferPages: true });
@@ -21,24 +29,31 @@ export const generateContractPDF = async (contract, venue, settings) => {
       doc.on("data", buffers.push.bind(buffers));
       doc.on("end", () => resolve(Buffer.concat(buffers)));
 
-      // --- 1. SETTINGS RESOLUTION (Fixing the bug) ---
-      // We explicitly check if values exist in the DB settings object
+      // --- 1. SETTINGS RESOLUTION ---
+      // Branding and Labels adapted for Chameleon Architecture
       const BRAND = {
         primary: settings?.branding?.colors?.primary || "#F18237",
         text: settings?.branding?.colors?.text || "#1F2937",
-        logo: settings?.branding?.logo?.url || null
+        logo: settings?.branding?.logo?.url || null // S3 or Public URL
       };
+
+      // Determine labels based on business category if not explicitly set
+      let defaultTitle = "CONTRAT DE PRESTATION";
+      if (business.category === 'photography') defaultTitle = "CONTRAT DE CESSION DE DROITS";
+      if (business.category === 'catering') defaultTitle = "CONTRAT TRAITEUR";
 
       const LABELS = {
         title: contract.contractType === 'partner' 
           ? (settings?.labels?.partnerContractTitle || "ACCORD DE PARTENARIAT") 
-          : (settings?.labels?.contractTitle || "CONTRAT DE PRESTATION"),
+          : (settings?.labels?.contractTitle || defaultTitle),
         
         party2: contract.contractType === 'partner' 
           ? (settings?.labels?.partnerLabel || "Le Partenaire") 
           : (settings?.labels?.clientLabel || "Le Client"),
           
-        signatures: settings?.labels?.signaturesTitle || "SIGNATURES"
+        signatures: settings?.labels?.signaturesTitle || "SIGNATURES",
+        
+        providerLabel: settings?.labels?.serviceProvider || (business.name || "Le Prestataire")
       };
 
       // --- 2. HEADER ---
@@ -46,20 +61,24 @@ export const generateContractPDF = async (contract, venue, settings) => {
       if (BRAND.logo) {
         try {
           const response = await fetch(BRAND.logo);
-          const arrayBuffer = await response.arrayBuffer();
-          doc.image(Buffer.from(arrayBuffer), 50, 45, { height: 50 });
+          if(response.ok) {
+             const arrayBuffer = await response.arrayBuffer();
+             doc.image(Buffer.from(arrayBuffer), 50, 45, { height: 50 });
+          }
         } catch (e) { console.warn("Logo load failed", e); }
       }
 
-      // Company Info (Left)
+      // Business Info (Left)
+      // Uses generic business fields (name, address)
       const textStartY = BRAND.logo ? 105 : 50;
       doc.fillColor(BRAND.primary).fontSize(14).font("Helvetica-Bold")
-         .text(settings?.companyInfo?.displayName || venue.name, 50, textStartY);
+         .text(settings?.companyInfo?.displayName || business.name, 50, textStartY);
          
       doc.fillColor("#666").fontSize(9).font("Helvetica")
-         .text(settings?.companyInfo?.legalName || venue.name)
-         .text(settings?.companyInfo?.address || venue.address)
-         .text(`MF: ${settings?.companyInfo?.matriculeFiscale || "N/A"}`);
+         .text(settings?.companyInfo?.legalName || business.name)
+         .text(settings?.companyInfo?.address || business.address || "")
+         .text(`MF: ${settings?.companyInfo?.matriculeFiscale || business.settings?.taxId || "N/A"}`)
+         .text(`Tél: ${business.contact?.phone || ""}`);
 
       // Contract Info (Right)
       doc.fillColor(BRAND.primary).fontSize(16).font("Helvetica-Bold")
@@ -78,27 +97,34 @@ export const generateContractPDF = async (contract, venue, settings) => {
       doc.fillColor(BRAND.text).text("ENTRE :", 50, doc.y, { underline: true });
       doc.moveDown(0.5);
       
-      // Venue
-      doc.font("Helvetica-Bold").text(settings?.companyInfo?.legalName || venue.name, { continued: true });
-      doc.font("Helvetica").text(`, MF: ${settings?.companyInfo?.matriculeFiscale}, Adresse: ${settings?.companyInfo?.address}`);
-      doc.text(`(Ci-après dénommé "${settings?.labels?.serviceProvider || "La Société"}")`);
+      // Business (Provider)
+      doc.font("Helvetica-Bold").text(settings?.companyInfo?.legalName || business.name, { continued: true });
+      doc.font("Helvetica").text(`, MF: ${settings?.companyInfo?.matriculeFiscale || business.settings?.taxId || "N/A"}, Adresse: ${settings?.companyInfo?.address || business.address || ""}`);
+      doc.text(`(Ci-après dénommé "${LABELS.providerLabel}")`);
       
       doc.moveDown();
       
-      // Other Party
+      // Other Party (Client or Partner)
+      // contract.party is a generic object populated from Client/Partner models
       doc.font("Helvetica-Bold").text(contract.party.name, { continued: true });
-      doc.font("Helvetica").text(`, ID: ${contract.party.identifier}`);
-      doc.text(`Adresse: ${contract.party.address}`);
-      if(contract.contractType === 'partner') doc.text(`Catégorie: ${contract.party.category.toUpperCase()}`);
+      if(contract.party.identifier) doc.font("Helvetica").text(`, ID/CIN: ${contract.party.identifier}`);
+      doc.text(`Adresse: ${contract.party.address || "Non spécifiée"}`);
+      if(contract.contractType === 'partner' && contract.party.category) {
+          doc.text(`Catégorie: ${contract.party.category.toUpperCase()}`);
+      }
       doc.text(`(Ci-après dénommé "${LABELS.party2}")`);
 
       // --- 4. DETAILS ---
       doc.moveDown(2);
-      drawSectionTitle(doc, "DÉTAILS DE L'ÉVÉNEMENT", BRAND.primary);
+      drawSectionTitle(doc, "DÉTAILS DE LA PRESTATION", BRAND.primary);
       doc.fontSize(10).fillColor(BRAND.text)
-         .text(`Événement: ${contract.title}`)
-         .text(`Dates: Du ${formatDate(contract.logistics.startDate)} au ${formatDate(contract.logistics.endDate)}`)
-         .text(`Horaires: ${contract.logistics.checkInTime || "N/A"} - ${contract.logistics.checkOutTime || "N/A"}`);
+         .text(`Titre: ${contract.title}`)
+         .text(`Dates: Du ${formatDate(contract.logistics.startDate)} au ${formatDate(contract.logistics.endDate)}`);
+         
+      // Conditional details based on vertical
+      if (business.category === 'venue') {
+         doc.text(`Horaires: ${contract.logistics.checkInTime || "N/A"} - ${contract.logistics.checkOutTime || "N/A"}`);
+      }
 
       // --- 5. FINANCIALS (Logic Split) ---
       doc.moveDown(2);
@@ -109,11 +135,13 @@ export const generateContractPDF = async (contract, venue, settings) => {
 
       if (isPartner) {
         // Simple list for partners
-        contract.services.forEach(s => {
-          doc.text(`• ${s.description} : ${formatCurrency(s.amount)}`);
-        });
+        if (contract.services && contract.services.length > 0) {
+            contract.services.forEach(s => {
+            doc.text(`• ${s.description} : ${formatCurrency(s.amount, business.settings?.currency)}`);
+            });
+        }
         doc.moveDown();
-        doc.font("Helvetica-Bold").text(`TOTAL À PAYER AU PARTENAIRE : ${formatCurrency(contract.financials.totalTTC)}`);
+        doc.font("Helvetica-Bold").text(`TOTAL À PAYER AU PARTENAIRE : ${formatCurrency(contract.financials.totalTTC, business.settings?.currency)}`);
       } else {
         // Full table for Clients
         const startY = doc.y;
@@ -123,38 +151,44 @@ export const generateContractPDF = async (contract, venue, settings) => {
         doc.text("Total", 450, startY + 6, { width: 90, align: "right" });
         
         let y = startY + 25;
-        contract.services.forEach(s => {
-          doc.font("Helvetica").fillColor(BRAND.text).text(s.description, 60, y);
-          doc.text(formatCurrency(s.amount), 450, y, { width: 90, align: "right" });
-          y += 20;
-        });
+        if (contract.services && contract.services.length > 0) {
+            contract.services.forEach(s => {
+            doc.font("Helvetica").fillColor(BRAND.text).text(s.description, 60, y);
+            doc.text(formatCurrency(s.amount, business.settings?.currency), 450, y, { width: 90, align: "right" });
+            y += 20;
+            });
+        }
 
         // Totals
         y += 10;
-        doc.text(`Total HT: ${formatCurrency(contract.financials.amountHT)}`, 350, y, { align: "right", width: 190 });
+        doc.text(`Total HT: ${formatCurrency(contract.financials.amountHT, business.settings?.currency)}`, 350, y, { align: "right", width: 190 });
         y += 15;
-        doc.text(`TVA (${contract.financials.vatRate}%): ${formatCurrency(contract.financials.taxAmount)}`, 350, y, { align: "right", width: 190 });
+        doc.text(`TVA (${contract.financials.vatRate}%): ${formatCurrency(contract.financials.taxAmount, business.settings?.currency)}`, 350, y, { align: "right", width: 190 });
         y += 15;
-        doc.text(`Timbre: ${formatCurrency(contract.financials.stampDuty)}`, 350, y, { align: "right", width: 190 });
+        doc.text(`Timbre: ${formatCurrency(contract.financials.stampDuty, business.settings?.currency)}`, 350, y, { align: "right", width: 190 });
         y += 20;
         doc.font("Helvetica-Bold").fontSize(11).fillColor(BRAND.primary)
-           .text(`NET À PAYER: ${formatCurrency(contract.financials.totalTTC)}`, 350, y, { align: "right", width: 190 });
+           .text(`NET À PAYER: ${formatCurrency(contract.financials.totalTTC, business.settings?.currency)}`, 350, y, { align: "right", width: 190 });
       }
 
       // --- 6. SIGNATURES ---
       doc.moveDown(4);
+      // Avoid page break inside signature block if possible
       if(doc.y > 650) doc.addPage();
       
       const sigY = doc.y;
       doc.fontSize(10).fillColor(BRAND.text);
       
-      // Left Box
-      doc.text("POUR LA SOCIÉTÉ", 50, sigY);
+      // Left Box (Business)
+      doc.text(`POUR ${LABELS.providerLabel.toUpperCase()}`, 50, sigY);
       doc.rect(50, sigY + 15, 200, 80).strokeColor("#ddd").stroke();
       
-      // Right Box
+      // Right Box (Client/Partner)
       doc.text(`POUR ${LABELS.party2.toUpperCase()}`, 300, sigY);
       doc.rect(300, sigY + 15, 200, 80).strokeColor("#ddd").stroke();
+      
+      // Footer text for legal validity
+      doc.fontSize(8).fillColor("#999").text("Ce document est généré électroniquement par la plateforme Fiesta.", 50, 780, { align: "center", width: 500 });
 
       doc.end();
 
