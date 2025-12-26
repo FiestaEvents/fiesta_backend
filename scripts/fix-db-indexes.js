@@ -1,61 +1,41 @@
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import { User, Business, Role } from "../src/models/index.js"; // Adjust path if needed
 
 dotenv.config();
 
-const fixUser = async () => {
+const fixInvoiceIndex = async () => {
   try {
+    console.log("🔌 Connecting to MongoDB...");
     await mongoose.connect(process.env.MONGODB_URI);
-    console.log("🔌 Connected to DB");
+    const db = mongoose.connection.db;
 
-    // 1. Find the broken user (Change email to yours)
-    const email = "ahmed@test.com"; 
-    const user = await User.findOne({ email });
-
-    if (!user) {
-      console.log("❌ User not found.");
-      process.exit(1);
-    }
-
-    console.log(`👤 Found User: ${user.name} (ID: ${user._id})`);
-
-    // 2. Find ANY business created by this user
-    let business = await Business.findOne({ owner: user._id });
-
-    // 3. If no business exists, create a dummy one
-    if (!business) {
-      console.log("⚠️ No business found for this user. Creating a default one...");
-      business = await Business.create({
-        name: `${user.name}'s Studio`,
-        category: "photography",
-        owner: user._id,
-        contact: { email: user.email },
-        subscription: { plan: "pro", status: "active" }
-      });
-    }
-
-    console.log(`🏢 Linking to Business: ${business.name} (ID: ${business._id})`);
-
-    // 4. Update User with businessId
-    user.businessId = business._id;
+    console.log("🧹 Checking Invoice collection indexes...");
+    const collection = db.collection("invoices");
     
-    // 5. Ensure Role exists and is linked
-    let role = await Role.findOne({ name: "Owner", businessId: business._id });
-    if (!role) {
-       console.log("🛡️ Creating Owner Role...");
-       role = await Role.create({
-         name: "Owner",
-         businessId: business._id,
-         isSystemRole: true,
-         level: 100
-       });
+    // 1. Get current indexes
+    const indexes = await collection.indexes();
+    const indexNames = indexes.map(i => i.name);
+    console.log("Found indexes:", indexNames);
+
+    // 2. Identify the specific problematic index
+    // It is usually named "invoiceNumber_1"
+    const oldIndexName = "invoiceNumber_1";
+
+    if (indexNames.includes(oldIndexName)) {
+      console.log(`🗑️ Found conflicting global index: '${oldIndexName}'. Dropping it...`);
+      await collection.dropIndex(oldIndexName);
+      console.log("✅ Successfully dropped the old index.");
+      console.log("👉 Now, Business A and Business B can both have 'INV-25-0001'.");
+    } else {
+      console.log("👍 Old global index not found. You might be safe, or it has a different name.");
     }
-    user.roleId = role._id;
 
-    await user.save();
-    console.log("✅ User successfully linked! Try logging in again.");
+    // 3. Verify/Create the new Compound Index (Optional, Mongoose usually handles this on boot)
+    // We want uniqueness only per business
+    // console.log("⚙️ Ensuring new compound index exists...");
+    // await collection.createIndex({ business: 1, invoiceNumber: 1 }, { unique: true });
 
+    console.log("🎉 Done.");
     process.exit(0);
   } catch (error) {
     console.error("❌ Error:", error);
@@ -63,4 +43,4 @@ const fixUser = async () => {
   }
 };
 
-fixUser();
+fixInvoiceIndex();

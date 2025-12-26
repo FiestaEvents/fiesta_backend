@@ -1,4 +1,3 @@
-// services/socket.service.js
 import { Server } from "socket.io";
 import config from "../config/env.js";
 import { logger } from "../utils/logger.js";
@@ -10,35 +9,68 @@ export function initializeSocketIO(httpServer) {
   // Create Socket.io server
   const io = new Server(httpServer, {
     cors: {
-      origin: getCorsOrigins(),
+      // ✅ FIX: Use a function to dynamically allow origins
+      origin: (requestOrigin, callback) => {
+        const allowedOrigins = [
+          config.frontend?.url,
+          "http://localhost:3000",
+          "http://localhost:5173", // Vite default
+          "http://127.0.0.1:5173",
+          "http://127.0.0.1:3000",
+        ].filter(Boolean); // Remove null/undefined
+
+        // Allow requests with no origin (like Postman or server-to-server)
+        if (!requestOrigin) return callback(null, true);
+
+        // Check exact match
+        if (allowedOrigins.includes(requestOrigin)) {
+          return callback(null, true);
+        }
+
+        // Check Regex for Localhost (Development only)
+        if (
+          config.env === "development" ||
+          process.env.NODE_ENV === "development"
+        ) {
+          const isLocalhost =
+            /^http:\/\/localhost:\d+$/.test(requestOrigin) ||
+            /^http:\/\/127\.0\.0\.1:\d+$/.test(requestOrigin);
+          if (isLocalhost) {
+            return callback(null, true);
+          }
+        }
+
+        console.warn(`⚠️ Socket CORS blocked origin: ${requestOrigin}`);
+        return callback(new Error("Not allowed by CORS"));
+      },
       methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
       credentials: true,
-      allowedHeaders: ["Content-Type", "Authorization"]
+      allowedHeaders: ["Content-Type", "Authorization"],
     },
-    transports: ['websocket', 'polling'],
+    // ✅ Optimization: Allow both for stability
+    transports: ["polling", "websocket"],
     pingTimeout: 60000,
-    pingInterval: 25000
+    pingInterval: 25000,
   });
 
   // Socket.io middleware for authentication
   io.use(async (socket, next) => {
     try {
-      // You can add authentication logic here
-      // Example: const token = socket.handshake.auth.token;
-      // const user = await verifyToken(token);
-      // socket.user = user;
+      // Placeholder: If you send token in auth object
+      // const token = socket.handshake.auth?.token;
+      // if (token) { ... verify ... }
       next();
     } catch (error) {
-      logger.warn('Socket authentication failed:', error.message);
-      next(new Error('Authentication error'));
+      logger.warn("Socket authentication failed:", error.message);
+      next(new Error("Authentication error"));
     }
   });
 
   // Socket connection handling
   io.on("connection", (socket) => {
-    logger.debug('⚡ Client connected via Socket:', {
+    logger.debug("⚡ Client connected via Socket:", {
       socketId: socket.id,
-      handshake: socket.handshake.query
+      origin: socket.handshake.headers.origin,
     });
 
     // Handle room joining
@@ -60,18 +92,21 @@ export function initializeSocketIO(httpServer) {
 
     // Error handling
     socket.on("error", (error) => {
-      logger.error('Socket error:', {
+      logger.error("Socket error:", {
         socketId: socket.id,
-        error: error.message
+        error: error.message,
       });
     });
 
     // Disconnection handling
     socket.on("disconnect", (reason) => {
-      logger.debug('❌ Client disconnected:', {
-        socketId: socket.id,
-        reason
-      });
+      // Don't log "transport close" or "ping timeout" as errors, they are normal
+      if (reason !== "transport close" && reason !== "ping timeout") {
+        logger.debug("❌ Client disconnected:", {
+          socketId: socket.id,
+          reason,
+        });
+      }
     });
   });
 
@@ -79,20 +114,4 @@ export function initializeSocketIO(httpServer) {
   global.io = io;
 
   return io;
-}
-
-/**
- * Get CORS origins based on environment
- */
-function getCorsOrigins() {
-  const origins = [
-    config.frontend.url,
-    "http://localhost:3000"
-  ];
-
-  if (config.env === 'development') {
-    origins.push(/^http:\/\/localhost:\d+$/);
-  }
-
-  return origins;
 }

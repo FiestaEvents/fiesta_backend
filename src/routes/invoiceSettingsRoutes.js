@@ -24,7 +24,6 @@ router.use(authenticate);
 // Get Settings
 router.get(
   "/",
-  // Uses generic 'business' permission instead of specific 'venue'
   checkPermission("business.read"), 
   getInvoiceSettings
 );
@@ -46,7 +45,7 @@ router.put(
 router.post(
   "/preview",
   checkPermission("business.read"),
-  invoiceSettingsValidator, // Validate payload before previewing
+  invoiceSettingsValidator,
   validateRequest,
   previewInvoice
 );

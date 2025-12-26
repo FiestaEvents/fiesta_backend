@@ -1,17 +1,50 @@
 export const pdfTranslations = {
-  en: {
-    invoice: "INVOICE", billTo: "Bill To", invoiceNumber: "Invoice No",
-    issued: "Issued", due: "Due Date", total: "Total", subtotal: "Subtotal",
-    tax: "Tax", discount: "Discount", page: "Page"
-  },
   fr: {
-    invoice: "FACTURE", billTo: "Facturer à", invoiceNumber: "N° Facture",
-    issued: "Émis le", due: "Échéance", total: "Total", subtotal: "Sous-total",
-    tax: "TVA", discount: "Remise", page: "Page"
+    invoice: "FACTURE",
+    date: "DATE",
+    dueDate: "ÉCHÉANCE",
+    from: "DE",
+    to: "À",
+    item: "Description",
+    quantity: "Qté",
+    rate: "Prix",
+    total: "Total",
+    subtotal: "Sous-total",
+    tax: "TVA",
+    discount: "Remise",
+    paymentInstructions: "INSTRUCTIONS DE PAIEMENT",
+    page: "Page"
+  },
+  en: {
+    invoice: "INVOICE",
+    date: "DATE",
+    dueDate: "DUE DATE",
+    from: "FROM",
+    to: "BILL TO",
+    item: "Description",
+    quantity: "Qty",
+    rate: "Price",
+    total: "Total",
+    subtotal: "Subtotal",
+    tax: "Tax",
+    discount: "Discount",
+    paymentInstructions: "PAYMENT INSTRUCTIONS",
+    page: "Page"
   },
   ar: {
-    invoice: "فاتورة", billTo: "إلى", invoiceNumber: "رقم الفاتورة",
-    issued: "تاريخ الإصدار", due: "تاريخ الاستحقاق", total: "المجموع", subtotal: "المجموع الفرعي",
-    tax: "ضريبة", discount: "خصم", page: "صفحة"
+    invoice: "فاتورة",
+    date: "التاريخ",
+    dueDate: "تاريخ الاستحقاق",
+    from: "من",
+    to: "إلى",
+    item: "البيان",
+    quantity: "الكمية",
+    rate: "السعر",
+    total: "المجموع",
+    subtotal: "المجموع الفرعي",
+    tax: "الضريبة",
+    discount: "خصم",
+    paymentInstructions: "تعليمات الدفع",
+    page: "صفحة"
   }
 };

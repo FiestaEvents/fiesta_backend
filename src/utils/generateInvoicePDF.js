@@ -1,284 +1,385 @@
-import PDFDocument from "pdfkit";
+import puppeteer from "puppeteer";
 import { pdfTranslations } from "./invoicePdfTranslations.js";
 import axios from "axios";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-// Helper to fetch image buffer from URL or Base64
-const fetchImageBuffer = async (src) => {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// --- HELPERS ---
+
+const getImageDataUri = async (src) => {
   if (!src) return null;
   try {
-    // Handle Base64
-    if (src.startsWith("data:")) {
-      const base64Data = src.split(";base64,").pop();
-      return Buffer.from(base64Data, "base64");
-    }
-    // Handle Remote URL
+    if (src.startsWith("data:")) return src;
+    let buffer,
+      mimeType = "image/png";
+
     if (src.startsWith("http")) {
-      const response = await axios.get(src, { responseType: "arraybuffer" });
-      return Buffer.from(response.data);
+      const response = await axios.get(src, {
+        responseType: "arraybuffer",
+        timeout: 5000,
+        headers: { "User-Agent": "Mozilla/5.0" },
+      });
+      buffer = Buffer.from(response.data);
+      if (response.headers["content-type"])
+        mimeType = response.headers["content-type"];
+    } else {
+      const projectRoot = path.resolve(__dirname, "../../");
+      const cleanPath = src.startsWith("/") ? src.slice(1) : src;
+      const localPath = path.join(projectRoot, cleanPath);
+      if (fs.existsSync(localPath)) {
+        buffer = fs.readFileSync(localPath);
+        const ext = path.extname(localPath).slice(1);
+        if (ext) mimeType = `image/${ext === "svg" ? "svg+xml" : ext}`;
+      }
     }
-    return null;
+    if (buffer) return `data:${mimeType};base64,${buffer.toString("base64")}`;
   } catch (err) {
-    console.error("Error fetching logo for PDF:", err.message);
-    return null; // Fail gracefully, don't crash PDF generation
+    console.error("⚠️ PDF Logo Error:", err.message);
   }
+  return null;
+};
+
+const formatCurrency = (amount, currency = "TND") =>
+  new Intl.NumberFormat("fr-TN", {
+    style: "decimal",
+    minimumFractionDigits: 3,
+  }).format(amount) +
+  " " +
+  currency;
+const formatDate = (d) => (d ? new Date(d).toLocaleDateString("fr-FR") : "");
+
+/**
+ * ✅ FIX: Robust Address Formatter
+ * Prevents "{}" from appearing by checking for empty objects/strings
+ */
+const formatAddress = (addr) => {
+  if (!addr) return "";
+
+  // Handle Mongoose empty objects or explicit empty object strings
+  if (typeof addr === "object" && Object.keys(addr).length === 0) return "";
+  if (String(addr).trim() === "{}") return "";
+
+  // If it's a valid object, extract fields
+  if (typeof addr === "object") {
+    const parts = [
+      addr.street,
+      [addr.city, addr.zipCode].filter(Boolean).join(" "), // City + Zip
+      addr.state,
+      addr.country,
+    ];
+    // Filter undefined/null/empty and join
+    return parts.filter((p) => p && String(p).trim() !== "").join("<br>");
+  }
+
+  // If it's a string, just handle newlines
+  return String(addr).replace(/\n/g, "<br>");
 };
 
 /**
- * Generate Invoice PDF
- * @param {Object} invoice - Invoice data model
- * @param {Object} business - Business data model (formerly venue)
- * @param {String} language - Language code ('fr', 'en', 'ar')
- * @param {Object} settings - PDF configuration settings
+ * GENERATE PDF
  */
-export const generateInvoicePDF = async (invoice, business, language = "fr", settings = null) => {
-  // 1. Prepare Data & Defaults
+export const generateInvoicePDF = async (
+  invoice,
+  business,
+  language = "fr",
+  settings = null
+) => {
   const t = pdfTranslations[language] || pdfTranslations.fr;
+
   const s = {
-    colors: settings?.branding?.colors || { primary: "#F18237", text: "#1F2937", secondary: "#374151" },
+    colors: settings?.branding?.colors || {
+      primary: "#F18237",
+      secondary: "#374151",
+      text: "#1F2937",
+    },
     fonts: settings?.branding?.fonts || { size: 10 },
-    layout: settings?.layout || { sections: [] }, // If empty, uses default order
-    table: settings?.table || { columns: {}, headerColor: "#F18237" },
     labels: settings?.labels || {},
-    logoUrl: settings?.branding?.logo?.url
+    logoUrl: settings?.branding?.logo?.url,
+    paymentTerms: settings?.paymentTerms || {},
+    table: settings?.table || {
+      headerColor: "#F18237",
+      striped: false,
+      rounded: true,
+    },
+    sections: settings?.layout?.sections || [],
   };
 
-  // 2. Fetch Logo Buffer (Async operation before PDF generation)
-  const logoBuffer = await fetchImageBuffer(s.logoUrl);
+  const logoDataUri = await getImageDataUri(s.logoUrl);
 
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({ size: "A4", margin: 50, bufferPages: true });
-      const buffers = [];
+  // 2. Define HTML Snippets
+  const sectionHtml = {
+    header: `
+      <div class="header">
+        <div>
+          ${
+            logoDataUri
+              ? `<img src="${logoDataUri}" class="logo-img" />`
+              : `<h2 style="color:${s.colors.primary}; margin:0; font-size: 28px;">${business.name}</h2>`
+          }
+        </div>
+        <div class="title-wrapper">
+          <h1 class="invoice-title">${s.labels.invoiceTitle || t.invoice}</h1>
+          <div class="invoice-number"># ${invoice.invoiceNumber}</div>
+        </div>
+      </div>
+    `,
+    details: `
+      <div class="details-container">
+        <!-- FROM SECTION -->
+        <div style="width: 45%">
+          <span class="label">${s.labels.from || "FROM"}</span>
+          <div class="company-name">${business.name}</div>
+          <div class="address-text">
+            ${formatAddress(business.address)}
+            ${
+              settings?.companyInfo?.matriculeFiscale
+                ? `<br><br>MF: ${settings.companyInfo.matriculeFiscale}`
+                : ""
+            }
+          </div>
+        </div>
 
-      doc.on("data", buffers.push.bind(buffers));
-      doc.on("end", () => resolve(Buffer.concat(buffers)));
-
-      // --- STYLING CONSTANTS ---
-      const fontRegular = "Helvetica";
-      const fontBold = "Helvetica-Bold";
-      const primaryColor = s.colors.primary;
-      const secondaryColor = s.colors.secondary;
-      const textColor = s.colors.text;
-      const baseFontSize = s.fonts.size || 10;
+        <!-- TO SECTION -->
+        <div style="width: 45%; text-align: right;">
+          <span class="label">${s.labels.to || "BILL TO"}</span>
+          <div class="company-name">${invoice.recipientName || "Unknown"}</div>
+          <div class="address-text">
+            ${invoice.recipientCompany ? `${invoice.recipientCompany}<br>` : ""}
+            ${formatAddress(invoice.recipientAddress)}
+            ${invoice.recipientEmail ? `<br>${invoice.recipientEmail}` : ""}
+          </div>
+        </div>
+      </div>
       
-      // Helper: Draw a Section
-      const renderers = {
-        
-        // --- 1. HEADER (Logo + Title) ---
-        header: () => {
-          const startY = doc.y;
-          
-          // Logo (Left)
-          if (logoBuffer) {
-            try {
-              // Fit logo within 150x60 box
-              doc.image(logoBuffer, 50, startY, { height: 60, fit: [150, 60], align: 'left' });
-            } catch (e) { console.error("PDF Image Error", e); }
-          } else {
-            // Fallback text logo if no image
-            doc.fillColor(primaryColor).fontSize(16).font(fontBold).text(business.name, 50, startY);
-          }
-
-          // Title (Right)
-          doc.fillColor(primaryColor).fontSize(24).font(fontBold)
-             .text(s.labels.invoiceTitle || t.invoice, 50, startY + 10, { align: "right" });
-          
-          doc.fillColor(secondaryColor).fontSize(10).font(fontRegular)
-             .text(`# ${invoice.invoiceNumber}`, 50, startY + 40, { align: "right" });
-
-          // Move cursor down safely (account for logo height)
-          doc.y = Math.max(startY + 80, doc.y + 20);
-        },
-
-        // --- 2. DETAILS (From / To / Dates) ---
-        details: () => {
-          doc.moveDown(1);
-          const startY = doc.y;
-          const leftColX = 50;
-          const rightColX = 350;
-
-          // FROM (Left) - Business Details
-          doc.fillColor(secondaryColor).fontSize(8).font(fontBold).text((s.labels.from || "FROM").toUpperCase(), leftColX, startY);
-          doc.moveDown(0.5);
-          doc.fillColor(textColor).fontSize(11).font(fontBold).text(business.name);
-          doc.fontSize(baseFontSize).font(fontRegular).fillColor(secondaryColor);
-          if (business.address) doc.text(business.address); // Generic address field
-          // Check both nested companyInfo and generic settings for tax ID
-          const taxId = settings?.companyInfo?.matriculeFiscale || business.settings?.taxId;
-          if (taxId) doc.text(`MF: ${taxId}`);
-
-          // TO (Right) - Client Details
-          doc.text((s.labels.to || "BILL TO").toUpperCase(), rightColX, startY);
-          doc.moveDown(0.5);
-          doc.fillColor(textColor).fontSize(11).font(fontBold).text(invoice.recipientName, rightColX);
-          doc.fontSize(baseFontSize).font(fontRegular).fillColor(secondaryColor);
-          if (invoice.recipientCompany) doc.text(invoice.recipientCompany, rightColX);
-          if (invoice.recipientEmail) doc.text(invoice.recipientEmail, rightColX);
-
-          // Dates Row
-          doc.moveDown(2);
-          const dateY = doc.y;
-          doc.fillColor(secondaryColor).font(fontBold).text("DATE:", leftColX, dateY);
-          doc.font(fontRegular).text(new Date(invoice.issueDate).toLocaleDateString(), leftColX + 40, dateY);
-          
-          doc.font(fontBold).text("DUE:", leftColX + 150, dateY);
-          doc.font(fontRegular).text(new Date(invoice.dueDate).toLocaleDateString(), leftColX + 180, dateY);
-
-          doc.moveDown(2);
-        },
-
-        // --- 3. ITEMS TABLE ---
-        items: () => {
-          doc.moveDown(0.5);
-          const tableTop = doc.y;
-          const tableWidth = 500;
-          
-          // Determine visible columns based on settings (or default to all)
-          const cols = s.table.columns || { description: true, quantity: true, rate: true, total: true };
-          
-          // Dynamic Layout Calculations
-          let xPositions = { desc: 60 };
-          
-          // Adjust positions based on active columns logic (Simplified for readability)
-          // Default layout: Desc (Left) | Qty (Center) | Rate (Right) | Total (Right)
-          xPositions.qty = 310;
-          xPositions.rate = 390;
-          xPositions.total = 450;
-
-          // Header Background
-          doc.rect(50, tableTop, tableWidth, 25).fill(s.table.headerColor || primaryColor);
-          doc.fillColor("#FFFFFF").fontSize(9).font(fontBold);
-
-          // Header Text
-          if (cols.description !== false) doc.text(s.labels.item || "Item", xPositions.desc, tableTop + 8);
-          if (cols.quantity !== false) doc.text(s.labels.quantity || "Qty", xPositions.qty, tableTop + 8, { width: 40, align: 'center' });
-          if (cols.rate !== false) doc.text(s.labels.rate || "Price", xPositions.rate, tableTop + 8, { width: 70, align: 'right' });
-          if (cols.total !== false) doc.text(s.labels.total || "Total", xPositions.total, tableTop + 8, { width: 90, align: 'right' });
-
-          // Items Loop
-          let y = tableTop + 30;
-          doc.font(fontRegular).fontSize(baseFontSize);
-
-          invoice.items.forEach((item, i) => {
-            // Striped Rows
-            if (s.table.striped && i % 2 !== 0) {
-              doc.rect(50, y - 5, tableWidth, 20).fill("#F9FAFB");
+      <!-- DATES -->
+      <div class="dates-row">
+        <div class="date-item"><span>DATE:</span> ${formatDate(
+          invoice.issueDate
+        )}</div>
+        <div class="date-item"><span>DUE:</span> ${formatDate(
+          invoice.dueDate
+        )}</div>
+      </div>
+    `,
+    items: `
+      <table>
+        <thead>
+          <tr>
+            ${
+              s.table.columns?.description !== false
+                ? `<th width="50%">${s.labels.item || "Description"}</th>`
+                : ""
             }
-
-            doc.fillColor(textColor);
-            
-            // Render Columns
-            if (cols.description !== false) doc.text(item.description, xPositions.desc, y, { width: 240 });
-            if (cols.quantity !== false) doc.text(item.quantity.toString(), xPositions.qty, y, { width: 40, align: 'center' });
-            if (cols.rate !== false) doc.text(item.rate.toFixed(2), xPositions.rate, y, { width: 70, align: 'right' });
-            if (cols.total !== false) doc.text(item.amount.toFixed(2), xPositions.total, y, { width: 90, align: 'right' });
-
-            y += 20; // Row Height
-            
-            // Page Break Handling
-            if (y > 750) {
-              doc.addPage();
-              y = 50;
+            ${
+              s.table.columns?.quantity !== false
+                ? `<th width="10%" class="text-center">${
+                    s.labels.quantity || "Qty"
+                  }</th>`
+                : ""
             }
-          });
-
-          doc.y = y + 10; // Update cursor
-        },
-
-        // --- 4. TOTALS ---
-        totals: () => {
-          doc.moveDown(1);
-          const startY = doc.y;
-          const labelX = 300;
-          const valueX = 450;
-          const valueWidth = 90;
-
-          const currency = invoice.currency || business.settings?.currency || 'DT';
-
-          const drawRow = (label, value, isBold = false, color = textColor, fontSize = baseFontSize) => {
-             doc.font(isBold ? fontBold : fontRegular).fontSize(fontSize).fillColor(color);
-             doc.text(label, labelX, doc.y, { width: 140, align: 'right' });
-             doc.text(value, valueX, doc.y, { width: valueWidth, align: 'right' });
-             doc.moveDown(0.5);
-          };
-
-          drawRow(`${t.subtotal}:`, invoice.subtotal.toFixed(2));
-          
-          if (invoice.taxAmount > 0) {
-             drawRow(`${t.tax} (${invoice.taxRate}%):`, invoice.taxAmount.toFixed(2));
+            ${
+              s.table.columns?.rate !== false
+                ? `<th width="20%" class="text-right">${
+                    s.labels.rate || "Price"
+                  }</th>`
+                : ""
+            }
+            ${
+              s.table.columns?.total !== false
+                ? `<th width="20%" class="text-right">${
+                    s.labels.total || "Total"
+                  }</th>`
+                : ""
+            }
+          </tr>
+        </thead>
+        <tbody>
+          ${invoice.items
+            .map(
+              (item, idx) => `
+            <tr class="${s.table.striped && idx % 2 !== 0 ? "striped" : ""}">
+              ${
+                s.table.columns?.description !== false
+                  ? `<td>${item.description}</td>`
+                  : ""
+              }
+              ${
+                s.table.columns?.quantity !== false
+                  ? `<td class="text-center">${item.quantity}</td>`
+                  : ""
+              }
+              ${
+                s.table.columns?.rate !== false
+                  ? `<td class="text-right">${formatCurrency(item.rate)}</td>`
+                  : ""
+              }
+              ${
+                s.table.columns?.total !== false
+                  ? `<td class="text-right"><strong>${formatCurrency(
+                      item.amount
+                    )}</strong></td>`
+                  : ""
+              }
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    `,
+    totals: `
+      <div class="totals-container">
+        <div class="totals-box">
+          <div class="totals-row"><span>${
+            t.subtotal
+          }:</span> <span>${formatCurrency(invoice.subtotal)}</span></div>
+          ${
+            invoice.taxAmount > 0
+              ? `<div class="totals-row"><span>${t.tax} (${
+                  invoice.taxRate
+                }%):</span> <span>${formatCurrency(
+                  invoice.taxAmount
+                )}</span></div>`
+              : ""
           }
-
-          if (invoice.discount > 0) {
-             drawRow("Discount:", `-${invoice.discount.toFixed(2)}`, false, "#ef4444");
+          ${
+            invoice.discount > 0
+              ? `<div class="totals-row" style="color:#ef4444;"><span>Discount:</span> <span>-${formatCurrency(
+                  invoice.discount
+                )}</span></div>`
+              : ""
           }
-
-          doc.moveDown(0.5);
-          // Grand Total Box
-          doc.rect(labelX, doc.y - 5, 250, 25).fill(primaryColor);
-          doc.y += 5; // center text vertically
-          drawRow(s.labels.total || "Total", `${invoice.totalAmount.toFixed(2)} ${currency}`, true, "#FFFFFF", 12);
-          
-          doc.moveDown(2);
-        },
-
-        // --- 5. FOOTER / TERMS ---
-        footer: () => {
-          // Push to bottom if desired, or just render where cursor is
-          // Check if space is low, add page
-          if (doc.y > 650) doc.addPage();
-          
-          // Separator
-          doc.strokeColor("#E5E7EB").lineWidth(1).moveTo(50, doc.y).lineTo(545, doc.y).stroke();
-          doc.moveDown(2);
-
-          // Payment Instructions
-          if (s.labels.paymentInstructions || settings?.paymentTerms?.bankDetails) {
-            doc.font(fontBold).fontSize(9).fillColor(secondaryColor).text((s.labels.paymentInstructions || "PAYMENT INFO").toUpperCase());
-            doc.moveDown(0.5);
-            doc.font(fontRegular).text(settings?.paymentTerms?.bankDetails || "");
-          }
-
-          // Page Numbers (Centered Bottom)
-          const range = doc.bufferedPageRange();
-          for (let i = range.start; i < range.start + range.count; i++) {
-            doc.switchToPage(i);
-            doc.fontSize(8).fillColor("#9CA3AF").text(
-              `Page ${i + 1} / ${range.count}`,
-              50,
-              doc.page.height - 50,
-              { align: "center", width: 500 }
-            );
-          }
+          <div class="totals-row grand-total"><span>${
+            s.labels.total || "Total"
+          }</span> <span>${formatCurrency(invoice.totalAmount)}</span></div>
+        </div>
+      </div>
+    `,
+    footer: `
+      <div class="footer">
+        ${
+          s.labels.paymentInstructions || s.paymentTerms?.bankDetails
+            ? `
+          <div class="instructions-title">${
+            s.labels.paymentInstructions || "Payment Instructions"
+          }</div>
+          <div class="instructions-text">${
+            s.paymentTerms.bankDetails || ""
+          }</div>
+        `
+            : ""
         }
-      };
+      </div>
+    `,
+  };
 
-      // --- MAIN EXECUTION LOOP ---
-      // 1. Get Sections Order from Settings
-      const sections = s.layout.sections.length > 0 
-          ? s.layout.sections.sort((a, b) => a.order - b.order) 
-          : []; // If empty, we trigger fallback below
+  // 3. Construct Body based on Order
+  const dynamicBodyContent = s.sections
+    .filter((sec) => sec.visible)
+    .sort((a, b) => a.order - b.order)
+    .map((sec) => sectionHtml[sec.id] || "")
+    .join("");
 
-      // 2. Render Loop
-      if (sections.length > 0) {
-          for (const section of sections) {
-            if (!section.visible) continue; // Skip hidden sections
-            const renderer = renderers[section.id];
-            if (renderer) renderer();
-          }
-      } else {
-        // Fallback: Standard Invoice Order
-        renderers.header();
-        renderers.details();
-        renderers.items();
-        renderers.totals();
-        renderers.footer();
-      }
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        * { box-sizing: border-box; }
+        body { font-family: Helvetica, Arial, sans-serif; font-size: ${
+          s.fonts.size
+        }px; color: ${
+    s.colors.text
+  }; line-height: 1.4; margin: 0; padding: 40px; }
+        
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; }
+        .logo-img { height: 80px; max-width: 200px; object-fit: contain; }
+        .title-wrapper { text-align: right; }
+        .invoice-title { font-size: 32px; font-weight: 800; color: ${
+          s.colors.primary
+        }; text-transform: uppercase; margin: 0; }
+        .invoice-number { font-size: 14px; color: ${
+          s.colors.secondary
+        }; font-weight: 600; margin-top: 5px; }
 
-      doc.end();
+        .details-container { display: flex; justify-content: space-between; margin-bottom: 30px; border-top: 1px solid #eee; padding-top: 20px; }
+        .label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: ${
+          s.colors.secondary
+        }; margin-bottom: 5px; display: block; }
+        .company-name { font-size: 15px; font-weight: 700; margin-bottom: 4px; color: #111; }
+        .address-text { font-size: 11px; color: ${
+          s.colors.secondary
+        }; line-height: 1.5; white-space: pre-line; }
 
-    } catch (err) {
-      console.error("PDF Generation Error:", err);
-      reject(err);
-    }
-  });
+        .dates-row { margin-bottom: 30px; display: flex; gap: 40px; }
+        .date-item span { font-weight: 700; color: ${
+          s.colors.secondary
+        }; margin-right: 8px; font-size: 11px; }
+
+        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; margin-top: 20px; }
+        th { background: ${
+          s.table.headerColor || s.colors.primary
+        }; color: #fff; padding: 10px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+        th:first-child { border-top-left-radius: ${
+          s.table.rounded ? "6px" : "0"
+        }; }
+        th:last-child { border-top-right-radius: ${
+          s.table.rounded ? "6px" : "0"
+        }; }
+        td { padding: 10px; border-bottom: 1px solid #eee; font-size: 11px; }
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+        tr.striped { background-color: #F9FAFB; }
+
+        .totals-container { display: flex; justify-content: flex-end; margin-bottom: 40px; page-break-inside: avoid; }
+        .totals-box { width: 300px; }
+        .totals-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eee; font-size: 11px; }
+        .grand-total { background: ${
+          s.colors.primary
+        }; color: white; padding: 10px; border-radius: 6px; margin-top: 10px; font-weight: 700; font-size: 14px; border: none; }
+
+        .footer { margin-top: 50px; padding-top: 20px; border-top: 2px solid #eee; page-break-inside: avoid; }
+        .instructions-title { font-size: 10px; font-weight: 700; color: ${
+          s.colors.secondary
+        }; text-transform: uppercase; margin-bottom: 4px; }
+        .instructions-text { font-size: 11px; color: ${
+          s.colors.text
+        }; white-space: pre-line; }
+      </style>
+    </head>
+    <body>
+      <div style="height: 10px; background: ${
+        s.colors.primary
+      }; position: absolute; top:0; left:0; width: 100%;"></div>
+      ${dynamicBodyContent}
+    </body>
+    </html>
+  `;
+
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: "new",
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
+    const page = await browser.newPage();
+    await page.setContent(htmlContent, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
+    });
+    const pdfBuffer = await page.pdf({
+      format: "A4",
+      printBackground: true,
+      margin: { top: "40px", bottom: "40px", left: "40px", right: "40px" },
+    });
+    await browser.close();
+    return pdfBuffer;
+  } catch (err) {
+    if (browser) await browser.close();
+    throw new Error("PDF Gen Failed");
+  }
 };

@@ -18,7 +18,6 @@ const DEFAULTS = {
     template: "modern",
     density: "standard",
     borderRadius: 4,
-    // The default order of blocks
     sections: [
       { id: "header", label: "En-tête", visible: true, order: 1 },
       { id: "details", label: "Détails (De/À)", visible: true, order: 2 },
@@ -57,18 +56,13 @@ const DEFAULTS = {
 // ==========================================
 const invoiceSettingsSchema = new mongoose.Schema(
   {
-    // =========================================================
-    // ARCHITECTURE UPDATE: Replaces venue
-    // =========================================================
-    // Renamed to businessId to match User/Event/Client models
-    businessId: {
+    business: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Business",
       required: true,
-      unique: true, // One settings doc per business
+      unique: true,
     },
 
-    // --- BRANDING ---
     branding: {
       logo: { url: String, width: Number, height: Number },
       colors: {
@@ -87,15 +81,14 @@ const invoiceSettingsSchema = new mongoose.Schema(
       },
     },
 
-    // --- LAYOUT & SECTIONS (For Drag & Drop) ---
     layout: {
       template: { type: String, default: DEFAULTS.layout.template },
       density: { type: String, enum: ["compact", "standard", "spacious"], default: "standard" },
       borderRadius: { type: Number, default: 4 },
       sections: [
         {
-          _id: false, // No ID needed for sub-object
-          id: { type: String, required: true }, // 'header', 'items', etc.
+          _id: false,
+          id: { type: String, required: true },
           label: String,
           visible: { type: Boolean, default: true },
           order: { type: Number, required: true },
@@ -103,7 +96,6 @@ const invoiceSettingsSchema = new mongoose.Schema(
       ],
     },
 
-    // --- TABLE STYLING ---
     table: {
       headerColor: { type: String, default: DEFAULTS.table.headerColor },
       striped: { type: Boolean, default: DEFAULTS.table.striped },
@@ -118,7 +110,6 @@ const invoiceSettingsSchema = new mongoose.Schema(
       },
     },
 
-    // --- TEXT LABELS ---
     labels: {
       invoiceTitle: { type: String, default: DEFAULTS.labels.invoiceTitle },
       from: { type: String, default: DEFAULTS.labels.from },
@@ -130,7 +121,6 @@ const invoiceSettingsSchema = new mongoose.Schema(
       paymentInstructions: { type: String, default: DEFAULTS.labels.paymentInstructions },
     },
 
-    // --- PAYMENT INFO ---
     paymentTerms: {
       bankDetails: String,
       terms: String,
@@ -143,19 +133,18 @@ const invoiceSettingsSchema = new mongoose.Schema(
 // 3. METHODS
 // ==========================================
 invoiceSettingsSchema.statics.getOrCreate = async function (businessId) {
-  let settings = await this.findOne({ businessId });
+  let settings = await this.findOne({ business: businessId });
 
   if (!settings) {
-    // Merge defaults
     settings = await this.create({
-      businessId,
+      business: businessId,
       branding: DEFAULTS.branding,
       layout: DEFAULTS.layout,
       table: DEFAULTS.table,
       labels: DEFAULTS.labels,
     });
   } else {
-    // Ensure sections exist if migrating from old version
+    // Migration helper
     if (!settings.layout.sections || settings.layout.sections.length === 0) {
       settings.layout.sections = DEFAULTS.layout.sections;
       await settings.save();

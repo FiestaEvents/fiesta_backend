@@ -1,48 +1,46 @@
 import express from "express";
 import multer from "multer";
-import path from "path";
+import { v2 as cloudinary } from "cloudinary";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
 import { authenticate } from "../middleware/auth.js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const router = express.Router();
 
-// Configure Multer Storage
-const storage = multer.diskStorage({
-  destination(req, file, cb) {
-    cb(null, "uploads/"); // Images save to backend/uploads/
-  },
-  filename(req, file, cb) {
-    cb(null, `logo-${Date.now()}${path.extname(file.originalname)}`);
+// 1. Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// 2. Configure Multer Storage Engine for Cloudinary
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "fiesta_portfolio", // The folder name in your Cloudinary Dashboard
+    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+    // Optional: Resize images on upload to save bandwidth
+    transformation: [{ width: 1200, height: 1200, crop: "limit" }], 
   },
 });
 
-// Filter for Images Only
-const fileFilter = (req, file, cb) => {
-  const filetypes = /jpg|jpeg|png|webp/;
-  const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = filetypes.test(file.mimetype);
+const upload = multer({ storage });
 
-  if (extname && mimetype) {
-    return cb(null, true);
-  } else {
-    cb(new Error("Images only!"), false);
-  }
-};
-
-const upload = multer({ 
-  storage, 
-  fileFilter,
-  limits: { fileSize: 2 * 1024 * 1024 } // 2MB Limit
-});
-
-// Route: POST /api/v1/upload
+// 3. Upload Route
+// POST /api/v1/upload
 router.post("/", authenticate, upload.single("image"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: "No file uploaded" });
   }
-  // Return the URL path that the frontend can access
-  // Note: app.js must have app.use('/uploads', express.static...)
+
+  // Cloudinary returns the HTTPS URL in req.file.path
   res.status(200).json({
-    url: `/uploads/${req.file.filename}`
+    success: true,
+    url: req.file.path,
+    publicId: req.file.filename // Store this if you want to delete images later
   });
 });
 

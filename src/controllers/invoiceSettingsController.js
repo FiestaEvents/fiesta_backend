@@ -1,74 +1,59 @@
 import InvoiceSettings from "../models/InvoiceSettings.js";
 
-/**
- * @desc    Get invoice settings
- * @route   GET /api/v1/invoices/settings
- */
 export const getInvoiceSettings = async (req, res) => {
   try {
-    const businessId = req.businessId || req.user.businessId;
-    // Uses the static method refactored in the Model to get settings for this Business
-    const settings = await InvoiceSettings.getOrCreate(businessId);
+    const settings = await InvoiceSettings.getOrCreate(req.business._id);
     res.json({ success: true, data: settings });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-/**
- * @desc    Update invoice settings
- * @route   PUT /api/v1/invoices/settings
- */
 export const updateInvoiceSettings = async (req, res) => {
   try {
-    const businessId = req.businessId || req.user.businessId;
-    
-    // Update using 'businessId' field matching the Schema
+    // 1. Sanitize the payload
+    const updateData = { ...req.body };
+
+    // Remove fields that should NEVER be manually updated
+    delete updateData._id;
+    delete updateData.business;
+    delete updateData.businessId;
+    delete updateData.createdAt;
+    delete updateData.updatedAt;
+    delete updateData.__v;
+
+    // 2. Perform the update
     const settings = await InvoiceSettings.findOneAndUpdate(
-      { businessId: businessId }, 
-      req.body,
-      { new: true, upsert: true }
+      { business: req.business._id },
+      updateData,
+      { new: true, upsert: true, setDefaultsOnInsert: true }
     );
+
     res.json({ success: true, data: settings });
   } catch (error) {
+    console.error("Update Settings Error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-/**
- * @desc    Preview invoice (Placeholder)
- * @route   POST /api/v1/invoices/settings/preview
- */
 export const previewInvoice = async (req, res) => {
   res.json({ success: true, message: "Preview generated" });
 };
 
-/**
- * @desc    Apply template
- * @route   POST /api/v1/invoices/settings/apply-template
- */
 export const applyTemplate = async (req, res) => {
   try {
     const { templateId } = req.body;
-    // Logic to fetch template config and apply to settings would go here
     res.json({ success: true, message: `Template ${templateId} applied` });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-/**
- * @desc    Reset to defaults
- * @route   POST /api/v1/invoices/settings/reset
- */
 export const resetToDefaults = async (req, res) => {
   try {
-    const businessId = req.businessId || req.user.businessId;
-    
-    // Delete custom settings triggers getOrCreate to regenerate defaults next time
-    await InvoiceSettings.findOneAndDelete({ businessId: businessId });
-    const defaults = await InvoiceSettings.getOrCreate(businessId);
-    
+    await InvoiceSettings.findOneAndDelete({ business: req.business._id });
+    const defaults = await InvoiceSettings.getOrCreate(req.business._id);
+
     res.json({ success: true, data: defaults });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

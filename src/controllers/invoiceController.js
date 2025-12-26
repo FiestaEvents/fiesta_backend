@@ -177,7 +177,7 @@ export const deleteInvoice = async (req, res) => {
 // --- ACTIONS ---
 export const downloadInvoice = async (req, res) => {
   try {
-    const businessId = req.businessId || req.user.businessId;
+    const businessId = req.business._id;
     const invoice = await Invoice.findOne({ 
       _id: req.params.id, 
       business: businessId 
@@ -185,22 +185,27 @@ export const downloadInvoice = async (req, res) => {
     
     if (!invoice) return res.status(404).json({ message: "Invoice not found" });
 
-    // Fetch Business instead of Venue
     const business = await Business.findById(businessId);
-    // Note: Model schema for InvoiceSettings uses 'businessId' field, query updated to match
-    const settings = await InvoiceSettings.findOne({ businessId: businessId });
+    const settings = await InvoiceSettings.findOne({ business: businessId });
 
+    // Generate PDF Buffer
     const pdfBuffer = await generateInvoicePDF(invoice, business, req.query.language, settings);
 
-    res.set({
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename=${invoice.invoiceNumber}.pdf`,
-      "Content-Length": pdfBuffer.length
+    // Send Raw Buffer
+    // We use writeHead/end to bypass any global middleware that might mess with the body
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${invoice.invoiceNumber}.pdf"`,
+      'Content-Length': pdfBuffer.length
     });
-    res.send(pdfBuffer);
+    
+    res.end(pdfBuffer); 
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "PDF Generation Failed" });
+    console.error("PDF Download Error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ message: "PDF Generation Failed" });
+    }
   }
 };
 
