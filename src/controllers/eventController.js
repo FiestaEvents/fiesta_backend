@@ -7,16 +7,39 @@ import { Event, Client, Partner, Supply } from "../models/index.js";
 // 1. HELPER FUNCTIONS
 // ==========================================
 
+/**
+ * Safely extract the Business ID string from a request object,
+ * handling both populated objects and raw IDs.
+ */
+const getBusinessIdString = (req) => {
+  // Check req.businessId (set by middleware) or req.user.businessId
+  const source = req.businessId || req.user?.businessId;
+
+  if (!source) return null;
+
+  // If it's an object with an _id property (populated), return _id
+  if (typeof source === "object" && source._id) {
+    return source._id.toString();
+  }
+
+  // Otherwise assume it's already an ID
+  return source.toString();
+};
+
 // Helper: Fetch Supply Costs & Charges
 const processEventSupplies = async (suppliesInput, businessId) => {
-  if (!suppliesInput || !Array.isArray(suppliesInput) || suppliesInput.length === 0) {
+  if (
+    !suppliesInput ||
+    !Array.isArray(suppliesInput) ||
+    suppliesInput.length === 0
+  ) {
     return [];
   }
 
   const supplyIds = suppliesInput.map((s) => s.supply);
   const dbSupplies = await Supply.find({
     _id: { $in: supplyIds },
-    businessId: businessId, 
+    businessId: businessId,
   }).populate("categoryId", "name");
 
   return suppliesInput
@@ -38,8 +61,11 @@ const processEventSupplies = async (suppliesInput, businessId) => {
       return {
         supply: dbItem._id,
         supplyName: dbItem.name,
-        supplyCategory: dbItem.categoryId ? dbItem.categoryId.name : "Uncategorized",
-        quantityRequested: Number(reqItem.quantityRequested) || Number(reqItem.quantity) || 1,
+        supplyCategory: dbItem.categoryId
+          ? dbItem.categoryId.name
+          : "Uncategorized",
+        quantityRequested:
+          Number(reqItem.quantityRequested) || Number(reqItem.quantity) || 1,
         quantityAllocated: 0,
         costPerUnit: Number(dbItem.costPerUnit) || 0,
         chargePerUnit: Number(finalCharge),
@@ -53,23 +79,40 @@ const processEventSupplies = async (suppliesInput, businessId) => {
 
 // Helper: Fetch Partner Services
 const processEventPartners = async (partnersInput, businessId) => {
-  if (!partnersInput || !Array.isArray(partnersInput) || partnersInput.length === 0) return [];
+  if (
+    !partnersInput ||
+    !Array.isArray(partnersInput) ||
+    partnersInput.length === 0
+  )
+    return [];
 
   const partnerIds = partnersInput.map((p) => p.partner);
-  const dbPartners = await Partner.find({ _id: { $in: partnerIds }, businessId });
+  const dbPartners = await Partner.find({
+    _id: { $in: partnerIds },
+    businessId,
+  });
 
   const processedServices = [];
   partnersInput.forEach((reqPartner) => {
-    const fullPartner = dbPartners.find((p) => p._id.toString() === reqPartner.partner.toString());
+    const fullPartner = dbPartners.find(
+      (p) => p._id.toString() === reqPartner.partner.toString()
+    );
     if (fullPartner) {
       let price = 0;
-      const name = `${fullPartner.name} (${reqPartner.service || fullPartner.category})`;
+      const name = `${fullPartner.name} (${
+        reqPartner.service || fullPartner.category
+      })`;
       if (fullPartner.priceType === "hourly") {
         price = (Number(reqPartner.hours) || 1) * (fullPartner.hourlyRate || 0);
       } else {
         price = Number(reqPartner.cost) || fullPartner.fixedRate || 0;
       }
-      processedServices.push({ name, price, partnerId: fullPartner._id, type: "partner_service" });
+      processedServices.push({
+        name,
+        price,
+        partnerId: fullPartner._id,
+        type: "partner_service",
+      });
     }
   });
   return processedServices;
@@ -77,24 +120,24 @@ const processEventPartners = async (partnersInput, businessId) => {
 
 // Helper: Force Calculation
 const calculateTotals = (event) => {
-  // 1. Base Price
   const basePrice = event.pricing?.basePrice || 0;
 
-  // 2. Services (Partners + Extras)
-  const servicesTotal = event.pricing?.additionalServices?.reduce((sum, s) => sum + (s.price || 0), 0) || 0;
+  const servicesTotal =
+    event.pricing?.additionalServices?.reduce(
+      (sum, s) => sum + (s.price || 0),
+      0
+    ) || 0;
 
-  // 3. Supplies
-  const suppliesTotal = event.supplies?.reduce((sum, s) => {
-    if (s.pricingType === "chargeable") {
-      return sum + (s.quantityRequested * s.chargePerUnit);
-    }
-    return sum;
-  }, 0) || 0;
+  const suppliesTotal =
+    event.supplies?.reduce((sum, s) => {
+      if (s.pricingType === "chargeable") {
+        return sum + s.quantityRequested * s.chargePerUnit;
+      }
+      return sum;
+    }, 0) || 0;
 
-  // 4. Subtotal
   const subtotal = basePrice + servicesTotal + suppliesTotal;
 
-  // 5. Discount
   let discountAmount = 0;
   if (event.pricing?.discountType === "percent") {
     discountAmount = subtotal * ((event.pricing.discountAmount || 0) / 100);
@@ -102,18 +145,14 @@ const calculateTotals = (event) => {
     discountAmount = event.pricing?.discountAmount || 0;
   }
 
-  // 6. Tax
   const taxableAmount = Math.max(0, subtotal - discountAmount);
   const taxAmount = taxableAmount * ((event.pricing?.taxRate || 0) / 100);
-
-  // 7. Final Total
   const total = taxableAmount + taxAmount;
 
-  // Update the Event Object directly
   if (!event.pricing) event.pricing = {};
   event.pricing.totalPriceBeforeTax = subtotal;
   event.pricing.totalPriceAfterTax = total;
-  
+
   return event;
 };
 
@@ -139,8 +178,9 @@ export const getEvents = asyncHandler(async (req, res) => {
     includeArchived = false,
   } = req.query;
 
-  // ARCHITECTURE UPDATE: Use businessId
-  const businessId = req.businessId || req.user.businessId;
+  const businessId = getBusinessIdString(req);
+  if (!businessId) throw new ApiError("User not linked to business", 403);
+
   const query = { businessId };
 
   if (status) query.status = status;
@@ -167,8 +207,7 @@ export const getEvents = asyncHandler(async (req, res) => {
     Event.find(query)
       .populate("clientId", "name email phone")
       .populate("createdBy", "name email")
-      // Renamed from venueSpaceId to resourceId
-      .populate("resourceId", "name type capacity") 
+      .populate("resourceId", "name type capacity")
       .populate("partners.partner", "name category company phone")
       .sort({ startDate: -1 })
       .skip(skip)
@@ -194,7 +233,8 @@ export const getEvents = asyncHandler(async (req, res) => {
  */
 export const getEventsByClient = asyncHandler(async (req, res) => {
   const { clientId } = req.params;
-  const businessId = req.businessId || req.user.businessId;
+  const businessId = getBusinessIdString(req);
+
   const {
     page = 1,
     limit = 50,
@@ -206,7 +246,7 @@ export const getEventsByClient = asyncHandler(async (req, res) => {
 
   const query = {
     clientId: clientId,
-    businessId, 
+    businessId,
   };
 
   if (status) query.status = status;
@@ -228,7 +268,6 @@ export const getEventsByClient = asyncHandler(async (req, res) => {
     Event.countDocuments(query),
   ]);
 
-  // Statistics Aggregation
   const statsQuery = { ...query, isArchived: { $ne: true } };
   const stats = await Event.aggregate([
     { $match: statsQuery },
@@ -244,30 +283,30 @@ export const getEventsByClient = asyncHandler(async (req, res) => {
               {
                 $and: [
                   { $gt: ["$startDate", new Date()] },
-                  { $ne: ["$status", "cancelled"] }
-                ]
+                  { $ne: ["$status", "cancelled"] },
+                ],
               },
               1,
-              0
-            ]
-          }
-        }
-      }
-    }
+              0,
+            ],
+          },
+        },
+      },
+    },
   ]);
 
   const clientStats = stats[0] || {
     totalEvents: 0,
     totalRevenue: 0,
     totalPaid: 0,
-    upcomingEvents: 0
+    upcomingEvents: 0,
   };
 
   new ApiResponse({
     events,
     stats: {
       ...clientStats,
-      pendingAmount: clientStats.totalRevenue - clientStats.totalPaid
+      pendingAmount: clientStats.totalRevenue - clientStats.totalPaid,
     },
     pagination: {
       page: parseInt(page),
@@ -284,19 +323,20 @@ export const getEventsByClient = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getEvent = asyncHandler(async (req, res) => {
-  const businessId = req.businessId || req.user.businessId;
+  const businessId = getBusinessIdString(req);
   const event = await Event.findOne({
     _id: req.params.id,
-    businessId, 
+    businessId,
   })
     .populate("clientId")
-    .populate("resourceId") // Updated
+    .populate("resourceId")
     .populate("partners.partner", "name email phone category company")
     .populate("paymentInfo.transactions")
     .populate("createdBy", "name email")
     .populate({
       path: "supplies.supply",
-      select: "name unit currentStock minimumStock categoryId costPerUnit chargePerUnit pricingType",
+      select:
+        "name unit currentStock minimumStock categoryId costPerUnit chargePerUnit pricingType",
       populate: {
         path: "categoryId",
         select: "name nameAr nameFr color icon",
@@ -316,37 +356,38 @@ export const getEvent = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const createEvent = asyncHandler(async (req, res) => {
-  const businessId = req.businessId || req.user.businessId;
-  
-  const eventData = { 
-    ...req.body, 
-    businessId: businessId, 
+  const businessId = getBusinessIdString(req);
+  if (!businessId) throw new ApiError("User not linked to business", 403);
+
+  const eventData = {
+    ...req.body,
+    businessId: businessId,
     createdBy: req.user._id,
-    // Ensure we handle legacy frontend sending venueSpaceId
-    resourceId: req.body.resourceId || req.body.venueSpaceId 
+    resourceId: req.body.resourceId || req.body.venueSpaceId,
   };
 
-  // Validate Client ownership
   const client = await Client.findOne({ _id: eventData.clientId, businessId });
   if (!client) throw new ApiError("Client not found", 404);
 
-  // Process Supplies
   if (eventData.supplies?.length > 0) {
-    eventData.supplies = await processEventSupplies(eventData.supplies, businessId);
+    eventData.supplies = await processEventSupplies(
+      eventData.supplies,
+      businessId
+    );
   }
 
-  // Process Partners
   if (eventData.partners?.length > 0) {
     if (!eventData.pricing) eventData.pricing = {};
-    if (!eventData.pricing.additionalServices) eventData.pricing.additionalServices = [];
-    const partnerServices = await processEventPartners(eventData.partners, businessId);
+    if (!eventData.pricing.additionalServices)
+      eventData.pricing.additionalServices = [];
+    const partnerServices = await processEventPartners(
+      eventData.partners,
+      businessId
+    );
     eventData.pricing.additionalServices.push(...partnerServices);
   }
 
-  // Create Instance
   const event = new Event(eventData);
-
-  // 🛑 FORCE CALCULATION BEFORE SAVE
   calculateTotals(event);
 
   try {
@@ -354,7 +395,10 @@ export const createEvent = asyncHandler(async (req, res) => {
     await event.populate([{ path: "clientId" }, { path: "resourceId" }]);
     new ApiResponse({ event }, "Event created successfully", 201).send(res);
   } catch (error) {
-    if (error.message.includes("conflict") || error.message.includes("End time")) {
+    if (
+      error.message.includes("conflict") ||
+      error.message.includes("End time")
+    ) {
       throw new ApiError(error.message, 400);
     }
     throw error;
@@ -369,38 +413,59 @@ export const createEvent = asyncHandler(async (req, res) => {
 export const updateEvent = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const updateData = req.body;
-  const businessId = req.businessId || req.user.businessId;
+
+  // ✅ FIX: Use Robust Helper
+  const userBizIdStr = getBusinessIdString(req);
+
+  if (!userBizIdStr) {
+    console.error("❌ CRITICAL: User has no Business ID attached.");
+    throw new ApiError("User context invalid", 401);
+  }
 
   let event = await Event.findById(id);
   if (!event) throw new ApiError("Event not found", 404);
-  
-  if (event.businessId.toString() !== businessId.toString()) {
-    throw new ApiError("Not authorized", 403);
+
+  const eventBizIdStr = event.businessId?.toString();
+
+  if (eventBizIdStr !== userBizIdStr) {
+    console.log(
+      `⚠️ Tenant Mismatch! Event: ${eventBizIdStr} vs User: ${userBizIdStr}`
+    );
+    throw new ApiError("Not authorized to update this event", 403);
   }
 
   // 1. Client Update
-  if (updateData.clientId && updateData.clientId !== event.clientId.toString()) {
+  if (
+    updateData.clientId &&
+    updateData.clientId !== event.clientId?.toString()
+  ) {
     event.clientId = updateData.clientId;
   }
 
   // 2. Supplies Update
   if (updateData.supplies) {
-    event.supplies = await processEventSupplies(updateData.supplies, businessId);
+    event.supplies = await processEventSupplies(
+      updateData.supplies,
+      userBizIdStr
+    );
   }
 
   // 3. Partners Update
   if (updateData.partners) {
-    const partnerServices = await processEventPartners(updateData.partners, businessId);
+    const partnerServices = await processEventPartners(
+      updateData.partners,
+      userBizIdStr
+    );
     if (!event.pricing) event.pricing = {};
-    const manualServices = (event.pricing.additionalServices || []).filter(s => s.type !== "partner_service");
+    const manualServices = (event.pricing.additionalServices || []).filter(
+      (s) => s.type !== "partner_service"
+    );
     event.pricing.additionalServices = [...manualServices, ...partnerServices];
     event.partners = updateData.partners;
   }
 
   // 4. Basic Fields & Mapping
   const exclude = ["partners", "supplies", "pricing"];
-  
-  // Map legacy venueSpaceId to resourceId if present
   if (updateData.venueSpaceId) updateData.resourceId = updateData.venueSpaceId;
 
   Object.keys(updateData).forEach((key) => {
@@ -410,16 +475,18 @@ export const updateEvent = asyncHandler(async (req, res) => {
   // 5. Pricing
   if (updateData.pricing) {
     if (!event.pricing) event.pricing = {};
-    if (updateData.pricing.basePrice !== undefined) event.pricing.basePrice = updateData.pricing.basePrice;
-    if (updateData.pricing.discountAmount !== undefined) event.pricing.discountAmount = updateData.pricing.discountAmount;
-    if (updateData.pricing.taxRate !== undefined) event.pricing.taxRate = updateData.pricing.taxRate;
-    
+    if (updateData.pricing.basePrice !== undefined)
+      event.pricing.basePrice = updateData.pricing.basePrice;
+    if (updateData.pricing.discountAmount !== undefined)
+      event.pricing.discountAmount = updateData.pricing.discountAmount;
+    if (updateData.pricing.taxRate !== undefined)
+      event.pricing.taxRate = updateData.pricing.taxRate;
+
     if (updateData.pricing.additionalServices && !updateData.partners) {
       event.pricing.additionalServices = updateData.pricing.additionalServices;
     }
   }
 
-  // 🛑 FORCE CALCULATION BEFORE SAVE
   calculateTotals(event);
 
   try {
@@ -437,13 +504,13 @@ export const updateEvent = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const archiveEvent = asyncHandler(async (req, res) => {
-  const businessId = req.businessId || req.user.businessId;
+  const businessId = getBusinessIdString(req);
   const event = await Event.findOneAndUpdate(
     { _id: req.params.id, businessId },
-    { 
-      isArchived: true, 
+    {
+      isArchived: true,
       archivedAt: new Date(),
-      archivedBy: req.user._id 
+      archivedBy: req.user._id,
     },
     { new: true }
   );
@@ -459,7 +526,7 @@ export const archiveEvent = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const restoreEvent = asyncHandler(async (req, res) => {
-  const businessId = req.businessId || req.user.businessId;
+  const businessId = getBusinessIdString(req);
   const event = await Event.findOneAndUpdate(
     { _id: req.params.id, businessId },
     { isArchived: false, archivedAt: null },
@@ -477,10 +544,26 @@ export const restoreEvent = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getEventStats = asyncHandler(async (req, res) => {
-  const businessId = req.businessId || req.user.businessId;
+  const businessId = getBusinessIdString(req);
+  if (!businessId) throw new ApiError("User context invalid", 403);
+
+  // Note: Aggregation pipeline needs explicit ObjectID if we want to match exact types
+  // But usually strings work if mongoose handles casting. For safety, ensure businessId is passed correctly.
+
+  // Since we have the ID string, we might need to cast it for aggregation if it was stored as ObjectId
+  // But usually businessId in Schema is ObjectId.
+  // We can use mongoose.Types.ObjectId(businessId) inside match if needed.
+  // For now, let's assume standard behavior.
 
   const stats = await Event.aggregate([
-    { $match: { businessId, isArchived: { $ne: true } } },
+    {
+      $match: {
+        businessId: {
+          $eq: new (require("mongoose").Types.ObjectId)(businessId),
+        },
+        isArchived: { $ne: true },
+      },
+    },
     {
       $group: {
         _id: "$status",
@@ -491,7 +574,14 @@ export const getEventStats = asyncHandler(async (req, res) => {
   ]);
 
   const typeStats = await Event.aggregate([
-    { $match: { businessId, isArchived: { $ne: true } } },
+    {
+      $match: {
+        businessId: {
+          $eq: new (require("mongoose").Types.ObjectId)(businessId),
+        },
+        isArchived: { $ne: true },
+      },
+    },
     {
       $group: {
         _id: "$type",
@@ -500,16 +590,16 @@ export const getEventStats = asyncHandler(async (req, res) => {
     },
   ]);
 
-  const totalEvents = await Event.countDocuments({ 
-    businessId, 
-    isArchived: { $ne: true } 
+  const totalEvents = await Event.countDocuments({
+    businessId,
+    isArchived: { $ne: true },
   });
 
   const upcomingEvents = await Event.countDocuments({
     businessId,
     isArchived: { $ne: true },
     startDate: { $gte: new Date() },
-    status: { $in: ["pending", "confirmed"] }
+    status: { $in: ["pending", "confirmed"] },
   });
 
   new ApiResponse({
@@ -517,18 +607,18 @@ export const getEventStats = asyncHandler(async (req, res) => {
     typeStats,
     summary: {
       totalEvents,
-      upcomingEvents
-    }
+      upcomingEvents,
+    },
   }).send(res);
 });
 
 /**
- * @desc    Allocate supplies to event from inventory
+ * @desc    Allocate supplies to event
  * @route   POST /api/events/:id/supplies/allocate
  * @access  Private
  */
 export const allocateEventSupplies = asyncHandler(async (req, res) => {
-  const businessId = req.businessId || req.user.businessId;
+  const businessId = getBusinessIdString(req);
   const event = await Event.findOne({
     _id: req.params.id,
     businessId,
@@ -540,7 +630,8 @@ export const allocateEventSupplies = asyncHandler(async (req, res) => {
     (s) => s.status === "allocated" || s.status === "delivered"
   );
 
-  if (hasAllocated) throw new ApiError("Supplies already allocated to this event", 400);
+  if (hasAllocated)
+    throw new ApiError("Supplies already allocated to this event", 400);
 
   try {
     await event.allocateSupplies(req.user._id);
@@ -562,7 +653,7 @@ export const allocateEventSupplies = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const returnEventSupplies = asyncHandler(async (req, res) => {
-  const businessId = req.businessId || req.user.businessId;
+  const businessId = getBusinessIdString(req);
   const event = await Event.findOne({
     _id: req.params.id,
     businessId,
@@ -593,7 +684,7 @@ export const returnEventSupplies = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const markSuppliesDelivered = asyncHandler(async (req, res) => {
-  const businessId = req.businessId || req.user.businessId;
+  const businessId = getBusinessIdString(req);
   const event = await Event.findOne({
     _id: req.params.id,
     businessId,
@@ -603,7 +694,8 @@ export const markSuppliesDelivered = asyncHandler(async (req, res) => {
 
   const hasAllocated = event.supplies?.some((s) => s.status === "allocated");
 
-  if (!hasAllocated) throw new ApiError("No allocated supplies to mark as delivered", 400);
+  if (!hasAllocated)
+    throw new ApiError("No allocated supplies to mark as delivered", 400);
 
   try {
     await event.markSuppliesDelivered(req.user._id);
@@ -614,6 +706,9 @@ export const markSuppliesDelivered = asyncHandler(async (req, res) => {
       data: event,
     });
   } catch (error) {
-    throw new ApiError(error.message || "Failed to mark supplies as delivered", 400);
+    throw new ApiError(
+      error.message || "Failed to mark supplies as delivered",
+      400
+    );
   }
 });

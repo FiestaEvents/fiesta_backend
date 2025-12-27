@@ -125,11 +125,12 @@ export const getEventValidator = [
 ];
 
 export const listEventsValidator = [
-  query("page").optional().isInt({ min: 1 }),
-  query("limit").optional().isInt({ min: 1, max: 100 }),
-  query("status").optional().isIn(["pending", "confirmed", "in-progress", "completed", "cancelled"]),
-  query("type").optional().trim(),
+ query("page").optional().isInt({ min: 1 }).toInt(),
+  query("limit").optional().isInt({ min: 1, max: 2000 }).toInt(), 
+  query("status").optional().isIn(["pending", "confirmed", "completed", "cancelled", "all"]),
+  query("type").optional(),
   query("clientId").optional().isMongoId(),
-  query("startDate").optional().isISO8601(),
-  query("endDate").optional().isISO8601(),
+  query("startDate").optional().isISO8601().toDate(),
+  query("endDate").optional().isISO8601().toDate(),
+  query("search").optional().trim(),
 ];

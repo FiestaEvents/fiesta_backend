@@ -1,3 +1,4 @@
+//src/middleware/checkPermission
 import mongoose from "mongoose";
 import asyncHandler from "./asyncHandler.js";
 import ApiError from "../utils/ApiError.js";

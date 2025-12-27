@@ -31,7 +31,7 @@ router.use("/tasks", taskRoutes);
 router.use("/reminders", reminderRoutes);
 router.use("/roles", roleRoutes);
 router.use("/team", teamRoutes);
-router.use("/Business", businessRoutes);
+router.use("/business", businessRoutes);
 router.use("/upload", uploadRoutes);
 router.use("/users", userRoutes);
 router.use("/invoices", invoiceRoutes);
