@@ -20,28 +20,13 @@ import {
   ContractSettings,
   Supply,
   SupplyCategory,
+  Portfolio,
 } from "../models/index.js";
 
 dotenv.config();
 
 // =========================================================
-// UTILITY FUNCTIONS
-// =========================================================
-
-const generateRandomDate = (start, end) => {
-  return new Date(
-    start.getTime() + Math.random() * (end.getTime() - start.getTime())
-  );
-};
-
-const generateFutureDate = (daysFromNow) => {
-  const date = new Date();
-  date.setDate(date.getDate() + daysFromNow);
-  return date;
-};
-
-// =========================================================
-// CONNECT TO DATABASE
+// 1. HELPERS
 // =========================================================
 
 const connectDB = async () => {
@@ -54,551 +39,536 @@ const connectDB = async () => {
   }
 };
 
+const getRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const randomInt = (min, max) =>
+  Math.floor(Math.random() * (max - min + 1)) + min;
+
+const futureDate = (days) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d;
+};
+
+const pastDate = (days) => {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d;
+};
+
 // =========================================================
-// CLEAR DATABASE
+// 2. CLEAR DB
 // =========================================================
 
 const clearDatabase = async () => {
   console.log("\n🗑️  Clearing database...");
-
   const models = [
-    User, Business, Role, Permission, Client, Partner, Event,
-    Payment, Finance, Task, Reminder, Space, Invoice,
-    InvoiceSettings, Contract, ContractSettings, Supply, SupplyCategory,
+    User,
+    Business,
+    Role,
+    Permission,
+    Client,
+    Partner,
+    Event,
+    Payment,
+    Finance,
+    Task,
+    Reminder,
+    Space,
+    Invoice,
+    InvoiceSettings,
+    Contract,
+    ContractSettings,
+    Supply,
+    SupplyCategory,
+    Portfolio,
   ];
 
   for (const model of models) {
     if (model) await model.deleteMany({});
   }
-
   console.log("✅ Database cleared");
 };
 
 // =========================================================
-// 1. PERMISSIONS
+// 3. SEED PERMISSIONS
 // =========================================================
 
 const seedPermissions = async () => {
   console.log("\n📋 Seeding permissions...");
-
-  const standardModules = [
-    "events", "clients", "partners", "supplies", "finance",
-    "payments", "invoices", "contracts", "tasks", "reminders",
-    "users", "roles", "business", "portfolio"
+  const modules = [
+    "events",
+    "clients",
+    "partners",
+    "supplies",
+    "finance",
+    "payments",
+    "invoices",
+    "contracts",
+    "tasks",
+    "reminders",
+    "users",
+    "roles",
+    "business",
+    "portfolio",
   ];
 
-  let permissionsList = [];
-
-  standardModules.forEach((module) => {
-    const capitalized = module.charAt(0).toUpperCase() + module.slice(1);
-    permissionsList.push(
-      { name: `${module}.create`, displayName: `Create ${capitalized}`, module, action: "create", scope: "all" },
-      { name: `${module}.read.all`, displayName: `View All ${capitalized}`, module, action: "read", scope: "all" },
-      { name: `${module}.update.all`, displayName: `Edit All ${capitalized}`, module, action: "update", scope: "all" },
-      { name: `${module}.delete.all`, displayName: `Delete ${capitalized}`, module, action: "delete", scope: "all" }
+  let list = [];
+  modules.forEach((mod) => {
+    const Cap = mod.charAt(0).toUpperCase() + mod.slice(1);
+    list.push(
+      {
+        name: `${mod}.create`,
+        displayName: `Create ${Cap}`,
+        module: mod,
+        action: "create",
+        scope: "all",
+      },
+      {
+        name: `${mod}.read.all`,
+        displayName: `Read All ${Cap}`,
+        module: mod,
+        action: "read",
+        scope: "all",
+      },
+      {
+        name: `${mod}.update.all`,
+        displayName: `Update All ${Cap}`,
+        module: mod,
+        action: "update",
+        scope: "all",
+      },
+      {
+        name: `${mod}.delete.all`,
+        displayName: `Delete ${Cap}`,
+        module: mod,
+        action: "delete",
+        scope: "all",
+      }
     );
   });
 
-  const extraPermissions = [
-    { name: "events.read.own", displayName: "View Own Events", module: "events", action: "read", scope: "own" },
-    { name: "events.update.own", displayName: "Edit Own Events", module: "events", action: "update", scope: "own" },
-    { name: "tasks.read.own", displayName: "View Own Tasks", module: "tasks", action: "read", scope: "own" },
-    { name: "tasks.update.own", displayName: "Edit Own Tasks", module: "tasks", action: "update", scope: "own" },
-    { name: "reminders.read.own", displayName: "View Own Reminders", module: "reminders", action: "read", scope: "own" },
-    { name: "reminders.update.own", displayName: "Edit Own Reminders", module: "reminders", action: "update", scope: "own" },
-    { name: "settings.read", displayName: "View Global Settings", module: "settings", action: "read", scope: "all" },
-  ];
+  // Extras
+  list.push(
+    {
+      name: "settings.read",
+      displayName: "Read Settings",
+      module: "settings",
+      action: "read",
+      scope: "all",
+    },
+    {
+      name: "events.read.own",
+      displayName: "Read Own Events",
+      module: "events",
+      action: "read",
+      scope: "own",
+    },
+    {
+      name: "events.update.own",
+      displayName: "Update Own Events",
+      module: "events",
+      action: "update",
+      scope: "own",
+    }
+  );
 
-  permissionsList = [...permissionsList, ...extraPermissions];
-  const createdPermissions = await Permission.insertMany(permissionsList);
-  console.log(`✅ Created ${createdPermissions.length} permissions`);
-  return createdPermissions;
+  await Permission.insertMany(list);
+  return await Permission.find({});
 };
 
 // =========================================================
-// 2. BUSINESSES
+// 4. CONFIG
 // =========================================================
 
-// Accepts a pre-generated ownerId to satisfy validation
-const seedBusinesses = async (ownerId) => {
-  console.log("\n🏛️  Seeding businesses...");
-
-  const businesses = await Business.create([
-    {
-      name: "Grand Palace Events",
-      category: "venue",
-      owner: ownerId, // ✅ Validation Fix: Pass the ID here
-      description: "Luxurious event venue in the heart of Tunis",
-      address: {
-        street: "Avenue Habib Bourguiba",
-        city: "Tunis",
-        state: "Tunis",
-        zipCode: "1000",
-        country: "Tunisia",
-      },
-      contact: { phone: "71123456", email: "contact@grandpalace.tn" },
-      venueDetails: {
+const CATEGORY_CONFIG = {
+  venue: {
+    resources: [
+      {
+        name: "Grand Ballroom",
+        type: "room",
         capacity: { min: 50, max: 500 },
-        amenities: ["Wifi", "Parking", "Catering Kitchen"],
-        pricing: { basePrice: 5000 },
-        operatingHours: {
-          monday: { open: "09:00", close: "23:00", closed: false },
-          sunday: { open: "10:00", close: "22:00", closed: false },
-        },
+        basePrice: 5000,
       },
-      subscription: {
-        plan: "pro", // ✅ Validation Fix: Changed from 'annual' to 'pro'
-        status: "active",
-        startDate: new Date("2024-01-01"),
-        endDate: new Date("2025-12-31"),
+      {
+        name: "Garden Terrace",
+        type: "room",
+        capacity: { min: 20, max: 150 },
+        basePrice: 2500,
       },
-      isActive: true,
-    },
-  ]);
-
-  console.log(`✅ Created ${businesses.length} businesses`);
-  return businesses;
+    ],
+    eventTitles: [
+      "Wedding Reception",
+      "Corporate Gala",
+      "Tech Conference",
+      "Summer Party",
+    ],
+    supplies: ["Chairs", "Tables", "Napkins", "Glassware"],
+  },
+  driver: {
+    resources: [
+      {
+        name: "Mercedes S-Class",
+        type: "vehicle",
+        capacity: { min: 1, max: 4 },
+        basePrice: 400,
+      },
+      {
+        name: "V-Class Van",
+        type: "vehicle",
+        capacity: { min: 1, max: 7 },
+        basePrice: 600,
+      },
+    ],
+    eventTitles: [
+      "Airport Transfer",
+      "Wedding Shuttle",
+      "VIP City Tour",
+      "Delegation Transport",
+    ],
+    supplies: ["Water Bottles", "Fuel Card"],
+  },
+  photography: {
+    resources: [],
+    eventTitles: [
+      "Wedding Shoot",
+      "Product Catalog",
+      "Family Portrait",
+      "Fashion Editorial",
+    ],
+    supplies: ["SD Cards", "Batteries"],
+  },
+  catering: {
+    resources: [],
+    eventTitles: [
+      "Wedding Buffet",
+      "Corporate Lunch",
+      "Private Dinner",
+      "Cocktail Hour",
+    ],
+    supplies: ["Flour", "Sugar", "Spices", "Packaging"],
+  },
 };
 
 // =========================================================
-// 3. ROLES
+// 5. TENANT BUILDER
 // =========================================================
 
-const seedRoles = async (business, permissions) => {
-  console.log("\n👥 Seeding roles...");
+const seedTenant = async (config, permissions) => {
+  console.log(
+    `\n🏗️  Building Tenant: ${config.businessName} (${config.category})...`
+  );
 
-  const allPermissionIds = permissions.map((p) => p._id);
+  const ownerId = new mongoose.Types.ObjectId();
+  const businessId = new mongoose.Types.ObjectId();
+  const tenantData = CATEGORY_CONFIG[config.category];
 
-  const roles = await Role.create([
-    {
-      name: "Owner",
-      description: "Full access to all features",
-      businessId: business._id,
-      isSystemRole: true,
-      permissions: allPermissionIds,
-      level: 100,
+  // A. Business
+  await Business.create({
+    _id: businessId,
+    name: config.businessName,
+    category: config.category,
+    owner: ownerId,
+    description: `Premium ${config.category} services.`,
+    address: {
+      street: "123 Main St",
+      city: "Tunis",
+      country: "Tunisia",
+      zipCode: "1000",
     },
+    contact: { phone: "71000000", email: config.email },
+    subscription: { plan: "pro", status: "active", startDate: new Date() },
+    venueDetails:
+      config.category === "venue"
+        ? { capacity: { min: 10, max: 1000 } }
+        : undefined,
+    serviceDetails:
+      config.category !== "venue"
+        ? { serviceRadiusKM: 50, pricingModel: "fixed" }
+        : undefined,
+  });
+
+  // Settings
+  await InvoiceSettings.getOrCreate(businessId);
+  await ContractSettings.getOrCreate(businessId);
+
+  // B. Roles
+  const permIds = permissions.map((p) => p._id);
+  const ownerRole = await Role.create({
+    name: "Owner",
+    businessId,
+    isSystemRole: true,
+    level: 100,
+    permissions: permIds,
+  });
+  const managerRole = await Role.create({
+    name: "Manager",
+    businessId,
+    isSystemRole: true,
+    level: 75,
+    permissions: permIds,
+  });
+  const staffRole = await Role.create({
+    name: "Staff",
+    businessId,
+    isSystemRole: true,
+    level: 50,
+    permissions: [],
+  });
+
+  // C. Users (✅ FIXED: Use loop + create to trigger password hashing)
+  const usersData = [
     {
-      name: "Manager",
-      description: "Can manage operations, finance, and staff",
-      businessId: business._id,
-      isSystemRole: true,
-      permissions: allPermissionIds.slice(0, 20),
-      level: 75,
-    },
-    {
-      name: "Staff",
-      description: "Can view schedules and manage tasks",
-      businessId: business._id,
-      isSystemRole: true,
-      permissions: [],
-      level: 50,
-    },
-  ]);
-
-  console.log(`✅ Created ${roles.length} roles`);
-  return roles;
-};
-
-// =========================================================
-// 4. USERS
-// =========================================================
-
-const seedUsers = async (business, roles, ownerId) => {
-  console.log("\n👤 Seeding users...");
-
-  const ownerRole = roles.find((r) => r.name === "Owner");
-  const managerRole = roles.find((r) => r.name === "Manager");
-  const staffRole = roles.find((r) => r.name === "Staff");
-
-  const users = await User.create([
-    {
-      _id: ownerId, // ✅ Use the pre-generated ID to match the Business owner field
-      name: "Ahmed Slayem",
-      email: "owner@demo.com",
+      _id: ownerId,
+      name: config.userName,
+      email: config.email,
       password: "password123",
-      phone: "98123456",
       roleId: ownerRole._id,
       roleType: "owner",
-      businessId: business._id,
+      businessId,
       isActive: true,
     },
     {
-      name: "Fatima Ben Ali",
-      email: "manager@demo.com",
+      name: "Manager User",
+      email: `manager.${config.category}@demo.com`,
       password: "password123",
-      phone: "98234567",
       roleId: managerRole._id,
       roleType: "manager",
-      businessId: business._id,
+      businessId,
       isActive: true,
     },
     {
-      name: "Mohamed Trabelsi",
-      email: "staff@demo.com",
+      name: "Staff User",
+      email: `staff.${config.category}@demo.com`,
       password: "password123",
-      phone: "98345678",
       roleId: staffRole._id,
       roleType: "staff",
-      businessId: business._id,
+      businessId,
       isActive: true,
-    },
-  ]);
-
-  console.log(`✅ Created ${users.length} users`);
-  return users;
-};
-
-// =========================================================
-// 5. SPACES
-// =========================================================
-
-const seedSpaces = async (business, owner) => {
-  console.log("\n🏢 Seeding spaces...");
-
-  const spaces = await Space.create([
-    {
-      name: "Grand Ballroom",
-      type: "room",
-      description: "Our largest and most elegant space",
-      capacity: { min: 100, max: 500 },
-      basePrice: 8000,
-      businessId: business._id,
-      owner: owner._id,
-      isActive: true,
-    },
-    {
-      name: "Garden Terrace",
-      type: "room",
-      description: "Beautiful outdoor space",
-      capacity: { min: 50, max: 200 },
-      basePrice: 5000,
-      businessId: business._id,
-      owner: owner._id,
-      isActive: true,
-    },
-  ]);
-
-  // Update business venueDetails
-  business.venueDetails.spaces = spaces.map(s => s._id);
-  await business.save();
-
-  console.log(`✅ Created ${spaces.length} spaces`);
-  return spaces;
-};
-
-// =========================================================
-// 6. CLIENTS
-// =========================================================
-
-const seedClients = async (business, createdBy) => {
-  console.log("\n👥 Seeding clients...");
-
-  const clients = await Client.create([
-    {
-      name: "Sarah & Karim Wedding",
-      email: "sarah.karim@email.com",
-      phone: "98111222",
-      businessId: business._id,
-      status: "active",
-      tags: ["wedding", "vip"],
-      createdBy: createdBy._id,
-    },
-    {
-      name: "TechCorp Tunisia",
-      email: "events@techcorp.tn",
-      phone: "71333444",
-      businessId: business._id,
-      status: "active",
-      company: "TechCorp Tunisia",
-      tags: ["corporate", "recurring"],
-      createdBy: createdBy._id,
-    },
-  ]);
-
-  console.log(`✅ Created ${clients.length} clients`);
-  return clients;
-};
-
-// =========================================================
-// 7. PARTNERS
-// =========================================================
-
-const seedPartners = async (business, createdBy) => {
-  console.log("\n🤝 Seeding partners...");
-
-  const partners = await Partner.create([
-    {
-      name: "Elite Catering Services",
-      email: "contact@elitecatering.tn",
-      phone: "71123456",
-      businessId: business._id,
-      category: "catering",
-      status: "active",
-      createdBy: createdBy._id,
-    },
-    {
-      name: "Studio Lumière",
-      email: "booking@studiolumiere.tn",
-      phone: "98222333",
-      businessId: business._id,
-      category: "photography",
-      status: "active",
-      createdBy: createdBy._id,
-    },
-  ]);
-
-  console.log(`✅ Created ${partners.length} partners`);
-  return partners;
-};
-
-// =========================================================
-// 8. SUPPLIES
-// =========================================================
-
-const seedSupplies = async (business, createdBy) => {
-  console.log("\n📦 Seeding supplies...");
-
-  const categories = await SupplyCategory.initializeDefaults(
-    business._id,
-    createdBy._id
-  );
-  const bevCat = categories.find((c) => c.name === "Beverages") || categories[0];
-
-  const supplies = await Supply.create([
-    {
-      name: "Mineral Water (1.5L)",
-      categoryId: bevCat._id,
-      unit: "bottle",
-      currentStock: 200,
-      costPerUnit: 1.2,
-      pricingType: "included",
-      businessId: business._id,
-      createdBy: createdBy._id,
-    },
-    {
-      name: "Banquet Chairs",
-      categoryId: categories.find((c) => c.name === "Equipment")?._id || categories[0]._id,
-      unit: "piece",
-      currentStock: 300,
-      costPerUnit: 0,
-      pricingType: "included",
-      businessId: business._id,
-      createdBy: createdBy._id,
-    },
-  ]);
-
-  console.log(`✅ Created ${supplies.length} supplies`);
-  return { supplies };
-};
-
-// =========================================================
-// 9. EVENTS
-// =========================================================
-
-const seedEvents = async (business, spaces, clients, partners, supplies, createdBy) => {
-  console.log("\n🎉 Seeding events...");
-
-  const events = await Event.create([
-    {
-      title: "Sarah & Karim Wedding Reception",
-      type: "wedding",
-      status: "confirmed",
-      clientId: clients[0]._id,
-      businessId: business._id,
-      resourceId: spaces[0]._id,
-      startDate: generateFutureDate(45),
-      endDate: generateFutureDate(45),
-      startTime: "18:00",
-      endTime: "23:30",
-      guestCount: 350,
-      pricing: { basePrice: 8000, taxRate: 19 },
-      createdBy: createdBy._id,
-    },
-    {
-      title: "TechCorp Annual Gala 2025",
-      type: "corporate",
-      status: "confirmed",
-      clientId: clients[1]._id,
-      businessId: business._id,
-      resourceId: spaces[0]._id,
-      startDate: generateFutureDate(90),
-      endDate: generateFutureDate(90),
-      startTime: "19:00",
-      endTime: "23:00",
-      guestCount: 250,
-      pricing: { basePrice: 8000, taxRate: 19 },
-      createdBy: createdBy._id,
-    },
-  ]);
-
-  console.log(`✅ Created ${events.length} events`);
-  return events;
-};
-
-// =========================================================
-// 10. FINANCIALS & CONTRACTS
-// =========================================================
-
-const seedFinancialsAndContracts = async (business, events, clients, createdBy) => {
-  console.log("\n💰 Seeding financials and contracts...");
-
-  // 1. INVOICES
-  await InvoiceSettings.getOrCreate(business._id);
-  
-  await Invoice.create({
-    business: business._id,
-    invoiceType: "client",
-    status: "sent",
-    client: clients[0]._id,
-    event: events[0]._id,
-    recipientName: "Sarah & Karim",
-    recipientPhone: "98111222",
-    issueDate: new Date(),
-    dueDate: generateFutureDate(30),
-    items: [{ description: "Venue Rental", quantity: 1, rate: 8000, amount: 8000 }],
-    subtotal: 8000,
-    taxAmount: 1520,
-    totalAmount: 9520,
-    createdBy: createdBy._id,
-  });
-
-  // 2. CONTRACTS
-  await ContractSettings.getOrCreate(business._id);
-  
-  const contractData = [
-    {
-      title: "Contrat de Location - Mariage Sarah & Karim",
-      contractType: "client",
-      status: "sent",
-      version: 1,
-      business: business._id,
-      event: events[0]._id,
-      createdBy: createdBy._id,
-      party: { 
-        type: "individual", 
-        name: "Sarah & Karim",
-        phone: "98111222",
-        identifier: "CIN12345678",
-        address: "15 Rue de Carthage, Tunis 1000, Tunisia"
-      },
-      logistics: {
-        startDate: events[0].startDate,
-        endDate: events[0].endDate,
-        checkInTime: "16:00",
-        checkOutTime: "00:00"
-      },
-      financials: {
-        currency: "TND",
-        amountHT: 8000,
-        vatRate: 19,
-        taxAmount: 1520,
-        stampDuty: 1.0,
-        totalTTC: 9520,
-      },
-      paymentTerms: {
-        depositAmount: 5000,
-        securityDeposit: 1000,
-        dueDate: generateFutureDate(30),
-        isWithholdingTaxApplicable: false,
-      },
-      legal: {
-        cancellationPolicy: "standard",
-        jurisdiction: "Tribunal de Tunis",
-        specialConditions: "Client agrees to vacate premises by midnight.",
-      },
     },
   ];
 
-  for (const data of contractData) {
-    await Contract.create(data);
+  const users = [];
+  for (const u of usersData) {
+    // ✅ This triggers the pre-save hook (bcrypt hash)
+    const user = await User.create(u);
+    users.push(user);
   }
 
-  // 3. PAYMENTS
-  await Payment.create({
-    event: events[0]._id,
-    client: clients[0]._id,
-    type: "income",
-    amount: 5000,
-    method: "bank_transfer",
-    status: "completed",
-    description: "Deposit",
-    businessId: business._id,
-    processedBy: createdBy._id,
-  });
+  // D. Resources
+  const createdResources = [];
+  for (const res of tenantData.resources) {
+    const space = await Space.create({
+      ...res,
+      businessId,
+      owner: ownerId,
+      isActive: true,
+    });
+    createdResources.push(space);
+  }
 
-  // 4. TASKS
-  await Task.create({
-    title: "Finalize menu",
-    status: "pending",
-    priority: "high",
-    dueDate: generateFutureDate(30),
-    assignedTo: createdBy._id,
-    businessId: business._id,
-    createdBy: createdBy._id,
-  });
+  // E. Clients & Partners
+  const clients = await Client.insertMany([
+    {
+      name: "Client One",
+      email: `c1.${config.category}@test.com`,
+      phone: "20000001",
+      businessId,
+      status: "active",
+      createdBy: ownerId,
+    },
+    {
+      name: "Client Two",
+      email: `c2.${config.category}@test.com`,
+      phone: "20000002",
+      businessId,
+      status: "active",
+      createdBy: ownerId,
+    },
+    {
+      name: "Client Three",
+      email: `c3.${config.category}@test.com`,
+      phone: "20000003",
+      businessId,
+      status: "active",
+      createdBy: ownerId,
+    },
+  ]);
 
-  // 5. REMINDERS
-  const targetDate = generateFutureDate(20);
-  await Reminder.create({
-    title: "Send final invoice",
-    description: "Ensure the final invoice is sent to the client 10 days before the event",
-    type: "payment",
-    priority: "high",
-    reminderDate: targetDate, 
-    reminderTime: "09:00", 
-    status: "active",
-    businessId: business._id,
-    createdBy: createdBy._id,
-    assignedTo: [createdBy._id]
-  });
+  const partners = await Partner.insertMany([
+    {
+      name: "Vendor A",
+      category: "other",
+      email: `v1.${config.category}@test.com`,
+      phone: "50000001",
+      businessId,
+      createdBy: ownerId,
+    },
+  ]);
 
-  console.log("✅ Financials & Contracts Seeded");
+  // F. Inventory
+  const cat = await SupplyCategory.create({
+    name: "General",
+    businessId,
+    createdBy: ownerId,
+  });
+  for (const itemName of tenantData.supplies) {
+    await Supply.create({
+      name: itemName,
+      categoryId: cat._id,
+      unit: "unit",
+      currentStock: randomInt(10, 100),
+      costPerUnit: randomInt(5, 50),
+      businessId,
+      createdBy: ownerId,
+    });
+  }
+
+  // G. Portfolio
+  if (config.category === "photography" || config.category === "videography") {
+    await Portfolio.create({
+      title: "Summer Wedding Highlights",
+      category: "Wedding",
+      description: "Best shots from 2024 season",
+      items: [
+        {
+          url: "https://via.placeholder.com/800x600",
+          type: "image",
+          isCover: true,
+        },
+      ],
+      businessId,
+      createdBy: ownerId,
+    });
+  }
+
+  // H. Events & Financials
+  for (let i = 0; i < 12; i++) {
+    const isPast = i < 5;
+    const date = isPast ? pastDate(i * 5 + 2) : futureDate(i * 3 + 2);
+    const status = isPast ? "completed" : "confirmed";
+    const client = getRandom(clients);
+    const resource =
+      createdResources.length > 0 ? getRandom(createdResources) : null;
+    const title = `${getRandom(tenantData.eventTitles)} - ${client.name}`;
+    const price = resource ? resource.basePrice + 500 : 1500;
+
+    const event = await Event.create({
+      title,
+      type: "wedding",
+      status,
+      clientId: client._id,
+      businessId,
+      resourceId: resource ? resource._id : undefined,
+      startDate: date,
+      endDate: date,
+      startTime: "14:00",
+      endTime: "23:00",
+      guestCount: 100,
+      pricing: {
+        basePrice: price,
+        taxRate: 19,
+        totalPriceAfterTax: price * 1.19,
+      },
+      paymentInfo: {
+        status: isPast ? "paid" : "unpaid",
+        paidAmount: isPast ? price * 1.19 : 0,
+      },
+      createdBy: ownerId,
+    });
+
+    await Invoice.create({
+      business: businessId,
+      invoiceType: "client",
+      status: isPast ? "paid" : "sent",
+      client: client._id,
+      event: event._id,
+      recipientName: client.name,
+      issueDate: date,
+      dueDate: futureDate(15),
+      items: [
+        { description: "Service Fee", quantity: 1, rate: price, amount: price },
+      ],
+      subtotal: price,
+      totalAmount: price * 1.19,
+      createdBy: ownerId,
+    });
+
+    if (isPast) {
+      await Payment.create({
+        event: event._id,
+        client: client._id,
+        type: "income",
+        amount: price * 1.19,
+        method: "bank_transfer",
+        status: "completed",
+        description: `Payment for ${title}`,
+        businessId,
+        processedBy: ownerId,
+        createdAt: date,
+      });
+    }
+  }
+
+  console.log(`✅ ${config.businessName} seeded.`);
 };
 
 // =========================================================
-// MAIN EXECUTION
+// 6. EXECUTION
 // =========================================================
 
 const seedDatabase = async () => {
   try {
-    console.log("\n🌱 Starting database seed...\n");
-    console.log("═".repeat(60));
-
     await connectDB();
     await clearDatabase();
 
-    // 1. Generate IDs for core entities upfront to resolve circular dependency
-    const ownerId = new mongoose.Types.ObjectId();
-
     const permissions = await seedPermissions();
-    const businesses = await seedBusinesses(ownerId); // Pass ownerId
-    const roles = await seedRoles(businesses[0], permissions);
-    const users = await seedUsers(businesses[0], roles, ownerId); // Pass ownerId
 
-    const owner = users[0];
-    const spaces = await seedSpaces(businesses[0], owner);
-    const clients = await seedClients(businesses[0], owner);
-    const partners = await seedPartners(businesses[0], owner);
-    const { supplies } = await seedSupplies(businesses[0], owner);
-
-    const events = await seedEvents(
-      businesses[0],
-      spaces,
-      clients,
-      partners,
-      supplies,
-      owner
+    await seedTenant(
+      {
+        category: "venue",
+        businessName: "Grand Palace",
+        email: "venue@demo.com",
+        userName: "Venue Owner",
+      },
+      permissions
+    );
+    await seedTenant(
+      {
+        category: "photography",
+        businessName: "Lumiere Studio",
+        email: "photo@demo.com",
+        userName: "Photo Owner",
+      },
+      permissions
+    );
+    await seedTenant(
+      {
+        category: "driver",
+        businessName: "Elite Transport",
+        email: "driver@demo.com",
+        userName: "Driver Owner",
+      },
+      permissions
+    );
+    await seedTenant(
+      {
+        category: "catering",
+        businessName: "Tasty Bites",
+        email: "chef@demo.com",
+        userName: "Chef Owner",
+      },
+      permissions
     );
 
-    await seedFinancialsAndContracts(businesses[0], events, clients, owner);
-
-    console.log("\n" + "═".repeat(60));
-    console.log("\n✅ DATABASE SEEDED SUCCESSFULLY!\n");
-    console.log("   Owner:   owner@demo.com / password123");
-    console.log("   Manager: manager@demo.com / password123");
-    console.log("   Staff:   staff@demo.com / password123");
-    console.log("\n" + "═".repeat(60) + "\n");
+    console.log("\n=======================================================");
+    console.log("🎉  DATABASE SEEDED SUCCESSFULLY");
+    console.log("=======================================================");
+    console.log("Login with (Password: password123):");
+    console.log(" - venue@demo.com");
+    console.log(" - photo@demo.com");
+    console.log(" - driver@demo.com");
+    console.log(" - chef@demo.com");
+    console.log("=======================================================\n");
 
     process.exit(0);
   } catch (error) {

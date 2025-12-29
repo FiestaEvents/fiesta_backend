@@ -19,6 +19,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@faker-js/faker": "^10.1.0",
     "agenda": "^5.0.0",
     "axios": "^1.13.2",
     "bcryptjs": "^2.4.3",

@@ -1,55 +1,32 @@
-// scripts/force-sync-data.js
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import { User, Event, Client, Business } from "../src/models/index.js"; 
 
 dotenv.config();
 
-const forceSync = async () => {
+const fixSupplyIndex = async () => {
   try {
-    console.log("🔌 Connecting to DB...");
+    console.log("🔌 Connecting to MongoDB...");
     await mongoose.connect(process.env.MONGODB_URI);
+    const db = mongoose.connection.db;
 
-    // 1. Find your specific user (CHANGE THIS EMAIL if necessary)
-    const email = "ahmed@test.com"; 
+    console.log("🧹 Checking SupplyCategory collection indexes...");
+    const collection = db.collection("supplycategories"); // Note: Mongoose pluralizes & lowercases
     
-    const user = await User.findOne({ email });
+    const indexes = await collection.indexes();
+    const oldIndex = indexes.find(i => i.name === "venueId_1_name_1");
 
-    if (!user) {
-      console.log(`❌ User with email ${email} not found.`);
-      process.exit(1);
+    if (oldIndex) {
+      console.log("🗑️ Found conflicting index: 'venueId_1_name_1'. Dropping it...");
+      await collection.dropIndex("venueId_1_name_1");
+      console.log("✅ Index dropped.");
+    } else {
+      console.log("👍 No conflicting 'venueId' index found.");
     }
 
-    if (!user.businessId) {
-      console.log("❌ User has no businessId linked. Run the user fix script first.");
-      process.exit(1);
-    }
+    // Optional: Clean up null fields
+    await collection.updateMany({ venueId: null }, { $unset: { venueId: "" } });
 
-    const businessId = user.businessId;
-    console.log(`👤 User Found: ${user.name}`);
-    console.log(`🎯 Target Business ID: ${businessId}`);
-
-    // 2. FORCE UPDATE: Move ALL events to this business
-    // (⚠️ Warning: This takes ownership of EVERYTHING in the DB. Safe for local dev.)
-    const eventResult = await Event.updateMany(
-      {}, // No filter = Apply to ALL events
-      { $set: { businessId: businessId } }
-    );
-    console.log(`✅ Moved ${eventResult.modifiedCount} events to your business.`);
-
-    // 3. FORCE UPDATE: Move ALL clients
-    const clientResult = await Client.updateMany(
-      {},
-      { $set: { businessId: businessId } }
-    );
-    console.log(`✅ Moved ${clientResult.modifiedCount} clients to your business.`);
-
-    // 4. Ensure the Business is Active
-    await Business.findByIdAndUpdate(businessId, {
-        $set: { isActive: true }
-    });
-
-    console.log("🎉 Data sync complete.");
+    console.log("🎉 Done.");
     process.exit(0);
   } catch (error) {
     console.error("❌ Error:", error);
@@ -57,4 +34,4 @@ const forceSync = async () => {
   }
 };
 
-forceSync();
+fixSupplyIndex();
