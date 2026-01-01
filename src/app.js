@@ -32,8 +32,7 @@ app.use(
     origin: [
       config.frontend.url,      
       "http://localhost:3000",  
-      "http://localhost:5173",
-      "https://fiesta.events"   
+      "https://app.fiesta.events"   
     ],
     credentials: true, 
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],

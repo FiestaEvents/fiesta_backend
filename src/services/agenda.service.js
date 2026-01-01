@@ -1,7 +1,7 @@
-//src/services/agenda.service.js
 import Agenda from 'agenda';
 import mongoose from 'mongoose';
-import Reminder from '../models/Reminder.js';
+import { Reminder, Notification, User } from '../models/index.js';
+import config from '../config/env.js';
 
 class AgendaService {
   constructor() {
@@ -10,216 +10,155 @@ class AgendaService {
 
   async initialize() {
     try {
-      // Create Agenda instance
       this.agenda = new Agenda({
         mongo: mongoose.connection.db,
         db: { collection: 'agendaJobs' },
-        defaultConcurrency: 5,
         processEvery: '30 seconds',
-        maxConcurrency: 20,
       });
 
-      // Define job handlers
       this.defineJobs();
 
-      // Start Agenda
       await this.agenda.start();
       console.log('✅ Agenda scheduler initialized');
 
-      // Schedule existing reminders on startup
-      await this.scheduleExistingReminders();
-
+      // Optional: Reschedule on server restart
+      // await this.scheduleExistingReminders(); 
     } catch (error) {
       console.error('❌ Failed to initialize Agenda:', error);
-      throw error;
     }
   }
 
   defineJobs() {
-    // Define reminder notification job
+    // ============================================================
+    // JOB: SEND REMINDER
+    // ============================================================
     this.agenda.define('send-reminder-notification', async (job) => {
       const { reminderId } = job.attrs.data;
       
       try {
         const reminder = await Reminder.findById(reminderId)
-          .populate('assignedTo', 'email firstName lastName')
+          .populate('assignedTo', '_id') // We need IDs to create notifications
           .populate('relatedEvent', 'title')
           .populate('relatedClient', 'name');
         
-        if (!reminder) {
-          console.log(`Reminder ${reminderId} not found, cancelling job`);
-          return;
-        }
+        if (!reminder) return; // Reminder deleted
 
-        // Check if reminder should still be sent
+        // 1. Validate State
         if (reminder.isArchived || reminder.status === 'completed' || reminder.dismissed) {
-          console.log(`Reminder ${reminderId} is no longer active, cancelling job`);
-          return;
+          return; // Don't notify
         }
 
-        await this.sendNotification(reminder);
-        
-        // Mark as sent (optional - you could update a field)
-        await Reminder.findByIdAndUpdate(reminderId, {
-          $set: { lastNotifiedAt: new Date() }
-        });
+        // 2. Identify Recipients
+        // If assignedTo is empty, notify the creator? Or Business Admins?
+        // For now, assuming assignedTo has users.
+        const recipients = reminder.assignedTo.map(u => u._id);
 
+        if (recipients.length === 0 && reminder.createdBy) {
+           recipients.push(reminder.createdBy);
+        }
+
+        // 3. Create Persistent Notifications (One per user)
+        const notificationsToCreate = recipients.map(userId => ({
+          recipient: userId,
+          businessId: reminder.businessId,
+          type: 'reminder',
+          title: `Reminder: ${reminder.title}`,
+          message: reminder.description || `Upcoming ${reminder.type}`,
+          data: {
+            entityId: reminder._id,
+            entityType: 'Reminder',
+            link: `/reminders/${reminder._id}`
+          },
+          isRead: false
+        }));
+
+        // Bulk insert notifications
+        if (notificationsToCreate.length > 0) {
+          await Notification.insertMany(notificationsToCreate);
+        }
+
+        // 4. Send Real-time Socket Event
+        // We emit to the Business Room (Room = businessId)
+        // The Frontend filters if the alert is for "me" or shows generic alerts
+        if (global.io) {
+          global.io.to(reminder.businessId.toString()).emit("reminder:alert", {
+             id: reminder._id,
+             title: reminder.title,
+             description: reminder.description,
+             type: reminder.type,
+             assignedTo: recipients, // Frontend checks if current user ID is in this array
+             priority: reminder.priority
+          });
+        }
+        
       } catch (error) {
         console.error(`Error processing reminder ${reminderId}:`, error);
       }
     });
 
-    // Define cleanup job for old notifications
+    // Cleanup Job
     this.agenda.define('cleanup-old-jobs', async () => {
-      const twoDaysAgo = new Date();
-      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-      
-      await this.agenda.cancel({
-        name: 'send-reminder-notification',
-        nextRunAt: { $lt: twoDaysAgo }
-      });
+      const date = new Date();
+      date.setDate(date.getDate() - 3);
+      await this.agenda.cancel({ nextRunAt: { $lt: date } });
     });
   }
 
+  // ============================================================
+  // PUBLIC METHODS CALLED BY CONTROLLER
+  // ============================================================
+
   async scheduleReminder(reminder) {
-    try {
-      // Calculate when to send the reminder
-      const reminderDateTime = this.getReminderDateTime(reminder);
-      
-      if (reminderDateTime < new Date()) {
-        console.log(`Reminder ${reminder._id} is in the past, scheduling for immediate execution`);
-        
-        // Schedule immediately for overdue reminders
-        await this.agenda.schedule('now', 'send-reminder-notification', {
-          reminderId: reminder._id,
-          venueId: reminder.venueId
-        });
-      } else {
-        // Schedule for future time
-        await this.agenda.schedule(reminderDateTime, 'send-reminder-notification', {
-          reminderId: reminder._id,
-          venueId: reminder.venueId
-        });
-        
-        console.log(`📅 Scheduled reminder ${reminder._id} for ${reminderDateTime}`);
-      }
-    } catch (error) {
-      console.error(`Failed to schedule reminder ${reminder._id}:`, error);
-      throw error;
-    }
+    // 1. Calculate time
+    const scheduleTime = this.getReminderDateTime(reminder);
+    const now = new Date();
+
+    // 2. Logic: If time is past, run "now", else run at time
+    const runAt = scheduleTime < now ? 'now' : scheduleTime;
+
+    // 3. Define payload
+    const jobData = {
+      reminderId: reminder._id,
+      businessId: reminder.businessId // Save context
+    };
+
+    // 4. Schedule
+    await this.agenda.schedule(runAt, 'send-reminder-notification', jobData);
+    console.log(`⏰ Scheduled reminder ${reminder.title} for ${runAt}`);
   }
 
   async updateReminderSchedule(reminder) {
-    try {
-      // Cancel existing jobs for this reminder
-      await this.cancelReminderJobs(reminder._id);
-      
-      // Only schedule if reminder is active
-      if (!reminder.isArchived && 
-          reminder.status === 'active' && 
-          !reminder.dismissed) {
-        await this.scheduleReminder(reminder);
-      }
-    } catch (error) {
-      console.error(`Failed to update schedule for reminder ${reminder._id}:`, error);
-      throw error;
+    // 1. Cancel old jobs for this ID
+    await this.cancelReminderJobs(reminder._id);
+
+    // 2. Re-schedule if valid
+    if (!reminder.isArchived && reminder.status === 'active' && !reminder.dismissed) {
+      await this.scheduleReminder(reminder);
     }
   }
 
   async cancelReminderJobs(reminderId) {
     await this.agenda.cancel({
       name: 'send-reminder-notification',
-      'data.reminderId': reminderId
+      'data.reminderId': reminderId // Mongoose ID or String depending on how saved
     });
   }
 
-  async scheduleExistingReminders() {
-    try {
-      console.log('📋 Scheduling existing reminders...');
-      
-      // Find all active, non-archived, non-dismissed reminders
-      const activeReminders = await Reminder.find({
-        status: 'active',
-        isArchived: false,
-        dismissed: false
-      });
-
-      console.log(`Found ${activeReminders.length} active reminders to schedule`);
-
-      // Schedule each reminder
-      for (const reminder of activeReminders) {
-        try {
-          await this.scheduleReminder(reminder);
-        } catch (error) {
-          console.error(`Failed to schedule reminder ${reminder._id}:`, error);
-        }
-      }
-
-      // Schedule cleanup job (runs daily at 3 AM)
-      await this.agenda.every('0 3 * * *', 'cleanup-old-jobs');
-
-      console.log('✅ All existing reminders scheduled');
-    } catch (error) {
-      console.error('Failed to schedule existing reminders:', error);
-    }
-  }
-
+  // Helper
   getReminderDateTime(reminder) {
-    // Combine reminderDate (Date) and reminderTime (String "HH:mm")
-    const date = new Date(reminder.reminderDate);
-    const [hours, minutes] = reminder.reminderTime.split(':').map(Number);
+    // reminderDate is Date (00:00:00), reminderTime is String ("14:30")
+    // We need to merge them carefully regarding Timezone (usually assume server local or UTC)
     
-    date.setHours(hours, minutes, 0, 0);
-    return date;
-  }
-
-  async sendNotification(reminder) {
-    try {
-      // Option A: Socket.io (Real-time Popup)
-      global.io.to(reminder.venueId.toString()).emit("reminder-notification", {
-        type: 'reminder',
-        data: reminder,
-        title: reminder.title,
-        description: reminder.description,
-        time: new Date().toISOString()
-      });
-      
-      // Option B: Console Log
-      console.log(`\n🚀 SENDING REMINDER NOTIFICATION:
-        REMINDER ID: ${reminder._id}
-        TITLE: ${reminder.title}
-        TYPE: ${reminder.type}
-        ASSIGNED TO: ${reminder.assignedTo?.map(u => u.email).join(", ") || 'No one'}
-        TIME: ${new Date().toLocaleString()}
-      `);
-
-      // Option C: Add your email/push notification logic here
-      // await this.sendEmailNotification(reminder);
-      // await this.sendPushNotification(reminder);
-
-    } catch (error) {
-      console.error(`Failed to send notification for reminder ${reminder._id}:`, error);
-      throw error;
-    }
-  }
-
-  async sendEmailNotification(reminder) {
-    // Implement your email sending logic here
-    // Example:
-    // const emailService = require('./email.service');
-    // const users = reminder.assignedTo || [];
-    // for (const user of users) {
-    //   await emailService.sendReminderEmail(user.email, reminder);
-    // }
+    // Simplest approach: Parse strings
+    const dateStr = new Date(reminder.reminderDate).toISOString().split('T')[0]; // "2023-10-25"
+    const timeStr = reminder.reminderTime; // "14:30"
+    
+    return new Date(`${dateStr}T${timeStr}:00`); 
   }
 
   async stop() {
-    if (this.agenda) {
-      await this.agenda.stop();
-      console.log('🛑 Agenda scheduler stopped');
-    }
+    if (this.agenda) await this.agenda.stop();
   }
 }
 
-// Create singleton instance
 export const agendaService = new AgendaService();

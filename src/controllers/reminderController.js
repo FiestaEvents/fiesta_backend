@@ -2,7 +2,7 @@ import asyncHandler from "../middleware/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import { Reminder } from "../models/index.js";
 import { agendaService } from "../services/agenda.service.js";
-// import { logger } from "../utils/logger.js"; // Optional logging
+import { logger } from "../utils/logger.js";
 
 // ==========================================
 // @desc    Get reminders with filters and pagination

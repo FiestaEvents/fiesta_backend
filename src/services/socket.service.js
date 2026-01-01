@@ -1,117 +1,87 @@
 import { Server } from "socket.io";
+import jwt from "jsonwebtoken"; // Needed for auth
 import config from "../config/env.js";
 import { logger } from "../utils/logger.js";
+import { User } from "../models/index.js"; // Import User model
 
-/**
- * Initialize and configure Socket.io
- */
+let io;
+
 export function initializeSocketIO(httpServer) {
-  // Create Socket.io server
-  const io = new Server(httpServer, {
+  io = new Server(httpServer, {
     cors: {
-      // ✅ FIX: Use a function to dynamically allow origins
-      origin: (requestOrigin, callback) => {
-        const allowedOrigins = [
-          config.frontend?.url,
-          "http://localhost:3000",
-          "http://localhost:5173", // Vite default
-          "http://127.0.0.1:5173",
-          "http://127.0.0.1:3000",
-        ].filter(Boolean); // Remove null/undefined
-
-        // Allow requests with no origin (like Postman or server-to-server)
-        if (!requestOrigin) return callback(null, true);
-
-        // Check exact match
-        if (allowedOrigins.includes(requestOrigin)) {
-          return callback(null, true);
-        }
-
-        // Check Regex for Localhost (Development only)
-        if (
-          config.env === "development" ||
-          process.env.NODE_ENV === "development"
-        ) {
-          const isLocalhost =
-            /^http:\/\/localhost:\d+$/.test(requestOrigin) ||
-            /^http:\/\/127\.0\.0\.1:\d+$/.test(requestOrigin);
-          if (isLocalhost) {
-            return callback(null, true);
-          }
-        }
-
-        console.warn(`⚠️ Socket CORS blocked origin: ${requestOrigin}`);
-        return callback(new Error("Not allowed by CORS"));
-      },
-      methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+      origin: [
+        config.frontend.url,
+        "http://localhost:3000",
+        "http://app.fiesta.events",
+      ],
       credentials: true,
-      allowedHeaders: ["Content-Type", "Authorization"],
     },
-    // ✅ Optimization: Allow both for stability
     transports: ["polling", "websocket"],
-    pingTimeout: 60000,
-    pingInterval: 25000,
   });
 
-  // Socket.io middleware for authentication
+  // 🔒 MIDDLEWARE: Authenticate & Attach Context
   io.use(async (socket, next) => {
     try {
-      // Placeholder: If you send token in auth object
-      // const token = socket.handshake.auth?.token;
-      // if (token) { ... verify ... }
+      // 1. Get Token (Handshake auth or cookies)
+      let token = socket.handshake.auth?.token;
+      
+      // Fallback: Check cookies string if token not in auth object
+      if (!token && socket.handshake.headers.cookie) {
+        const cookies = socket.handshake.headers.cookie.split(';').reduce((acc, cookie) => {
+          const [key, value] = cookie.trim().split('=');
+          acc[key] = value;
+          return acc;
+        }, {});
+        token = cookies.jwt;
+      }
+
+      if (!token) return next(new Error("Authentication error: No token"));
+
+      // 2. Verify Token
+      const decoded = jwt.verify(token, config.jwt.secret);
+      
+      // 3. Fetch User (Lightweight)
+      const user = await User.findById(decoded.id).select("businessId name roleType");
+      
+      if (!user) return next(new Error("User not found"));
+
+      // 4. Attach to socket session
+      socket.user = user;
+      socket.businessId = user.businessId?.toString();
+      
       next();
     } catch (error) {
-      logger.warn("Socket authentication failed:", error.message);
-      next(new Error("Authentication error"));
+      next(new Error("Authentication failed"));
     }
   });
 
-  // Socket connection handling
   io.on("connection", (socket) => {
-    logger.debug("⚡ Client connected via Socket:", {
-      socketId: socket.id,
-      origin: socket.handshake.headers.origin,
-    });
+    logger.info(`⚡ Socket connected: ${socket.user.name} (${socket.id})`);
 
-    // Handle room joining
-    socket.on("join_room", (room) => {
-      socket.join(room);
-      logger.debug(`👤 Socket ${socket.id} joined room: ${room}`);
-    });
+    // ✅ CRITICAL: Join Business Room
+    // This allows us to emit to io.to(businessId) later
+    if (socket.businessId) {
+      socket.join(socket.businessId);
+      logger.debug(`👤 User joined room: ${socket.businessId}`);
+    }
 
-    // Handle room leaving
-    socket.on("leave_room", (room) => {
-      socket.leave(room);
-      logger.debug(`👤 Socket ${socket.id} left room: ${room}`);
-    });
+    // Handle manual joins
+    socket.on("join_room", (room) => socket.join(room));
 
-    // Custom events
-    socket.on("ping", (data) => {
-      socket.emit("pong", { timestamp: Date.now(), ...data });
-    });
-
-    // Error handling
-    socket.on("error", (error) => {
-      logger.error("Socket error:", {
-        socketId: socket.id,
-        error: error.message,
-      });
-    });
-
-    // Disconnection handling
-    socket.on("disconnect", (reason) => {
-      // Don't log "transport close" or "ping timeout" as errors, they are normal
-      if (reason !== "transport close" && reason !== "ping timeout") {
-        logger.debug("❌ Client disconnected:", {
-          socketId: socket.id,
-          reason,
-        });
-      }
+    socket.on("disconnect", () => {
+      // cleanup if needed
     });
   });
 
-  // Make io available globally for other services
+  // Assign to global for Agenda service
   global.io = io;
-
   return io;
 }
+
+// Export a helper to get IO instance anywhere
+export const getIO = () => {
+  if (!io) {
+    throw new Error("Socket.io not initialized!");
+  }
+  return io;
+};

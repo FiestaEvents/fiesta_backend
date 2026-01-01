@@ -20,6 +20,7 @@ import Supply from "./Supply.js";
 import SupplyCategory from "./SupplyCategory.js";
 import ActivityLog from "./ActivityLog.js";
 import Portfolio from "./Portfolio.js";
+import Notification from "./Notification.js";
 export {
   User,
   Business,
@@ -42,4 +43,5 @@ export {
   SupplyCategory,
   ActivityLog,
   Portfolio,
+  Notification,
 };

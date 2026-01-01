@@ -20,7 +20,7 @@ import {
   ContractSettings,
   Supply,
   SupplyCategory,
-  Portfolio,
+  Portfolio, 
 } from "../models/index.js";
 
 dotenv.config();
@@ -109,6 +109,7 @@ const seedPermissions = async () => {
     "users",
     "roles",
     "business",
+    "resources",
     "portfolio",
   ];
 
@@ -167,6 +168,13 @@ const seedPermissions = async () => {
       name: "events.update.own",
       displayName: "Update Own Events",
       module: "events",
+      action: "update",
+      scope: "own",
+    },
+     {
+      name: "reminders.update.own",
+      displayName: "Update Own Reminders",
+      module: "reminders",
       action: "update",
       scope: "own",
     }
@@ -277,13 +285,15 @@ const seedTenant = async (config, permissions) => {
     },
     contact: { phone: "71000000", email: config.email },
     subscription: { plan: "pro", status: "active", startDate: new Date() },
+    
+    // Polymorphic Fields
     venueDetails:
       config.category === "venue"
-        ? { capacity: { min: 10, max: 1000 } }
+        ? { capacity: { min: 10, max: 1000 }, amenities: ["Wifi", "Parking"] }
         : undefined,
     serviceDetails:
       config.category !== "venue"
-        ? { serviceRadiusKM: 50, pricingModel: "fixed" }
+        ? { serviceRadiusKM: 50, pricingModel: "fixed", travelFee: 50 }
         : undefined,
   });
 
@@ -312,10 +322,11 @@ const seedTenant = async (config, permissions) => {
     businessId,
     isSystemRole: true,
     level: 50,
-    permissions: [],
+    permissions: [], // In real app, filter read-only perms
   });
 
-  // C. Users (✅ FIXED: Use loop + create to trigger password hashing)
+  // C. Users
+  // Note: We use .create in loop to trigger middleware hashing
   const usersData = [
     {
       _id: ownerId,
@@ -326,6 +337,7 @@ const seedTenant = async (config, permissions) => {
       roleType: "owner",
       businessId,
       isActive: true,
+      phone: "20123456"
     },
     {
       name: "Manager User",
@@ -335,6 +347,7 @@ const seedTenant = async (config, permissions) => {
       roleType: "manager",
       businessId,
       isActive: true,
+      phone: "20123457"
     },
     {
       name: "Staff User",
@@ -344,17 +357,17 @@ const seedTenant = async (config, permissions) => {
       roleType: "staff",
       businessId,
       isActive: true,
+      phone: "20123458"
     },
   ];
 
   const users = [];
   for (const u of usersData) {
-    // ✅ This triggers the pre-save hook (bcrypt hash)
     const user = await User.create(u);
     users.push(user);
   }
 
-  // D. Resources
+  // D. Resources (Spaces)
   const createdResources = [];
   for (const res of tenantData.resources) {
     const space = await Space.create({
@@ -362,6 +375,7 @@ const seedTenant = async (config, permissions) => {
       businessId,
       owner: ownerId,
       isActive: true,
+      description: `Premium ${res.type} for rent`,
     });
     createdResources.push(space);
   }
@@ -394,7 +408,7 @@ const seedTenant = async (config, permissions) => {
     },
   ]);
 
-  const partners = await Partner.insertMany([
+  await Partner.insertMany([
     {
       name: "Vendor A",
       category: "other",
@@ -411,6 +425,7 @@ const seedTenant = async (config, permissions) => {
     businessId,
     createdBy: ownerId,
   });
+  
   for (const itemName of tenantData.supplies) {
     await Supply.create({
       name: itemName,
@@ -423,23 +438,8 @@ const seedTenant = async (config, permissions) => {
     });
   }
 
-  // G. Portfolio
-  if (config.category === "photography" || config.category === "videography") {
-    await Portfolio.create({
-      title: "Summer Wedding Highlights",
-      category: "Wedding",
-      description: "Best shots from 2024 season",
-      items: [
-        {
-          url: "https://via.placeholder.com/800x600",
-          type: "image",
-          isCover: true,
-        },
-      ],
-      businessId,
-      createdBy: ownerId,
-    });
-  }
+  // G. Portfolio (Optional)
+  // if (Portfolio && (config.category === "photography" || config.category === "videography")) { ... }
 
   // H. Events & Financials
   for (let i = 0; i < 12; i++) {
@@ -447,14 +447,14 @@ const seedTenant = async (config, permissions) => {
     const date = isPast ? pastDate(i * 5 + 2) : futureDate(i * 3 + 2);
     const status = isPast ? "completed" : "confirmed";
     const client = getRandom(clients);
-    const resource =
-      createdResources.length > 0 ? getRandom(createdResources) : null;
+    const resource = createdResources.length > 0 ? getRandom(createdResources) : null;
     const title = `${getRandom(tenantData.eventTitles)} - ${client.name}`;
     const price = resource ? resource.basePrice + 500 : 1500;
 
+    // Create Event
     const event = await Event.create({
       title,
-      type: "wedding",
+      type: "wedding", // simplified
       status,
       clientId: client._id,
       businessId,
@@ -467,6 +467,7 @@ const seedTenant = async (config, permissions) => {
       pricing: {
         basePrice: price,
         taxRate: 19,
+        totalPriceBeforeTax: price,
         totalPriceAfterTax: price * 1.19,
       },
       paymentInfo: {
@@ -476,6 +477,7 @@ const seedTenant = async (config, permissions) => {
       createdBy: ownerId,
     });
 
+    // Create Invoice
     await Invoice.create({
       business: businessId,
       invoiceType: "client",
@@ -483,6 +485,7 @@ const seedTenant = async (config, permissions) => {
       client: client._id,
       event: event._id,
       recipientName: client.name,
+      recipientEmail: client.email,
       issueDate: date,
       dueDate: futureDate(15),
       items: [
@@ -493,6 +496,7 @@ const seedTenant = async (config, permissions) => {
       createdBy: ownerId,
     });
 
+    // Create Payment (Only for past events)
     if (isPast) {
       await Payment.create({
         event: event._id,
@@ -505,7 +509,44 @@ const seedTenant = async (config, permissions) => {
         businessId,
         processedBy: ownerId,
         createdAt: date,
+        paidDate: date
       });
+      
+      // Also create a Finance record for reporting
+      await Finance.create({
+         type: "income",
+         category: "event_revenue",
+         description: `Revenue from ${title}`,
+         amount: price * 1.19,
+         date: date,
+         businessId,
+         relatedEvent: event._id,
+         status: "completed"
+      });
+    }
+
+    // Create Tasks
+    if (!isPast) {
+       await Task.create({
+          title: `Prepare for ${title}`,
+          status: "todo",
+          priority: "high",
+          dueDate: date,
+          businessId,
+          assignedTo: ownerId,
+          category: "event_preparation"
+       });
+       
+       await Reminder.create({
+          title: `Follow up on ${title}`,
+          type: "event",
+          status: "active",
+          reminderDate: date,
+          reminderTime: "09:00",
+          businessId,
+          relatedEvent: event._id,
+          assignedTo: [ownerId]
+       });
     }
   }
 
