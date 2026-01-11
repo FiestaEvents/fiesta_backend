@@ -26,24 +26,32 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    
+    isSuperAdmin: {
+      type: Boolean,
+      default: false,
+    },
+
+    // =========================================================
+    // ARCHITECTURE UPDATE: Conditional Business Association
+    // =========================================================
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Business",
+      index: true,
+      required: function() {
+        return !this.isSuperAdmin;
+      },
+    },
+
     roleId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Role",
     },
     roleType: {
       type: String,
-      enum: ["owner", "manager", "staff", "viewer", "custom"],
+      enum: ["superadmin", "owner", "manager", "staff", "viewer", "custom"],
       default: "viewer",
-    },
-    
-    // =========================================================
-    // ARCHITECTURE UPDATE: Replaces venueId
-    // =========================================================
-    businessId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Business",
-      required: [true, "Business association is required"],
-      index: true, // Critical for performance
     },
     
     isActive: { type: Boolean, default: true },

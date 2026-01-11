@@ -46,7 +46,7 @@ export const createFinanceValidator = [
     .optional()
     .isIn(["cash", "card", "bank_transfer", "check"]),
 
-  // ✅ CONDITIONAL: Require Event ID if category is event_revenue
+  //  CONDITIONAL: Require Event ID if category is event_revenue
   body("relatedEvent")
     .if(body("category").equals("event_revenue"))
     .notEmpty().withMessage("Related Event is required for event revenue")
@@ -61,7 +61,7 @@ export const createFinanceValidator = [
        return true;
     }),
 
-  // ✅ CONDITIONAL: Require Partner ID if category is partner_payment
+  //  CONDITIONAL: Require Partner ID if category is partner_payment
   body("relatedPartner")
     .if(body("category").equals("partner_payment"))
     .notEmpty().withMessage("Related Partner is required for partner payments")

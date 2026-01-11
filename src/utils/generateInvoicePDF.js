@@ -53,7 +53,7 @@ const formatCurrency = (amount, currency = "TND") =>
 const formatDate = (d) => (d ? new Date(d).toLocaleDateString("fr-FR") : "");
 
 /**
- * ✅ FIX: Robust Address Formatter
+ *  FIX: Robust Address Formatter
  * Prevents "{}" from appearing by checking for empty objects/strings
  */
 const formatAddress = (addr) => {

@@ -42,7 +42,7 @@ const phoneValidation = body("phone")
   .isLength({ max: 20 })
   .withMessage("Phone number must be less than 20 characters");
 
-// ✅ ROLE CHECK: Ensure Role belongs to Business
+//  ROLE CHECK: Ensure Role belongs to Business
 const roleIdValidation = body("roleId")
   .notEmpty().withMessage("Role ID is required")
   .isMongoId().withMessage("Invalid role ID format")
@@ -67,7 +67,7 @@ const isActiveValidation = body("isActive")
 export const createUserValidator = [
   nameValidation,
   
-  // ✅ EMAIL UNIQUE CHECK
+  //  EMAIL UNIQUE CHECK
   body("email")
     .trim()
     .notEmpty().withMessage("Email is required")

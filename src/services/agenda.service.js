@@ -19,7 +19,7 @@ class AgendaService {
       this.defineJobs();
 
       await this.agenda.start();
-      console.log('✅ Agenda scheduler initialized');
+      console.log(' Agenda scheduler initialized');
 
       // Optional: Reschedule on server restart
       // await this.scheduleExistingReminders(); 

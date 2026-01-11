@@ -86,7 +86,7 @@ const financeSchema = new mongoose.Schema(
       type: String,
       maxlength: [1000, "Notes cannot exceed 1000 characters"],
     },
-    // ✅ CHANGED: Linked to generic Business entity instead of Venue
+    //  CHANGED: Linked to generic Business entity instead of Venue
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Business",
@@ -102,7 +102,7 @@ const financeSchema = new mongoose.Schema(
   }
 );
 
-// ✅ UPDATED INDEXES
+//  UPDATED INDEXES
 financeSchema.index({ businessId: 1, type: 1, date: -1 });
 financeSchema.index({ category: 1, date: -1 });
 

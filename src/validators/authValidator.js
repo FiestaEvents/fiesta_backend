@@ -34,7 +34,7 @@ const commonRules = {
   name: body("name")
     .trim()
     .notEmpty().withMessage("Name is required")
-    // ✅ CRITICAL: No .custom() check here!
+    //  CRITICAL: No .custom() check here!
     .isLength(LIMITS.NAME).withMessage(`Name must be between ${LIMITS.NAME.min} and ${LIMITS.NAME.max} characters`),
 
   strongPassword: (field = "password") => body(field)

@@ -160,7 +160,7 @@ const completeBusinessSetupAsync = async ({
     }
 
     console.log(
-      `✅ Setup completed for business: ${businessName} (${category})`
+      ` Setup completed for business: ${businessName} (${category})`
     );
   } catch (error) {
     console.error("❌ Async setup error:", error);
@@ -210,13 +210,14 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
 
   if (!isPermissionsPopulated) {
     user = await User.findById(req.user._id)
-      .populate("businessId")
+      .populate({ path: "businessId", strictPopulate: false })
       .populate({
         path: "roleId",
         populate: { path: "permissions", model: "Permission" },
+        strictPopulate: false,
       })
-      .populate("customPermissions.granted")
-      .populate("customPermissions.revoked");
+      .populate({ path: "customPermissions.granted", strictPopulate: false })
+      .populate({ path: "customPermissions.revoked", strictPopulate: false });
   }
 
   new ApiResponse(formatAuthResponse(user)).send(res);
@@ -246,7 +247,7 @@ export const register = asyncHandler(async (req, res) => {
     throw new ApiError("Email already registered", 400);
   }
 
-  // ✅ 1. PRE-GENERATE IDs TO RESOLVE CIRCULAR DEPENDENCY
+  //  1. PRE-GENERATE IDs TO RESOLVE CIRCULAR DEPENDENCY
   const businessId = new mongoose.Types.ObjectId();
   const userId = new mongoose.Types.ObjectId();
   const roleId = new mongoose.Types.ObjectId();

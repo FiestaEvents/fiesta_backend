@@ -19,7 +19,9 @@ const roleSchema = new mongoose.Schema(
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Business",
-      required: true,
+      required: function() {
+        return !this.isSuperAdmin;
+      },
     },
 
     permissions: [
@@ -39,6 +41,11 @@ const roleSchema = new mongoose.Schema(
     level: {
       type: Number,
       default: 10,
+    },
+
+    isSuperAdmin: {
+      type: Boolean,
+      default: false,
     },
 
     isActive: {

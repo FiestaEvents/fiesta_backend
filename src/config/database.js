@@ -6,7 +6,7 @@ const connectDB = async () => {
       // No need for useNewUrlParser and useUnifiedTopology in Mongoose 6+
     });
 
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
+    console.log(`MongoDB Connected: ${conn.connection.host}`);
 
     // Handle connection events
     mongoose.connection.on("error", (err) => {

@@ -414,7 +414,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const updateData = req.body;
 
-  // ✅ FIX: Use Robust Helper
+  // FIX: Use Robust Helper
   const userBizIdStr = getBusinessIdString(req);
 
   if (!userBizIdStr) {

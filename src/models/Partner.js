@@ -28,7 +28,14 @@ const partnerSchema = new mongoose.Schema(
       ref: "Business",
       required: true,
     },
-    
+    portfolio: [
+    {
+      url: { type: String, required: true },
+      publicId: { type: String },
+      caption: String,
+      uploadedAt: { type: Date, default: Date.now }
+    }
+  ],
     category: {
       type: String,
       enum: [

@@ -43,7 +43,7 @@ export const getProjects = asyncHandler(async (req, res) => {
  * @route   POST /api/v1/portfolio
  */
 export const createProject = asyncHandler(async (req, res) => {
-  // ✅ FIX: Check if business context exists
+  // FIX: Check if business context exists
   if (!req.business || !req.business._id) {
     throw new ApiError("User is not linked to a Business. Cannot create project.", 400);
   }

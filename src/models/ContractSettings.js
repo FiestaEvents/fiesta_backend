@@ -124,7 +124,7 @@ const SectionSchema = new mongoose.Schema({
   id: { type: String },
   title: { type: String },
   content: { type: String },
-  // ✅ FIX: Use object definition to use 'type' as a field name
+  //  FIX: Use object definition to use 'type' as a field name
   type: { type: String }, 
   order: { type: Number },
   isRequired: { type: Boolean },
@@ -190,7 +190,7 @@ const contractSettingsSchema = new mongoose.Schema(
       paymentMethods: { type: [String], default: DEFAULT_SETTINGS.financialDefaults.paymentMethods },
     },
 
-    // ✅ FIX: Use the sub-schema here
+    //  FIX: Use the sub-schema here
     defaultSections: [SectionSchema],
 
     labels: { type: Object, default: DEFAULT_SETTINGS.labels },

@@ -20,7 +20,7 @@ const getBusinessId = (user) => {
 export const getRoles = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10, search } = req.query;
   
-  // ✅ FIX: Safely extract Business ID instead of Venue ID
+  // FIX: Safely extract Business ID instead of Venue ID
   const businessId = getBusinessId(req.user);
 
   if (!businessId) {

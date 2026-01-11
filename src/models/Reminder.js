@@ -121,5 +121,5 @@ reminderSchema.index({
   description: 'text' 
 });
 
-// ✅ USE EXPORT DEFAULT
+//  USE EXPORT DEFAULT
 export default mongoose.model("Reminder", reminderSchema);

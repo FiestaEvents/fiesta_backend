@@ -5,11 +5,11 @@ import ApiResponse from "../utils/ApiResponse.js";
 import { User, Role, TeamInvitation, Permission } from "../models/index.js";
 // import { sendInvitationEmail } from "../services/emailService.js"; // Uncomment when email service is ready
 
-// ✅ CONFIG: Get Frontend URL
+// CONFIG: Get Frontend URL
 const getFrontendUrl = () => 
   process.env.CLIENT_URL || process.env.FRONTEND_URL || 'https://fiesta.events';
 
-// ✅ HELPER: Cookie Options (Must match AuthController)
+// HELPER: Cookie Options (Must match AuthController)
 const getCookieOptions = () => {
   const isProduction = process.env.NODE_ENV === "production";
   return {
@@ -262,7 +262,7 @@ export const acceptInvitation = asyncHandler(async (req, res) => {
           name: invitation.businessId.name,
           category: invitation.businessId.category, // e.g. 'venue', 'catering'
         },
-        permissions: permissionsList, // ✅ Strings only
+        permissions: permissionsList, //  Strings only
       },
       token: authToken, 
     },

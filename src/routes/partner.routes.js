@@ -1,4 +1,5 @@
 import express from "express";
+import { upload } from "../config/cloudinary.js";
 import {
   getPartners,
   getPartner,
@@ -8,6 +9,8 @@ import {
   getPartnerStats,
   restorePartner,
   getArchivedPartners,
+  uploadPartnerImage,
+  removePartnerImage,
 } from "../controllers/partnerController.js";
 
 import { authenticate } from "../middleware/auth.js";
@@ -91,5 +94,19 @@ router
     validateRequest,
     deletePartner
   );
+// ==========================================
+// PORTFOLIO IMAGE UPLOAD/DELETE
+// ==========================================
+router.post(
+  "/:id/portfolio",
+  checkPermission("partners.update.all"),
+  upload.single("image"),
+  uploadPartnerImage
+);
 
+router.delete(
+  "/:id/portfolio/:imageId",
+  checkPermission("partners.update.all"),
+  removePartnerImage
+);
 export default router;

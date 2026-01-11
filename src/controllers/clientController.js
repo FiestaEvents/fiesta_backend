@@ -105,7 +105,7 @@ export const getClient = asyncHandler(async (req, res) => {
     throw new ApiError("Client not found", 404);
   }
 
-  // ✅ Get client's events with payment information
+  // Get client's events with payment information
   const events = await Event.find({
     clientId: client._id,
     isArchived: { $ne: true },

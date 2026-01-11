@@ -334,5 +334,5 @@ eventSchema.index({ businessId: 1, startDate: 1 }); // Main Dashboard Filter
 eventSchema.index({ resourceId: 1, startDate: 1, endDate: 1 }); // Collision Detection
 eventSchema.index({ clientId: 1 });
 
-// ✅ USE EXPORT DEFAULT
+//  USE EXPORT DEFAULT
 export default mongoose.model("Event", eventSchema);

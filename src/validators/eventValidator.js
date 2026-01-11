@@ -15,7 +15,7 @@ export const createEventValidator = [
     .isIn(["wedding", "birthday", "corporate", "conference", "party", "concert", "shoot", "delivery", "other"])
     .withMessage("Invalid event type"),
 
-  // ✅ TENANT ISOLATION: Ensure Client belongs to the Business
+  //  TENANT ISOLATION: Ensure Client belongs to the Business
   body("clientId")
     .notEmpty()
     .withMessage("Client is required")

@@ -96,7 +96,7 @@ const businessSchema = new mongoose.Schema(
       timeZone: { type: String, default: "Africa/Tunis" },
     },
 
-    // ✅ FIX: REMOVED DEFAULTS to prevent auto-population of irrelevant fields
+    //  FIX: REMOVED DEFAULTS to prevent auto-population of irrelevant fields
     venueDetails: {
       capacity: {
         min: { type: Number }, // No default: 0
@@ -105,7 +105,7 @@ const businessSchema = new mongoose.Schema(
       amenities: [String],
     },
 
-    // ✅ FIX: REMOVED DEFAULTS to prevent auto-population of irrelevant fields
+    //  FIX: REMOVED DEFAULTS to prevent auto-population of irrelevant fields
     serviceDetails: {
       serviceRadiusKM: { type: Number }, // No default: 50
       pricingModel: {

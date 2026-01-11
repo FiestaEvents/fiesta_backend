@@ -32,7 +32,7 @@ dotenv.config();
 const connectDB = async () => {
   try {
     await mongoose.connect(process.env.MONGODB_URI);
-    console.log("✅ MongoDB Connected");
+    console.log(" MongoDB Connected");
   } catch (error) {
     console.error("❌ MongoDB Connection Error:", error);
     process.exit(1);
@@ -86,7 +86,7 @@ const clearDatabase = async () => {
   for (const model of models) {
     if (model) await model.deleteMany({});
   }
-  console.log("✅ Database cleared");
+  console.log(" Database cleared");
 };
 
 // =========================================================
@@ -185,7 +185,39 @@ const seedPermissions = async () => {
 };
 
 // =========================================================
-// 4. CONFIG
+// 4. SEED SUPERADMIN
+// =========================================================
+
+const seedSuperAdmin = async (permissions) => {
+  console.log("\n👑 Seeding superadmin account...");
+  
+  // Create superadmin role (global, not tied to a business)
+  const superadminRole = await Role.create({
+    name: "SuperAdmin",
+    isSystemRole: true,
+    level: 1000,
+    permissions: permissions.map((p) => p._id),
+    isSuperAdmin: true,
+  });
+
+  // Create superadmin user
+  const superadmin = await User.create({
+    name: "System Administrator",
+    email: "admin@fiesta.com",
+    password: "SuperAdmin123!",
+    roleId: superadminRole._id,
+    roleType: "superadmin",
+    isActive: true,
+    phone: "20999999",
+    isSuperAdmin: true,
+  });
+
+  console.log(" Superadmin account created");
+  return superadmin;
+};
+
+// =========================================================
+// 5. CONFIG
 // =========================================================
 
 const CATEGORY_CONFIG = {
@@ -258,7 +290,7 @@ const CATEGORY_CONFIG = {
 };
 
 // =========================================================
-// 5. TENANT BUILDER
+// 6. TENANT BUILDER
 // =========================================================
 
 const seedTenant = async (config, permissions) => {
@@ -550,11 +582,11 @@ const seedTenant = async (config, permissions) => {
     }
   }
 
-  console.log(`✅ ${config.businessName} seeded.`);
+  console.log(` ${config.businessName} seeded.`);
 };
 
 // =========================================================
-// 6. EXECUTION
+// 7. EXECUTION
 // =========================================================
 
 const seedDatabase = async () => {
@@ -563,6 +595,7 @@ const seedDatabase = async () => {
     await clearDatabase();
 
     const permissions = await seedPermissions();
+    await seedSuperAdmin(permissions);
 
     await seedTenant(
       {
@@ -604,7 +637,10 @@ const seedDatabase = async () => {
     console.log("\n=======================================================");
     console.log("🎉  DATABASE SEEDED SUCCESSFULLY");
     console.log("=======================================================");
-    console.log("Login with (Password: password123):");
+    console.log("SuperAdmin Login:");
+    console.log(" - Email: admin@fiesta.com");
+    console.log(" - Password: SuperAdmin123!");
+    console.log("\nTenant Logins (Password: password123):");
     console.log(" - venue@demo.com");
     console.log(" - photo@demo.com");
     console.log(" - driver@demo.com");

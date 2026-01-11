@@ -18,7 +18,7 @@ transporter.verify(function (error, success) {
     console.log('❌ Email service error:', error.message);
     console.log('⚠️  Email features will not work. Please configure email settings.');
   } else {
-    console.log('✅ Email service is ready');
+    console.log(' Email service is ready');
   }
 });
 
@@ -33,7 +33,7 @@ export const sendEmail = async (emailOptions) => {
     };
 
     const result = await transporter.sendMail(mailOptions);
-    console.log(`✅ Email sent successfully to ${emailOptions.to}`);
+    console.log(` Email sent successfully to ${emailOptions.to}`);
     return result;
   } catch (error) {
     console.error('❌ Email sending error:', error);
@@ -115,7 +115,7 @@ export const sendInvitationEmail = async ({
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log(`✅ Invitation email sent to ${email}`);
+    console.log(` Invitation email sent to ${email}`);
   } catch (error) {
     console.error(`❌ Error sending email to ${email}:`, error);
     throw new Error("Failed to send invitation email");
@@ -158,7 +158,7 @@ export const sendPasswordResetEmail = async ({ email, resetToken, userName }) =>
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log(`✅ Password reset email sent to ${email}`);
+    console.log(` Password reset email sent to ${email}`);
   } catch (error) {
     console.error(`❌ Error sending email to ${email}:`, error);
     throw new Error("Failed to send password reset email");
@@ -194,7 +194,7 @@ export const sendWelcomeEmail = async ({ email, userName, venueName }) => {
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log(`✅ Welcome email sent to ${email}`);
+    console.log(` Welcome email sent to ${email}`);
   } catch (error) {
     console.error(`❌ Error sending email to ${email}:`, error);
     // Don't throw error for welcome emails - it's not critical
@@ -241,7 +241,7 @@ export const sendPaymentReceiptEmail = async ({
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log(`✅ Payment receipt email sent to ${to}`);
+    console.log(` Payment receipt email sent to ${to}`);
   } catch (error) {
     console.error(`❌ Error sending payment receipt to ${to}:`, error);
     // Don't throw - payment is already processed
@@ -298,7 +298,7 @@ export const sendInvoiceReminderEmail = async ({
 
   try {
     await transporter.sendMail(mailOptions);
-    console.log(`✅ Invoice reminder sent to ${to}`);
+    console.log(` Invoice reminder sent to ${to}`);
   } catch (error) {
     console.error(`❌ Error sending invoice reminder to ${to}:`, error);
     throw new Error('Failed to send invoice reminder');

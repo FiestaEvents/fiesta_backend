@@ -17,7 +17,7 @@ const runFix = async () => {
     console.log("🔌 Connecting to MongoDB...");
     await mongoose.connect(process.env.MONGODB_URI);
     const db = mongoose.connection.db;
-    console.log("✅ Connected.");
+    console.log("Connected.");
 
     console.log("\n🧹 Starting Index Cleanup...");
 
@@ -29,7 +29,7 @@ const runFix = async () => {
         if (exists) {
           console.log(`   🔥 Dropping index '${target.index}' from '${target.collection}'...`);
           await collection.dropIndex(target.index);
-          console.log(`      ✅ Dropped.`);
+          console.log(` Dropped.`);
           
           // Optional: Clean up null fields that caused the issue
           const fieldName = target.index.includes("venueId") ? "venueId" : "venue";

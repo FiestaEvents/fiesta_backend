@@ -47,7 +47,7 @@ export const roleIdValidator = [
 export const createRoleValidator = [
   commonRules.name
     .custom(async (value, { req }) => {
-      // ✅ TENANT ISOLATION: Check for duplicates within this Business
+      //  TENANT ISOLATION: Check for duplicates within this Business
       const exists = await Role.findOne({
         name: { $regex: new RegExp(`^${value}$`, "i") }, // Case insensitive
         businessId: req.user.businessId,
@@ -85,7 +85,7 @@ export const updateRoleValidator = [
     .isLength({ min: 2, max: 50 })
     .matches(/^[a-zA-Z0-9\s-_]+$/)
     .custom(async (value, { req }) => {
-      // ✅ TENANT ISOLATION: Check for duplicates (excluding self)
+      //  TENANT ISOLATION: Check for duplicates (excluding self)
       const exists = await Role.findOne({
         name: { $regex: new RegExp(`^${value}$`, "i") },
         businessId: req.user.businessId,

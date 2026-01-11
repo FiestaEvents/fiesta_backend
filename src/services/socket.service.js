@@ -58,7 +58,7 @@ export function initializeSocketIO(httpServer) {
   io.on("connection", (socket) => {
     logger.info(`⚡ Socket connected: ${socket.user.name} (${socket.id})`);
 
-    // ✅ CRITICAL: Join Business Room
+    //  CRITICAL: Join Business Room
     // This allows us to emit to io.to(businessId) later
     if (socket.businessId) {
       socket.join(socket.businessId);

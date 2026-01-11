@@ -33,7 +33,7 @@ export const sendInvoiceEmail = async ({ to, subject, text, pdfBuffer, filename 
       text,
       attachments: [{ filename, content: pdfBuffer, contentType: "application/pdf" }],
     });
-    console.log("✅ Email sent:", info.messageId);
+    console.log(" Email sent:", info.messageId);
     return true;
   } catch (error) {
     console.error("❌ Email Failed:", error.message);

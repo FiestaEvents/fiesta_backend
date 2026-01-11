@@ -36,7 +36,7 @@ export const authenticate = asyncHandler(async (req, res, next) => {
         path: "roleId",
         populate: { path: "permissions", model: "Permission" },
       })
-      .populate("businessId") // ✅ Critical: Populates the full Business object
+      .populate("businessId") //  Critical: Populates the full Business object
       .populate("customPermissions.granted")
       .populate("customPermissions.revoked");
 
@@ -85,7 +85,7 @@ export const authenticate = asyncHandler(async (req, res, next) => {
     req.user = user;
     req.user.permissionsList = [...new Set(effectivePermissions)]; // Unique array
     
-    // ✅ This fixes "Cannot read properties of undefined (reading '_id')"
+    //  This fixes "Cannot read properties of undefined (reading '_id')"
     req.business = user.businessId; 
     
     next();

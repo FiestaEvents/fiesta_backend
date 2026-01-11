@@ -335,3 +335,40 @@ export const getArchivedPartners = asyncHandler(async (req, res) => {
     },
   }).send(res);
 });
+export const uploadPartnerImage = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  if (!req.file) throw new ApiError("No image file provided", 400);
+
+  const partner = await Partner.findOneAndUpdate(
+    { _id: id, venueId: req.user.venueId },
+    {
+      $push: {
+        portfolio: {
+          url: req.file.path,
+          publicId: req.file.filename,
+          caption: req.body.caption || ""
+        }
+      }
+    },
+    { new: true }
+  );
+
+  if (!partner) throw new ApiError("Partner not found", 404);
+
+  new ApiResponse({ portfolio: partner.portfolio }, "Image uploaded").send(res);
+});
+
+export const removePartnerImage = asyncHandler(async (req, res) => {
+  const { id, imageId } = req.params;
+
+  // Ideally delete from Cloudinary using the publicId here too
+
+  const partner = await Partner.findOneAndUpdate(
+    { _id: id, venueId: req.user.venueId },
+    { $pull: { portfolio: { _id: imageId } } },
+    { new: true }
+  );
+
+  new ApiResponse({ portfolio: partner.portfolio }, "Image removed").send(res);
+});

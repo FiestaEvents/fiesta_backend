@@ -11,7 +11,7 @@ const commonRules = {
     .notEmpty().withMessage("Item name is required")
     .isLength({ min: 2, max: 100 }).withMessage("Name must be between 2 and 100 characters"),
 
-  // ✅ TENANT ISOLATION: Ensure category belongs to Business
+  //  TENANT ISOLATION: Ensure category belongs to Business
   categoryId: body("categoryId")
     .notEmpty().withMessage("Category is required")
     .isMongoId().withMessage("Invalid category ID")
@@ -26,7 +26,7 @@ const commonRules = {
       return true;
     }),
 
-  // ✅ CHANGED: isFloat to support Catering (kg/liters) and Florists (meters)
+  //  CHANGED: isFloat to support Catering (kg/liters) and Florists (meters)
   currentStock: body("currentStock")
     .notEmpty().withMessage("Current stock is required")
     .isFloat({ min: 0 }).withMessage("Current stock must be a non-negative number"),

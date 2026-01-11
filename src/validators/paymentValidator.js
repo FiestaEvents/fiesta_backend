@@ -27,7 +27,7 @@ export const createPaymentValidator = [
     .isIn(["cash", "credit_card", "bank_transfer", "check", "online"])
     .withMessage("Invalid payment method"),
 
-  // ✅ TENANT ISOLATION: Invoice Check
+  //  TENANT ISOLATION: Invoice Check
   body("invoiceId")
     .optional({ checkFalsy: true }) // Allow empty string
     .isMongoId().withMessage("Invalid Invoice ID")
@@ -40,7 +40,7 @@ export const createPaymentValidator = [
       return true;
     }),
 
-  // ✅ TENANT ISOLATION: Client Check
+  //  TENANT ISOLATION: Client Check
   body("clientId")
     .optional({ checkFalsy: true })
     .isMongoId().withMessage("Invalid Client ID")
@@ -53,7 +53,7 @@ export const createPaymentValidator = [
       return true;
     }),
 
-  // ✅ TENANT ISOLATION: Event Check
+  //  TENANT ISOLATION: Event Check
   body("eventId")
     .optional({ checkFalsy: true })
     .isMongoId().withMessage("Invalid Event ID")

@@ -18,7 +18,7 @@ transporter.verify(function (error, success) {
   if (error) {
     console.log('❌ Error:', error);
   } else {
-    console.log('✅ Server is ready to send emails');
+    console.log(' Server is ready to send emails');
   }
 });
 
@@ -31,7 +31,7 @@ async function testEmail() {
       subject: 'Test Email',
       text: 'If you receive this, email is working!',
     });
-    console.log('✅ Email sent:', info.messageId);
+    console.log(' Email sent:', info.messageId);
   } catch (error) {
     console.error('❌ Failed to send:', error);
   }

@@ -7,7 +7,7 @@ const activityLogSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    // ✅ Renamed to businessId
+    //  Renamed to businessId
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Business",

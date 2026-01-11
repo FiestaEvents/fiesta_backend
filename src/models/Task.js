@@ -31,16 +31,16 @@ const taskSchema = new mongoose.Schema(
       enum: [
         "event_preparation",
         "marketing",
-        "maintenance",        // Venues (Repairs) & Drivers (Vehicle Check)
+        "maintenance",        
         "client_followup",
         "partner_coordination",
         "administrative",
         "finance",
-        "setup",              // DJs, Decorators
+        "setup",             
         "cleanup",
-        "post_production",    // NEW: Photographers/Videographers (Editing)
-        "delivery",           // NEW: Caterers, Drivers
-        "inventory_check",    // NEW: General stock check
+        "post_production",    
+        "delivery",          
+        "inventory_check",    
         "other",
       ],
       default: "other",

@@ -121,5 +121,5 @@ clientSchema.index({ businessId: 1, status: 1 });
 clientSchema.index({ email: 1, businessId: 1 }, { unique: true });
 clientSchema.index({ isArchived: 1 });
 
-// ✅ FIXED: Using ES Module syntax
+//  FIXED: Using ES Module syntax
 export default mongoose.model("Client", clientSchema);

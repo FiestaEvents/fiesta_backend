@@ -49,7 +49,7 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// ✅ 2. USE COOKIE PARSER (Critical for Auth)
+// 2. USE COOKIE PARSER (Critical for Auth)
 app.use(cookieParser()); 
 
 // Data sanitization against NoSQL injection
